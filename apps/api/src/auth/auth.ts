@@ -20,6 +20,20 @@ const managedMemberRole = organizationAccess.newRole({
   ac: ["read"],
 });
 
+function resolveTrustedOrigins(): string[] {
+  const values = [
+    process.env.WEB_URL,
+    process.env.BETTER_AUTH_URL,
+    process.env.API_URL,
+    "http://localhost:3000",
+    "http://localhost:3001",
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .map((value) => value.replace(/\/$/, ""));
+
+  return [...new Set(values)];
+}
+
 export function createAuth(databaseUrl: string) {
   const authSecret = process.env.BETTER_AUTH_SECRET;
   if (
@@ -37,10 +51,7 @@ export function createAuth(databaseUrl: string) {
     baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3001",
     basePath: "/api/auth",
     secret: authSecret,
-    trustedOrigins: [
-      process.env.WEB_URL ?? "http://localhost:3000",
-      process.env.API_URL ?? "http://localhost:3001",
-    ],
+    trustedOrigins: resolveTrustedOrigins(),
     database: drizzleAdapter(db, {
       provider: "pg",
       schema,

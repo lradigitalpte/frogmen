@@ -6,7 +6,10 @@ import postgres from "postgres";
 const migrationsFolder = join(__dirname, "../drizzle");
 
 export async function runMigrations(connectionString: string) {
-  const client = postgres(connectionString, { max: 1 });
+  const client = postgres(connectionString, {
+    max: 1,
+    onnotice: () => {},
+  });
 
   try {
     const db = drizzle(client);
