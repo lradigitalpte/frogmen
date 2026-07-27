@@ -22,4 +22,5 @@ coverage
 .idea
 .vscode/*
 !.vscode/extensions.json
-uploads/
+/uploads/
+/apps/api/uploads/
