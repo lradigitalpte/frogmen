@@ -1,5 +1,6 @@
 export { createDb, type Database } from "./client";
 export { runMigrations } from "./migrate";
+export { ensureCurrencies } from "./ensure-currencies";
 export { applyCustomersIfNeeded } from "./apply-customers";
 export { applyCustomerCreditIfNeeded } from "./apply-customer-credit";
 export { applyCustomerIsLocalIfNeeded } from "./apply-customer-is-local";

@@ -2,7 +2,7 @@ import "./load-env";
 import { config } from "dotenv";
 import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
-import { runMigrations, applyCustomersIfNeeded, applyCustomerCreditIfNeeded, applyCustomerIsLocalIfNeeded, applyInventoryIfNeeded, applyPaymentRemindersIfNeeded, applyAccountingIfNeeded, applyPurchasingIfNeeded, applyRovInspectionIfNeeded, applyCreditNotesIfNeeded } from "@frog1/db";
+import { runMigrations, ensureCurrencies, applyCustomersIfNeeded, applyCustomerCreditIfNeeded, applyCustomerIsLocalIfNeeded, applyInventoryIfNeeded, applyPaymentRemindersIfNeeded, applyAccountingIfNeeded, applyPurchasingIfNeeded, applyRovInspectionIfNeeded, applyCreditNotesIfNeeded } from "@frog1/db";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
@@ -27,6 +27,8 @@ async function bootstrap() {
     await applyCreditNotesIfNeeded(databaseUrl);
     await applyRovInspectionIfNeeded(databaseUrl);
   }
+
+  await ensureCurrencies(databaseUrl);
 
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
