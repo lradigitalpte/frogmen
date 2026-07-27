@@ -1,0 +1,30 @@
+{
+  "name": "@frog1/db",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate",
+    "studio": "drizzle-kit studio",
+    "seed": "tsx src/seed.ts",
+    "apply-phase1": "tsx src/apply-phase1.ts",
+    "apply-customers": "tsx src/run-apply-customers.ts",
+    "apply-inventory": "tsx src/run-apply-inventory.ts",
+    "apply-product-currency": "tsx src/apply-product-currency.ts",
+    "repair-invoice-cost-currency": "tsx src/repair-invoice-cost-currency.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "dotenv": "^16.6.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}

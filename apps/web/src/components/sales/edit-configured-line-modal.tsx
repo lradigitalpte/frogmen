@@ -1,0 +1,321 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  BlockStack,
+  Divider,
+  FormLayout,
+  InlineGrid,
+  InlineStack,
+  Modal,
+  Select,
+  Text,
+  TextField,
+} from "@shopify/polaris";
+import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
+import {
+  clampQuantity,
+  computeLineMarginPercent,
+  computeLineProfit,
+  computeLineTotal,
+  formatMarginPercent,
+  getMaxAllowedQuantity,
+} from "@/lib/line-item-utils";
+import type { ConfiguredLineItem } from "@/types/configured-line-item";
+import { useSalesPricing } from "@/hooks/use-sales-pricing";
+
+interface EditConfiguredLineModalProps {
+  open: boolean;
+  line: ConfiguredLineItem | null;
+  allLines: ConfiguredLineItem[];
+  documentCurrencyId: string;
+  onClose: () => void;
+  onSave: (line: ConfiguredLineItem) => void;
+}
+
+export function EditConfiguredLineModal({
+  open,
+  line,
+  allLines,
+  documentCurrencyId,
+  onClose,
+  onSave,
+}: EditConfiguredLineModalProps) {
+  const { settings: salesPricing } = useSalesPricing();
+  const { fmt, pricePrefix } = useProductDocumentCurrency(
+    documentCurrencyId,
+    [],
+    null,
+  );
+
+  const [draft, setDraft] = useState<ConfiguredLineItem | null>(line);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && line) {
+      setDraft({ ...line });
+      setError(null);
+    }
+  }, [open, line]);
+
+  const previewLine = draft ?? line;
+  const lineTotal = previewLine ? computeLineTotal(previewLine) : 0;
+  const lineProfit = previewLine ? computeLineProfit(previewLine) : 0;
+  const lineMargin = previewLine ? computeLineMarginPercent(previewLine) : null;
+  const netUnitRevenue = previewLine
+    ? previewLine.unitPrice * (1 - previewLine.discountPercent / 100)
+    : 0;
+  const sellsBelowCost = Boolean(
+    previewLine && previewLine.unitCost > netUnitRevenue,
+  );
+  const vatRates = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...(salesPricing.vatRates ?? [0, 5]),
+          Number(draft?.taxRatePercent ?? 0),
+        ]),
+      ].sort((left, right) => left - right),
+    [draft?.taxRatePercent, salesPricing.vatRates],
+  );
+  const hasCatalogDifference =
+    previewLine &&
+    Math.abs(previewLine.baseUnitPrice - previewLine.unitPrice) >= 0.005;
+
+  const maxQuantity = useMemo(() => {
+    if (!previewLine) return undefined;
+    if (previewLine.productUnitId) return 1;
+    return (
+      getMaxAllowedQuantity(
+        previewLine.availableQuantity ?? 0,
+        allLines,
+        previewLine.productId,
+        previewLine.id,
+      ) || undefined
+    );
+  }, [previewLine, allLines]);
+
+  function updateField<K extends keyof ConfiguredLineItem>(
+    field: K,
+    value: ConfiguredLineItem[K],
+  ) {
+    if (!draft) return;
+    setDraft({ ...draft, [field]: value });
+  }
+
+  function handleSave() {
+    if (!draft) return;
+
+    const unitPrice = Number(draft.unitPrice);
+    const quantity = Number(draft.quantity);
+
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      setError("Enter a valid unit price.");
+      return;
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setError("Quantity must be at least 1.");
+      return;
+    }
+
+    const next: ConfiguredLineItem = {
+      ...draft,
+      unitPrice,
+      quantity,
+      discountPercent: Number(draft.discountPercent) || 0,
+      taxRatePercent: Number(draft.taxRatePercent) || 0,
+    };
+
+    const clamped = clampQuantity(next.quantity, allLines, next);
+    if (clamped !== next.quantity) {
+      setError(`Only ${clamped} unit(s) available for this product.`);
+      next.quantity = clamped;
+    }
+
+    onSave(next);
+    onClose();
+  }
+
+  if (!line || !draft) {
+    return null;
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit line item"
+      primaryAction={{
+        content: "Save line",
+        onAction: handleSave,
+      }}
+      secondaryActions={[
+        {
+          content: "Cancel",
+          onAction: onClose,
+        },
+      ]}
+    >
+      <Modal.Section>
+        <BlockStack gap="500">
+          <BlockStack gap="200">
+            <Text as="h3" variant="headingMd">
+              {draft.name}
+            </Text>
+            <InlineStack gap="200" wrap>
+              <div className="frogmen-line-card__meta-item">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  SKU
+                </Text>
+                <Text as="span" fontWeight="semibold">
+                  {draft.sku}
+                </Text>
+              </div>
+              {draft.serialNumber ? (
+                <div className="frogmen-line-card__meta-item">
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    Serial number
+                  </Text>
+                  <Text as="span" fontWeight="semibold">
+                    {draft.serialNumber}
+                  </Text>
+                </div>
+              ) : null}
+            </InlineStack>
+          </BlockStack>
+
+          {error ? (
+            <Text as="p" tone="critical">
+              {error}
+            </Text>
+          ) : null}
+
+          {sellsBelowCost ? (
+            <div className="frogmen-line-cost-warning">
+              <Text as="p" fontWeight="semibold" tone="critical">
+                This line is priced below cost.
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                Product cost is higher than the selling price.
+              </Text>
+            </div>
+          ) : null}
+
+          <FormLayout>
+            <TextField
+              autoComplete="off"
+              disabled={Boolean(draft.productUnitId)}
+              helpText={
+                maxQuantity !== undefined
+                  ? `Maximum available: ${maxQuantity}`
+                  : undefined
+              }
+              label="Quantity"
+              min={1}
+              max={maxQuantity}
+              type="number"
+              value={String(draft.quantity)}
+              onChange={(value) => updateField("quantity", Number(value) || 0)}
+            />
+            <TextField
+              autoComplete="off"
+              helpText={
+                hasCatalogDifference
+                  ? `Catalog price: ${fmt(draft.baseUnitPrice)}`
+                  : undefined
+              }
+              label="Selling price before VAT"
+              prefix={pricePrefix}
+              type="number"
+              value={String(draft.unitPrice)}
+              onChange={(value) => updateField("unitPrice", Number(value) || 0)}
+            />
+            <TextField
+              autoComplete="off"
+              disabled
+              helpText="Converted from the saved product cost."
+              label="Converted product cost"
+              prefix={pricePrefix}
+              type="number"
+              value={String(draft.unitCost)}
+              onChange={() => undefined}
+            />
+            <InlineGrid columns={2} gap="400">
+              <TextField
+                autoComplete="off"
+                label="Discount (%)"
+                suffix="%"
+                type="number"
+                value={String(draft.discountPercent)}
+                onChange={(value) =>
+                  updateField("discountPercent", Number(value) || 0)
+                }
+              />
+              <Select
+                label="VAT (%)"
+                options={vatRates.map((rate) => ({
+                  label: rate === 0 ? "0% Zero rated / exempt" : `${rate}%`,
+                  value: String(rate),
+                }))}
+                value={String(draft.taxRatePercent)}
+                onChange={(value) =>
+                  updateField("taxRatePercent", Number(value) || 0)
+                }
+              />
+            </InlineGrid>
+          </FormLayout>
+
+          <Divider />
+
+          <div className="frogmen-line-modal-summary">
+            <InlineGrid columns={2} gap="400">
+              <BlockStack gap="100">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Customer total including VAT
+                </Text>
+                <Text as="p" variant="headingMd">
+                  {fmt(lineTotal)}
+                </Text>
+              </BlockStack>
+              <BlockStack gap="100">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Product cost
+                </Text>
+                <Text as="p" variant="headingMd">
+                  {fmt(draft.unitCost * draft.quantity)}
+                </Text>
+              </BlockStack>
+              <BlockStack gap="100">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Gross profit before VAT
+                </Text>
+                <Text
+                  as="p"
+                  tone={lineProfit >= 0 ? "success" : "critical"}
+                  variant="headingMd"
+                >
+                  {fmt(lineProfit)}
+                </Text>
+              </BlockStack>
+              <BlockStack gap="100">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Margin
+                </Text>
+                <span
+                  className={
+                    lineProfit >= 0
+                      ? "frogmen-margin-badge"
+                      : "frogmen-margin-badge frogmen-margin-badge--loss"
+                  }
+                >
+                  {formatMarginPercent(lineMargin)}
+                </span>
+              </BlockStack>
+            </InlineGrid>
+          </div>
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
+  );
+}

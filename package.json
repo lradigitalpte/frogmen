@@ -1,0 +1,25 @@
+{
+  "name": "frog1",
+  "private": true,
+  "packageManager": "pnpm@10.6.5",
+  "engines": {
+    "node": ">=20.9.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:api": "pnpm --filter @frog1/api dev",
+    "dev:web": "pnpm --filter @frog1/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "db:build": "pnpm --filter @frog1/db build",
+    "db:generate": "pnpm --filter @frog1/db generate",
+    "db:migrate": "pnpm --filter @frog1/db migrate",
+    "db:seed": "pnpm --filter @frog1/db seed",
+    "db:apply-phase1": "pnpm --filter @frog1/db apply-phase1",
+    "db:apply-customers": "pnpm --filter @frog1/db apply-customers",
+    "db:apply-inventory": "pnpm --filter @frog1/db apply-inventory",
+    "db:apply-product-currency": "pnpm --filter @frog1/db apply-product-currency",
+    "db:studio": "pnpm --filter @frog1/db studio"
+  }
+}

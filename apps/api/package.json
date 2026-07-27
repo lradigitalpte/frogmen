@@ -1,0 +1,45 @@
+{
+  "name": "@frog1/api",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "predev": "pnpm --filter @frog1/db build && pnpm --filter @frog1/shared build && nest build",
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/s3-request-presigner": "^3.1095.0",
+    "@better-auth/drizzle-adapter": "^1.6.24",
+    "@frog1/db": "workspace:*",
+    "@frog1/shared": "workspace:*",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@thallesp/nestjs-better-auth": "^2.7.0",
+    "better-auth": "^1.6.24",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.45.2",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3",
+    "puppeteer": "^24.22.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.21",
+    "@nestjs/cli": "^11.0.10",
+    "@nestjs/schematics": "^11.0.7",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^22.17.1",
+    "@types/nodemailer": "^8.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.7"
+  }
+}
