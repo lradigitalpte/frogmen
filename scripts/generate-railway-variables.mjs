@@ -64,7 +64,7 @@ const get = (protectedName, localName = protectedName) =>
 
 const output = {
   NODE_ENV: "production",
-  AUTO_MIGRATE: "true",
+  AUTO_MIGRATE: "false",
   DATABASE_URL: required(protectedValues, "FROG1_DATABASE_URL"),
   BETTER_AUTH_SECRET: required(
     protectedValues,

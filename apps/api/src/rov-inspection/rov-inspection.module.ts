@@ -8,7 +8,6 @@ import { RovProjectsController } from "./rov-projects.controller";
 import { RovProjectsService } from "./rov-projects.service";
 import { RovUploadsService } from "./rov-uploads.service";
 import { S3MultipartController } from "./s3-multipart.controller";
-import { S3Service } from "./s3.service";
 
 @Module({
   imports: [DocumentsModule, UploadsModule],
@@ -23,6 +22,6 @@ import { S3Service } from "./s3.service";
     RovInspectionService,
     RovUploadsService,
   ],
-  exports: [RovProjectsService, RovInspectionService, S3Service],
+  exports: [RovProjectsService, RovInspectionService],
 })
 export class RovInspectionModule {}
