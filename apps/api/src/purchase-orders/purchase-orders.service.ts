@@ -31,6 +31,7 @@ import {
   warehouses,
   type Database,
 } from "@frog1/db";
+import { applyTemplatePlaceholders } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
 import { VendorsService } from "../vendors/vendors.service";
@@ -38,6 +39,9 @@ import { ProductsService } from "../products/products.service";
 import { WarehousesService } from "../warehouses/warehouses.service";
 import { StockService } from "../stock/stock.service";
 import { ProductUnitsService } from "../product-units/product-units.service";
+import { MailService } from "../mail/mail.service";
+import { SettingsService } from "../settings/settings.service";
+import { DocumentRendererService } from "../documents/document-renderer.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import {
   calculateLineAmounts,
@@ -111,6 +115,9 @@ export class PurchaseOrdersService {
     private readonly warehousesService: WarehousesService,
     private readonly stockService: StockService,
     private readonly productUnitsService: ProductUnitsService,
+    private readonly mailService: MailService,
+    private readonly settingsService: SettingsService,
+    private readonly documentRenderer: DocumentRendererService,
   ) {}
 
   async list(organizationId: string, query: ListPurchaseOrdersQuery) {
@@ -1175,6 +1182,83 @@ export class PurchaseOrdersService {
       org.baseCurrencyId,
       asOfDate,
     );
+  }
+
+  async sendEmail(
+    organizationId: string,
+    orderId: string,
+    userId: string | undefined,
+    input: { recipientEmail: string; subject: string; body: string },
+  ) {
+    const order = await this.getById(organizationId, orderId);
+
+    if (order.state === "cancelled") {
+      throw new BadRequestException("Cannot email a cancelled purchase order");
+    }
+
+    const recipientEmail = input.recipientEmail?.trim();
+    if (!recipientEmail) {
+      throw new BadRequestException("Recipient email is required");
+    }
+
+    if (order.lines.length === 0) {
+      throw new BadRequestException(
+        "Add at least one line before sending the purchase order",
+      );
+    }
+
+    const company = await this.settingsService.getCompany(organizationId);
+    const templates = await this.settingsService.getDocumentTemplates(
+      organizationId,
+    );
+    const placeholders = {
+      number: order.number,
+      customerName: order.vendorName ?? "Vendor",
+      companyName: company.name,
+      total: String(order.amountTotal),
+      dueDate: order.expectedDate ?? "",
+      outstanding: String(order.amountTotal),
+    };
+
+    const subject =
+      input.subject?.trim() ||
+      applyTemplatePlaceholders(templates.poEmailSubject, placeholders);
+    const bodyText =
+      input.body?.trim() ||
+      applyTemplatePlaceholders(templates.poEmailBodyIntro, placeholders);
+
+    const pdfBuffer = await this.documentRenderer.renderPurchaseOrderPdf(
+      organizationId,
+      orderId,
+    );
+
+    const delivery = await this.mailService.sendBrandedMail({
+      to: recipientEmail,
+      subject,
+      title: `Purchase Order ${order.number}`,
+      bodyText,
+      attachments: [
+        {
+          filename: `purchase-order-${order.number}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    await this.logActivity(
+      organizationId,
+      orderId,
+      userId,
+      "note",
+      `Purchase order ${order.number} sent to ${recipientEmail}`,
+    );
+
+    return {
+      success: true,
+      sentAt: new Date().toISOString(),
+      delivery,
+    };
   }
 
   private async logActivity(

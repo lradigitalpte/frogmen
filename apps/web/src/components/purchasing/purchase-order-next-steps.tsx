@@ -36,8 +36,8 @@ export function PurchaseOrderNextSteps({
             order from the supplier.
           </List.Item>
           <List.Item>
-            Share PO details with the vendor (email or their portal). There is
-            no print/PDF yet   use the PO number and vendor reference.
+            Email the PO to the vendor using <strong>Send to vendor</strong> or
+            share it through their portal.
           </List.Item>
         </List>
         <Text as="p" tone="subdued" variant="bodySm">

@@ -131,6 +131,16 @@ export function deleteCancelledInvoice(id: string) {
   return apiFetch<{ archived: boolean }>(`/api/v1/invoices/${id}`, { method: "DELETE" });
 }
 
+export function sendInvoiceEmail(
+  id: string,
+  input: { recipientEmail: string; subject: string; body: string },
+) {
+  return apiFetch<{ success: boolean; sentAt: string }>(`/api/v1/invoices/${id}/send-email`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function sendInvoiceCancellationEmail(
   id: string,
   input: { recipientEmail: string; subject: string; body: string },

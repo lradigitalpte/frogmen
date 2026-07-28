@@ -39,7 +39,7 @@ import {
   warrantyRegistrations,
   type Database,
 } from "@frog1/db";
-import { convertPaymentToInvoiceAmount } from "@frog1/shared";
+import { convertPaymentToInvoiceAmount, applyTemplatePlaceholders } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { AccountingService } from "../accounting/accounting.service";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
@@ -792,6 +792,97 @@ export class InvoicesService {
     return refund;
   }
 
+  async sendEmail(
+    organizationId: string,
+    invoiceId: string,
+    userId: string | undefined,
+    input: { recipientEmail: string; subject: string; body: string },
+  ) {
+    const invoice = await this.getById(organizationId, invoiceId);
+    if (invoice.state !== "posted") {
+      throw new BadRequestException("Only posted invoices can be emailed");
+    }
+
+    const recipientEmail = input.recipientEmail?.trim();
+    if (!recipientEmail) {
+      throw new BadRequestException("Recipient email is required");
+    }
+    if (invoice.lines.length === 0) {
+      throw new BadRequestException("Add at least one line before sending the invoice");
+    }
+
+    const company = await this.settingsService.getCompany(organizationId);
+    const templates = await this.settingsService.getDocumentTemplates(organizationId);
+    const placeholders = {
+      number: invoice.number,
+      customerName: invoice.customerName ?? "Customer",
+      companyName: company.name,
+      total: String(invoice.amountTotal),
+      dueDate: invoice.dueDate ?? "",
+      outstanding: String(
+        Math.max(Number(invoice.amountTotal) - Number(invoice.amountPaid ?? 0), 0),
+      ),
+    };
+
+    const subject =
+      input.subject?.trim() ||
+      applyTemplatePlaceholders(templates.invoiceEmailSubject, placeholders);
+    const bodyText =
+      input.body?.trim() ||
+      applyTemplatePlaceholders(templates.invoiceEmailBodyIntro, placeholders);
+
+    const pdfBuffer = await this.documentRenderer.renderInvoicePdf(
+      organizationId,
+      invoiceId,
+    );
+
+    try {
+      const delivery = await this.mailService.sendBrandedMail({
+        to: recipientEmail,
+        subject,
+        title: `Invoice ${invoice.number}`,
+        bodyText,
+        attachments: [
+          {
+            filename: `invoice-${invoice.number}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+
+      await this.db.insert(invoiceNotifications).values({
+        organizationId,
+        invoiceId,
+        recipientEmail,
+        subject,
+        body: bodyText,
+        deliveryStatus: delivery.delivered ? "sent" : "logged",
+        sentAt: new Date(),
+      });
+
+      await this.logActivity(
+        organizationId,
+        invoiceId,
+        userId,
+        "updated",
+        `Invoice ${invoice.number} sent to ${recipientEmail}`,
+      );
+
+      return { success: true, sentAt: new Date().toISOString(), delivery };
+    } catch (error) {
+      await this.db.insert(invoiceNotifications).values({
+        organizationId,
+        invoiceId,
+        recipientEmail,
+        subject: input.subject,
+        body: input.body,
+        deliveryStatus: "failed",
+      });
+      throw error;
+    }
+  }
+
   async sendCancellationEmail(
     organizationId: string,
     invoiceId: string,
@@ -804,10 +895,11 @@ export class InvoicesService {
       const attachment = note
         ? await this.documentRenderer.renderCreditNotePdf(organizationId, note)
         : null;
-      const delivery = await this.mailService.sendMail({
+      const delivery = await this.mailService.sendBrandedMail({
         to: input.recipientEmail,
         subject: input.subject,
-        text: input.body,
+        title: `Invoice ${invoice.number} cancelled`,
+        bodyText: input.body,
         attachments: attachment
           ? [{ filename: `${note!.number}.pdf`, content: attachment }]
           : undefined,

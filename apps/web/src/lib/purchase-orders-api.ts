@@ -162,6 +162,19 @@ export function getPurchaseOrder(id: string) {
   return apiFetch<PurchaseOrder>(`/api/v1/purchase-orders/${id}`);
 }
 
+export function sendPurchaseOrderEmail(
+  id: string,
+  input: { recipientEmail: string; subject: string; body: string },
+) {
+  return apiFetch<{ success: boolean; sentAt: string }>(
+    `/api/v1/purchase-orders/${id}/send-email`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export function createPurchaseOrder(input: {
   vendorId: string;
   currencyId: string;

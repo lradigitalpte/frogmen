@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { renderBrandedEmail } from '@frog1/shared';
 import * as nodemailer from 'nodemailer';
 import type Mail from 'nodemailer/lib/mailer';
 
@@ -13,6 +14,26 @@ export interface SendMailInput {
     content: Buffer;
     contentType?: string;
   }>;
+}
+
+export interface MailDeliveryResult {
+  delivered: boolean;
+  mode: 'smtp' | 'resend' | 'log' | 'error';
+  id?: string;
+  error?: string;
+}
+
+export interface SendBrandedMailInput {
+  to: string;
+  subject: string;
+  title: string;
+  bodyText: string;
+  bodyHtml?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  footerNote?: string;
+  extraHtml?: string;
+  attachments?: SendMailInput['attachments'];
 }
 
 @Injectable()
@@ -49,7 +70,27 @@ export class MailService {
     );
   }
 
-  async sendMail(input: SendMailInput) {
+  async sendBrandedMail(input: SendBrandedMailInput): Promise<MailDeliveryResult> {
+    const branded = renderBrandedEmail({
+      title: input.title,
+      bodyText: input.bodyText,
+      bodyHtml: input.bodyHtml,
+      ctaLabel: input.ctaLabel,
+      ctaUrl: input.ctaUrl,
+      footerNote: input.footerNote,
+      extraHtml: input.extraHtml,
+    });
+
+    return this.sendMail({
+      to: input.to,
+      subject: input.subject,
+      text: branded.text,
+      html: branded.html,
+      attachments: input.attachments,
+    });
+  }
+
+  async sendMail(input: SendMailInput): Promise<MailDeliveryResult> {
     const payload: Mail.Options = {
       from: this.fromAddress(),
       to: input.to,
@@ -95,8 +136,16 @@ export class MailService {
           );
         }
 
+        let id: string | undefined;
+        try {
+          const parsed = (await response.json()) as { id?: string };
+          id = parsed.id;
+        } catch {
+          id = undefined;
+        }
+
         this.logger.log(`[MAIL SENT] ${input.subject} -> ${input.to}`);
-        return { delivered: true, mode: 'resend' as const };
+        return { delivered: true, mode: 'resend', id };
       }
 
       this.logger.log(
@@ -106,11 +155,11 @@ export class MailService {
             : ''
         }`,
       );
-      return { delivered: false, mode: 'log' as const };
+      return { delivered: false, mode: 'log' };
     }
 
     await this.transporter.sendMail(payload);
     this.logger.log(`[MAIL SENT] ${input.subject} -> ${input.to}`);
-    return { delivered: true, mode: 'smtp' as const };
+    return { delivered: true, mode: 'smtp' };
   }
 }

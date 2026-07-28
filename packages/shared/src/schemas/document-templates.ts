@@ -32,6 +32,12 @@ export const documentTemplateSettingsSchema = z.object({
   showBillingAddress: z.boolean().optional(),
   emailSubject: optionalText(255),
   emailBodyIntro: optionalText(2000),
+  invoiceEmailSubject: optionalText(255),
+  invoiceEmailBodyIntro: optionalText(2000),
+  poEmailSubject: optionalText(255),
+  poEmailBodyIntro: optionalText(2000),
+  reminderEmailSubject: optionalText(255),
+  reminderEmailBodyIntro: optionalText(2000),
 });
 
 export const updateDocumentTemplatesSchema = documentTemplateSettingsSchema;
@@ -65,6 +71,15 @@ export const DEFAULT_DOCUMENT_TEMPLATES: Required<DocumentTemplateSettings> = {
   emailSubject: "Quotation {{number}} from {{companyName}}",
   emailBodyIntro:
     "Dear {{customerName}},\n\nPlease find attached quotation {{number}} for {{total}}.\n\nKind regards,\n{{companyName}}",
+  invoiceEmailSubject: "Invoice {{number}} from {{companyName}}",
+  invoiceEmailBodyIntro:
+    "Dear {{customerName}},\n\nPlease find attached invoice {{number}} for {{total}}. Payment is due on {{dueDate}}.\n\nKind regards,\n{{companyName}}",
+  poEmailSubject: "Purchase Order {{number}} from {{companyName}}",
+  poEmailBodyIntro:
+    "Dear {{customerName}},\n\nPlease find attached purchase order {{number}} for {{total}}.\n\nKind regards,\n{{companyName}}",
+  reminderEmailSubject: "Payment reminder: Invoice {{number}}",
+  reminderEmailBodyIntro:
+    "Dear {{customerName}},\n\nThis is a friendly reminder that invoice {{number}} for {{outstanding}} is due on {{dueDate}}.\n\nPlease arrange payment at your earliest convenience.\n\nThank you,\n{{companyName}}",
 };
 
 export function parseOrgDocumentTemplates(
@@ -130,6 +145,22 @@ export function resolveDocumentTemplates(
       settings.emailSubject ?? DEFAULT_DOCUMENT_TEMPLATES.emailSubject,
     emailBodyIntro:
       settings.emailBodyIntro ?? DEFAULT_DOCUMENT_TEMPLATES.emailBodyIntro,
+    invoiceEmailSubject:
+      settings.invoiceEmailSubject ??
+      DEFAULT_DOCUMENT_TEMPLATES.invoiceEmailSubject,
+    invoiceEmailBodyIntro:
+      settings.invoiceEmailBodyIntro ??
+      DEFAULT_DOCUMENT_TEMPLATES.invoiceEmailBodyIntro,
+    poEmailSubject:
+      settings.poEmailSubject ?? DEFAULT_DOCUMENT_TEMPLATES.poEmailSubject,
+    poEmailBodyIntro:
+      settings.poEmailBodyIntro ?? DEFAULT_DOCUMENT_TEMPLATES.poEmailBodyIntro,
+    reminderEmailSubject:
+      settings.reminderEmailSubject ??
+      DEFAULT_DOCUMENT_TEMPLATES.reminderEmailSubject,
+    reminderEmailBodyIntro:
+      settings.reminderEmailBodyIntro ??
+      DEFAULT_DOCUMENT_TEMPLATES.reminderEmailBodyIntro,
   };
 }
 

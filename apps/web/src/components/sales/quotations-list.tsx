@@ -10,15 +10,14 @@ import {
   IndexTable,
   InlineStack,
   Link,
-  Modal,
   Text,
-  TextField,
   useSetIndexFiltersMode,
 } from "@shopify/polaris";
 import { FileText, ShoppingCart, TrendingUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
   quotationStateLabel,
@@ -89,9 +88,6 @@ export function QuotationsListPage() {
   const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
   const [deleteQuote, setDeleteQuote] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [emailRecipient, setEmailRecipient] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
   const [emailSending, setEmailSending] = useState(false);
 
   const activeTab = tabs[selectedTab]?.id ?? "all";
@@ -185,20 +181,24 @@ export function QuotationsListPage() {
 
   function openEmailModal(quote: Quotation) {
     setSelectedQuote(quote);
-    setEmailRecipient(quote.customerEmail || "");
-    setEmailSubject(`Commercial Quotation ${quote.number} - Subsea Equipment`);
-    setEmailBody(
-      `Dear ${quote.customerName || "Customer"},\n\nPlease find attached Commercial Quotation ${quote.number} for your subsea equipment requirement.\n\nTotal Amount: ${formatQuotationAmount(quote, formatOrgMoney, resolveCurrency)}\n\nBest regards,\nFrogmen Subsea ERP`
-    );
     setEmailModalOpen(true);
   }
 
-  async function handleSendEmail() {
+  async function handleSendEmail(input: {
+    recipientEmail: string;
+    subject: string;
+    body: string;
+  }) {
     if (!selectedQuote) return;
     setEmailSending(true);
     try {
-      await sendQuotationEmail(selectedQuote.id, emailRecipient, emailSubject, emailBody);
-      setActionSuccess(`Quotation PDF email dispatched to ${emailRecipient}`);
+      await sendQuotationEmail(
+        selectedQuote.id,
+        input.recipientEmail,
+        input.subject,
+        input.body,
+      );
+      setActionSuccess(`Quotation PDF email dispatched to ${input.recipientEmail}`);
       setEmailModalOpen(false);
       void loadQuotations();
     } catch (err) {
@@ -260,12 +260,14 @@ export function QuotationsListPage() {
               Edit
             </Button>
 
-            <Button
-              size="slim"
-              onClick={() => openEmailModal(quotation)}
-            >
-              Send Email
-            </Button>
+            {quotation.state === "draft" || quotation.state === "sent" ? (
+              <Button
+                size="slim"
+                onClick={() => openEmailModal(quotation)}
+              >
+                Send Email
+              </Button>
+            ) : null}
 
             {quotation.state === "sent" ? (
               <Button
@@ -390,47 +392,25 @@ export function QuotationsListPage() {
         </IndexSurface>
       </BlockStack>
 
-      {/* Send Email Modal */}
-      <Modal
+      <SendDocumentEmailModal
         open={emailModalOpen}
         onClose={() => setEmailModalOpen(false)}
-        title={`Send Commercial Quotation ${selectedQuote?.number} to Customer`}
-        primaryAction={{
-          content: "Dispatch Quotation Email",
-          loading: emailSending,
-          onAction: () => void handleSendEmail(),
+        title={`Send quotation ${selectedQuote?.number ?? ""} to customer`}
+        pdfLabel={selectedQuote ? `quotation-${selectedQuote.number}.pdf` : undefined}
+        loading={emailSending}
+        documentType="quotation"
+        recipient={selectedQuote?.customerEmail ?? ""}
+        placeholders={{
+          number: selectedQuote?.number ?? "",
+          customerName: selectedQuote?.customerName ?? "Customer",
+          companyName: "",
+          total: selectedQuote
+            ? formatQuotationAmount(selectedQuote, formatOrgMoney, resolveCurrency)
+            : "",
         }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setEmailModalOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <TextField
-              autoComplete="email"
-              label="Recipient Customer Email"
-              value={emailRecipient}
-              onChange={setEmailRecipient}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Subject"
-              value={emailSubject}
-              onChange={setEmailSubject}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Body Preview"
-              multiline={5}
-              value={emailBody}
-              onChange={setEmailBody}
-            />
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+        primaryActionLabel="Dispatch quotation email"
+        onSend={handleSendEmail}
+      />
 
       <Modal
         open={deleteQuote !== null}

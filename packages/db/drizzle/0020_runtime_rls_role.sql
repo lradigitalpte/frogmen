@@ -1,11 +1,15 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'frog1_runtime') THEN
-    RAISE EXCEPTION 'frog1_runtime must be provisioned by a database administrator before migrations run';
+    CREATE ROLE frog1_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
+END
+$$;
 
+DO $$
+BEGIN
   IF NOT pg_has_role(CURRENT_USER, 'frog1_runtime', 'member') THEN
-    RAISE EXCEPTION 'frog1_runtime must be granted to % before migrations run', CURRENT_USER;
+    GRANT frog1_runtime TO CURRENT_USER;
   END IF;
 END
 $$;

@@ -126,6 +126,20 @@ export class InvoicesController {
     return this.invoicesService.archiveCancelledInvoice(this.orgId(session), id);
   }
 
+  @Post(":id/send-email")
+  sendEmail(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { recipientEmail: string; subject: string; body: string },
+  ) {
+    return this.invoicesService.sendEmail(
+      this.orgId(session),
+      id,
+      session.user.id,
+      body,
+    );
+  }
+
   @Post(":id/cancellation-email")
   sendCancellationEmail(
     @Session() session: UserSession,

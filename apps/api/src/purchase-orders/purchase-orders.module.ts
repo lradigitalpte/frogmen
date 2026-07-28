@@ -8,6 +8,8 @@ import { ProductUnitsModule } from "../product-units/product-units.module";
 import { PurchaseOrdersController } from "./purchase-orders.controller";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 import { DocumentsModule } from "../documents/documents.module";
+import { MailModule } from "../mail/mail.module";
+import { SettingsModule } from "../settings/settings.module";
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { DocumentsModule } from "../documents/documents.module";
     StockModule,
     ProductUnitsModule,
     DocumentsModule,
+    MailModule,
+    SettingsModule,
   ],
   controllers: [PurchaseOrdersController],
   providers: [PurchaseOrdersService],

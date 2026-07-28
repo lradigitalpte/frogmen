@@ -24,6 +24,7 @@ import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { AppPage } from "@/components/layout/page";
+import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { RegisterPaymentModal } from "@/components/invoices/register-payment-modal";
 import {
@@ -35,6 +36,7 @@ import {
   registerInvoicePayment,
   recordCreditNoteRefund,
   resetInvoiceToDraft,
+  sendInvoiceEmail,
   sendInvoiceCancellationEmail,
   type Invoice,
 } from "@/lib/invoices-api";
@@ -69,6 +71,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteProcessing, setDeleteProcessing] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
@@ -234,15 +237,35 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
     }
   }
 
-  async function handleSendCancellationEmail() {
+  async function handleSendCancellationEmail(input: {
+    recipientEmail: string;
+    subject: string;
+    body: string;
+  }) {
     if (!invoice) return;
     setEmailSending(true);
     try {
-      await sendInvoiceCancellationEmail(invoice.id, {
-        recipientEmail: emailTo, subject: emailSubject, body: emailBody,
-      });
+      await sendInvoiceCancellationEmail(invoice.id, input);
       setEmailOpen(false);
       setSuccessBanner("Cancellation email processed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Email delivery failed");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  async function handleSendInvoiceEmail(input: {
+    recipientEmail: string;
+    subject: string;
+    body: string;
+  }) {
+    if (!invoice) return;
+    setEmailSending(true);
+    try {
+      await sendInvoiceEmail(invoice.id, input);
+      setSendInvoiceOpen(false);
+      setSuccessBanner(`Invoice ${invoice.number} emailed to ${input.recipientEmail}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Email delivery failed");
     } finally {
@@ -360,11 +383,13 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                 </Button>
               ) : null}
               <Button size="slim" onClick={() => setPdfModalOpen(true)}>
-                Print & Send
-              </Button>
-              <Button size="slim" onClick={() => setPdfModalOpen(true)}>
                 Preview
               </Button>
+              {invoice.status === "posted" || invoice.status === "paid" ? (
+                <Button size="slim" onClick={() => setSendInvoiceOpen(true)}>
+                  Send by email
+                </Button>
+              ) : null}
               <Button
                 size="slim"
                 variant={canPay ? "primary" : "secondary"}
@@ -746,27 +771,45 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
         </Modal.Section>
       </Modal>
 
-      <Modal
-        open={emailOpen}
-        title="Send cancellation email"
-        onClose={() => setEmailOpen(false)}
-        primaryAction={{
-          content: "Send email",
-          loading: emailSending,
-          disabled: !emailTo || !emailSubject || !emailBody,
-          onAction: () => void handleSendCancellationEmail(),
+      <SendDocumentEmailModal
+        open={sendInvoiceOpen}
+        onClose={() => setSendInvoiceOpen(false)}
+        title={`Send invoice ${invoice.number}`}
+        pdfLabel={`invoice-${invoice.number}.pdf`}
+        loading={emailSending}
+        documentType="invoice"
+        recipient={invoice.customerEmail}
+        placeholders={{
+          number: invoice.number,
+          customerName: invoice.customerName,
+          companyName: "",
+          total: fmt(invoice.amountTotal),
+          dueDate: invoice.dueDate,
+          outstanding: fmt(Math.max(invoice.amountTotal - (invoice.amountPaid ?? 0), 0)),
         }}
-        secondaryActions={[{ content: "Skip", onAction: () => setEmailOpen(false) }]}
-      >
-        <Modal.Section>
-          <BlockStack gap="300">
-            <TextField autoComplete="email" label="Recipient" type="email" value={emailTo} onChange={setEmailTo} />
-            <TextField autoComplete="off" label="Subject" value={emailSubject} onChange={setEmailSubject} />
-            <TextField autoComplete="off" label="Message" multiline={8} value={emailBody} onChange={setEmailBody} />
-            <Text as="p" tone="subdued">Sending is optional. Cancellation remains complete if email delivery fails.</Text>
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+        primaryActionLabel="Send invoice email"
+        onSend={handleSendInvoiceEmail}
+      />
+
+      <SendDocumentEmailModal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        title="Send cancellation email"
+        pdfLabel={invoice.creditNote ? `${invoice.creditNote.number}.pdf` : undefined}
+        loading={emailSending}
+        documentType="quotation"
+        recipient={emailTo}
+        initialSubject={emailSubject}
+        initialBody={emailBody}
+        placeholders={{
+          number: invoice.number,
+          customerName: invoice.customerName,
+          companyName: "",
+          total: fmt(invoice.amountTotal),
+        }}
+        primaryActionLabel="Send cancellation email"
+        onSend={handleSendCancellationEmail}
+      />
 
       <Modal
         open={refundOpen}

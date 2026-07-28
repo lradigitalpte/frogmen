@@ -25,10 +25,11 @@ import {
   paymentReminderRules,
   type Database,
 } from '@frog1/db';
-import { computeOutstandingInBase } from "@frog1/shared";
+import { computeOutstandingInBase, applyTemplatePlaceholders } from "@frog1/shared";
 import { DATABASE } from '../database/database.constants';
 import { MailService } from '../mail/mail.service';
 import { ExchangeRatesService } from '../currencies/exchange-rates.service';
+import { SettingsService } from '../settings/settings.service';
 
 export interface InvoiceAlert {
   id: string;
@@ -141,6 +142,7 @@ export class AlertsService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly mailService: MailService,
     private readonly exchangeRatesService: ExchangeRatesService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   private mapAutomationRule(
@@ -533,10 +535,16 @@ export class AlertsService {
       .select({
         id: invoices.id,
         number: invoices.number,
+        customerName: customers.name,
         customerEmail: customers.email,
+        amountTotal: invoices.amountTotal,
+        amountPaid: invoices.amountPaid,
+        dueDate: invoices.dueDate,
+        currencyCode: currencies.code,
       })
       .from(invoices)
       .innerJoin(customers, eq(customers.id, invoices.customerId))
+      .innerJoin(currencies, eq(currencies.id, invoices.currencyId))
       .where(
         and(
           eq(invoices.id, dto.alertId),
@@ -556,20 +564,39 @@ export class AlertsService {
       throw new NotFoundException('Customer email is required to send a reminder');
     }
 
-    const subject = `[PAYMENT REMINDER] Invoice ${invoice.number}`;
-    const text = [
-      dto.customMessage,
-      '',
-      `Payment reminder for invoice ${invoice.number}.`,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const company = await this.settingsService.getCompany(organizationId);
+    const templates = await this.settingsService.getDocumentTemplates(organizationId);
+    const outstanding = Math.max(
+      Number(invoice.amountTotal) - Number(invoice.amountPaid),
+      0,
+    );
+    const placeholders = {
+      number: invoice.number,
+      customerName: invoice.customerName ?? "Customer",
+      companyName: company.name,
+      total: String(invoice.amountTotal),
+      dueDate: invoice.dueDate ?? "",
+      outstanding: outstanding.toFixed(2),
+    };
 
-    await this.mailService.sendMail({
+    const subject = applyTemplatePlaceholders(
+      templates.reminderEmailSubject,
+      placeholders,
+    );
+    const bodyText =
+      dto.customMessage?.trim() ||
+      applyTemplatePlaceholders(templates.reminderEmailBodyIntro, placeholders);
+
+    const delivery = await this.mailService.sendBrandedMail({
       to: recipientEmail,
       subject,
-      text,
+      title: `Payment reminder: ${invoice.number}`,
+      bodyText,
     });
+
+    if (!delivery.delivered) {
+      throw new Error('Payment reminder email could not be delivered');
+    }
 
     const [log] = await this.db
       .insert(paymentReminderLogs)
@@ -578,7 +605,7 @@ export class AlertsService {
         invoiceId: invoice.id,
         recipientEmail,
         subject,
-        customMessage: dto.customMessage ?? text,
+        customMessage: dto.customMessage ?? bodyText,
       })
       .returning();
 

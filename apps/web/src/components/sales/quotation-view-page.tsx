@@ -18,10 +18,9 @@ import {
 } from "@shopify/polaris";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppPage } from "@/components/layout/page";
+import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { formatMoney } from "@/components/sales/format-money";
-import { getCustomer } from "@/lib/customers-api";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
 import {
@@ -77,9 +76,6 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
 
   // Email Send Modal State
   const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [emailRecipient, setEmailRecipient] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
   const [emailSending, setEmailSending] = useState(false);
   const [emailSuccessBanner, setEmailSuccessBanner] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -98,28 +94,15 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
       setLoading(true);
       try {
         const quotationResult = await getQuotation(quotationId);
-        const [currencies, customer] = await Promise.all([
+        const [currencies] = await Promise.all([
           listCurrencies(),
-          getCustomer(quotationResult.customerId).catch(() => null),
         ]);
 
         const resolvedCurrency =
           currencies.find((item) => item.id === quotationResult.currencyId) ?? null;
-        const customerEmail = customer?.email ?? quotationResult.customerEmail ?? "";
-        const customerName = customer?.name ?? quotationResult.customerName ?? "Customer";
-        const totalLabel = formatMoney(
-          quotationResult.amountTotal,
-          resolvedCurrency?.code,
-          resolvedCurrency?.decimalPlaces,
-        );
 
         setQuotation(quotationResult);
         setCurrency(resolvedCurrency);
-        setEmailRecipient(customerEmail);
-        setEmailSubject(`Quotation ${quotationResult.number}`);
-        setEmailBody(
-          `Dear ${customerName},\n\nPlease find attached quotation ${quotationResult.number} for your review.\n\nTotal Amount: ${totalLabel}\n\nBest regards,\nFrogmen Sales Operations`,
-        );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load quotation");
       } finally {
@@ -191,12 +174,23 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
     }
   }
 
-  async function handleSendEmail() {
+  async function handleSendEmail(input: {
+    recipientEmail: string;
+    subject: string;
+    body: string;
+  }) {
     if (!quotation) return;
     setEmailSending(true);
     try {
-      await sendQuotationEmail(quotation.id, emailRecipient, emailSubject, emailBody);
-      setEmailSuccessBanner(`Sales Quotation PDF email successfully sent to ${emailRecipient}. Status updated to Quotation Sent.`);
+      await sendQuotationEmail(
+        quotation.id,
+        input.recipientEmail,
+        input.subject,
+        input.body,
+      );
+      setEmailSuccessBanner(
+        `Sales Quotation PDF email successfully sent to ${input.recipientEmail}. Status updated to Quotation Sent.`,
+      );
       setEmailModalOpen(false);
       const updated = await getQuotation(quotation.id);
       setQuotation(updated);
@@ -265,10 +259,14 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
               },
             ]
           : []),
-        {
-          content: "Send by Email",
-          onAction: () => setEmailModalOpen(true),
-        },
+        ...(quotation.state === "draft" || quotation.state === "sent"
+          ? [
+              {
+                content: "Send by Email",
+                onAction: () => setEmailModalOpen(true),
+              },
+            ]
+          : []),
         {
           content: "Preview PDF",
           onAction: () => setPdfModalOpen(true),
@@ -657,51 +655,23 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
         title="Quotation PDF preview"
       />
 
-      {/* ── Send Customer Email Modal ── */}
-      <Modal
+      <SendDocumentEmailModal
         open={emailModalOpen}
         onClose={() => setEmailModalOpen(false)}
-        title={`Send Sales Quotation ${quotation.number} to Customer`}
-        primaryAction={{
-          content: "Dispatch Quotation Email",
-          loading: emailSending,
-          onAction: () => void handleSendEmail(),
+        title={`Send sales quotation ${quotation.number} to customer`}
+        pdfLabel={`quotation-${quotation.number}.pdf`}
+        loading={emailSending}
+        documentType="quotation"
+        recipient={quotation.customerEmail ?? ""}
+        placeholders={{
+          number: quotation.number,
+          customerName: quotation.customerName ?? "Customer",
+          companyName: "",
+          total: formatMoney(amountTotal, currencyCode, decimalPlaces),
         }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setEmailModalOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <Banner tone="info">
-              Attached File: Sales_Quotation_{quotation.number}.pdf (142 KB PDF Document)
-            </Banner>
-
-            <TextField
-              autoComplete="email"
-              label="Recipient Customer Email"
-              value={emailRecipient}
-              onChange={setEmailRecipient}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Subject"
-              value={emailSubject}
-              onChange={setEmailSubject}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Body Preview"
-              multiline={6}
-              value={emailBody}
-              onChange={setEmailBody}
-            />
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
+        primaryActionLabel="Dispatch quotation email"
+        onSend={handleSendEmail}
+      />
 
       {/* ── Interactive Email Log Detail Modal ── */}
       <Modal

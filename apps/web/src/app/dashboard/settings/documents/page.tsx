@@ -304,14 +304,24 @@ export default function DocumentTemplatesSettingsPage() {
                 <BlockStack gap="400">
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">Email defaults</Text>
-                    <Text as="p" tone="subdued">Default message used when sending a quotation or invoice.</Text>
+                    <Text as="p" tone="subdued">Default messages used when sending quotations, invoices, purchase orders, and payment reminders.</Text>
                   </BlockStack>
                   <Banner tone="info">
-                    <p>Available placeholders: {"{{number}}"}, {"{{customerName}}"}, {"{{companyName}}"}, {"{{total}}"}</p>
+                    <p>Available placeholders: {"{{number}}"}, {"{{customerName}}"}, {"{{companyName}}"}, {"{{total}}"}, {"{{dueDate}}"}, {"{{outstanding}}"}</p>
                   </Banner>
                   <FormLayout>
-                    <TextField autoComplete="off" label="Email subject" value={templates.emailSubject} onChange={(value) => updateTemplate("emailSubject", value)} />
-                    <TextField autoComplete="off" label="Email intro body" multiline={8} value={templates.emailBodyIntro} onChange={(value) => updateTemplate("emailBodyIntro", value)} />
+                    <Text as="h3" variant="headingSm">Quotation</Text>
+                    <TextField autoComplete="off" label="Quotation email subject" value={templates.emailSubject} onChange={(value) => updateTemplate("emailSubject", value)} />
+                    <TextField autoComplete="off" label="Quotation email body" multiline={6} value={templates.emailBodyIntro} onChange={(value) => updateTemplate("emailBodyIntro", value)} />
+                    <Text as="h3" variant="headingSm">Invoice</Text>
+                    <TextField autoComplete="off" label="Invoice email subject" value={templates.invoiceEmailSubject} onChange={(value) => updateTemplate("invoiceEmailSubject", value)} />
+                    <TextField autoComplete="off" label="Invoice email body" multiline={6} value={templates.invoiceEmailBodyIntro} onChange={(value) => updateTemplate("invoiceEmailBodyIntro", value)} />
+                    <Text as="h3" variant="headingSm">Purchase order</Text>
+                    <TextField autoComplete="off" label="PO email subject" value={templates.poEmailSubject} onChange={(value) => updateTemplate("poEmailSubject", value)} />
+                    <TextField autoComplete="off" label="PO email body" multiline={6} value={templates.poEmailBodyIntro} onChange={(value) => updateTemplate("poEmailBodyIntro", value)} />
+                    <Text as="h3" variant="headingSm">Payment reminder</Text>
+                    <TextField autoComplete="off" label="Reminder email subject" value={templates.reminderEmailSubject} onChange={(value) => updateTemplate("reminderEmailSubject", value)} />
+                    <TextField autoComplete="off" label="Reminder email body" multiline={6} value={templates.reminderEmailBodyIntro} onChange={(value) => updateTemplate("reminderEmailBodyIntro", value)} />
                   </FormLayout>
                 </BlockStack>
               ) : null}

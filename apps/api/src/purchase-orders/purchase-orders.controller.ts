@@ -143,6 +143,20 @@ export class PurchaseOrdersController {
     );
   }
 
+  @Post("v1/purchase-orders/:id/send-email")
+  sendEmail(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { recipientEmail: string; subject: string; body: string },
+  ) {
+    return this.purchaseOrdersService.sendEmail(
+      this.orgId(session),
+      id,
+      this.userId(session),
+      body,
+    );
+  }
+
   @Post("v1/purchase-orders/:id/confirm")
   confirm(@Session() session: UserSession, @Param("id") id: string) {
     return this.purchaseOrdersService.confirm(

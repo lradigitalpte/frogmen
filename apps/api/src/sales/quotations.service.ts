@@ -885,10 +885,11 @@ export class QuotationsService {
       orderId,
     );
 
-    await this.mail.sendMail({
+    const delivery = await this.mail.sendBrandedMail({
       to: recipientEmail,
       subject,
-      text,
+      title: `Quotation ${order.number}`,
+      bodyText: text,
       attachments: [
         {
           filename: `quotation-${order.number}.pdf`,
@@ -927,6 +928,7 @@ export class QuotationsService {
     return {
       success: true,
       sentAt: new Date().toISOString(),
+      delivery,
     };
   }
 

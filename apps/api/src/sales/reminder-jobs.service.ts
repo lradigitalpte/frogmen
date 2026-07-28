@@ -17,9 +17,11 @@ import {
   branches,
   type Database,
 } from '@frog1/db';
+import { applyTemplatePlaceholders } from '@frog1/shared';
 import { DATABASE, RAW_DATABASE } from '../database/database.constants';
 import { databaseContext } from '../database/database-context';
 import { MailService } from '../mail/mail.service';
+import { SettingsService } from '../settings/settings.service';
 
 interface InvoiceCandidate {
   id: string;
@@ -67,6 +69,7 @@ export class ReminderJobsService implements OnModuleInit {
     @Inject(RAW_DATABASE) private readonly rawDb: Database,
     private readonly mailService: MailService,
     private readonly config: ConfigService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   onModuleInit() {
@@ -273,7 +276,16 @@ export class ReminderJobsService implements OnModuleInit {
       return 0;
     }
 
-    await this.mailService.sendMail({ to: recipient, subject, text });
+    const delivery = await this.mailService.sendBrandedMail({
+      to: recipient,
+      subject,
+      title: `Weekly receivables digest (${overdue.length} overdue)`,
+      bodyText: text,
+    });
+
+    if (!delivery.delivered) {
+      return 0;
+    }
 
     await this.db.insert(paymentReminderLogs).values({
       organizationId: rule.organizationId,
@@ -310,12 +322,24 @@ export class ReminderJobsService implements OnModuleInit {
       0,
     );
 
+    const company = await this.settingsService.getCompany(rule.organizationId);
+    const templates = await this.settingsService.getDocumentTemplates(
+      rule.organizationId,
+    );
+
     const subject =
       rule.ruleType === 'internal_follow_up'
         ? `[FOLLOW-UP] ${invoice.customerName} — invoice ${invoice.number}`
-        : `[PAYMENT REMINDER] Invoice ${invoice.number}`;
+        : applyTemplatePlaceholders(templates.reminderEmailSubject, {
+            number: invoice.number,
+            customerName: invoice.customerName,
+            companyName: company.name,
+            total: String(invoice.amountTotal),
+            dueDate: invoice.dueDate ?? '',
+            outstanding: outstanding.toFixed(2),
+          });
 
-    const text =
+    const bodyText =
       rule.ruleType === 'internal_follow_up'
         ? [
             'Internal follow-up reminder',
@@ -329,18 +353,28 @@ export class ReminderJobsService implements OnModuleInit {
             '',
             'Please contact the client and record any payment updates.',
           ].join('\n')
-        : [
-            `Dear ${invoice.customerName},`,
-            '',
-            `This is a friendly reminder that invoice ${invoice.number} for ${formatMoney(outstanding, invoice.currencyCode)} is due on ${invoice.dueDate ?? "—"}.`,
-            '',
-            'Please arrange payment at your earliest convenience or let us know if you have already sent it.',
-            '',
-            'Thank you,',
-            'Frogmen Finance Team',
-          ].join('\n');
+        : applyTemplatePlaceholders(templates.reminderEmailBodyIntro, {
+            number: invoice.number,
+            customerName: invoice.customerName,
+            companyName: company.name,
+            total: String(invoice.amountTotal),
+            dueDate: invoice.dueDate ?? '',
+            outstanding: formatMoney(outstanding, invoice.currencyCode),
+          });
 
-    await this.mailService.sendMail({ to: recipient, subject, text });
+    const delivery = await this.mailService.sendBrandedMail({
+      to: recipient,
+      subject,
+      title:
+        rule.ruleType === 'internal_follow_up'
+          ? `Internal follow-up: ${invoice.number}`
+          : `Payment reminder: ${invoice.number}`,
+      bodyText,
+    });
+
+    if (!delivery.delivered) {
+      return false;
+    }
 
     await this.db.insert(paymentReminderLogs).values({
       organizationId: rule.organizationId,
@@ -348,7 +382,7 @@ export class ReminderJobsService implements OnModuleInit {
       ruleId: rule.id,
       recipientEmail: recipient,
       subject,
-      customMessage: text,
+      customMessage: bodyText,
     });
 
     return true;

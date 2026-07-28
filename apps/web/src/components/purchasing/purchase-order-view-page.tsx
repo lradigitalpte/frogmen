@@ -21,6 +21,7 @@ import { Building2, Package, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { PurchaseOrderNextSteps } from "@/components/purchasing/purchase-order-next-steps";
 import { PurchaseOrderWorkflowPanel } from "@/components/purchasing/purchase-order-workflow-panel";
@@ -39,6 +40,7 @@ import {
   confirmPurchaseOrder,
   deletePurchaseOrder,
   getPurchaseOrder,
+  sendPurchaseOrderEmail,
   type PurchaseActivity,
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
@@ -117,6 +119,8 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
   const [noteText, setNoteText] = useState("");
 
   async function load() {
@@ -236,6 +240,14 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
           content: "Preview PDF",
           onAction: () => setPreviewOpen(true),
         },
+        ...(order.state !== "cancelled"
+          ? [
+              {
+                content: "Send to vendor",
+                onAction: () => setEmailOpen(true),
+              },
+            ]
+          : []),
         ...(canCancel
           ? [
               {
@@ -798,6 +810,36 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
           </Text>
         </Modal.Section>
       </Modal>
+
+      <SendDocumentEmailModal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        title={`Send purchase order ${order.number}`}
+        pdfLabel={`purchase-order-${order.number}.pdf`}
+        loading={emailSending}
+        documentType="purchase_order"
+        recipient={order.vendorEmail ?? ""}
+        placeholders={{
+          number: order.number,
+          customerName: order.vendorName ?? "Vendor",
+          companyName: "",
+          total: formatMoney(order.amountTotal, order.currencyCode),
+        }}
+        primaryActionLabel="Send PO email"
+        onSend={async (input) => {
+          setEmailSending(true);
+          try {
+            await sendPurchaseOrderEmail(order.id, input);
+            setEmailOpen(false);
+            showSuccess(`Purchase order emailed to ${input.recipientEmail}.`);
+            await load();
+          } catch (err) {
+            showError(err instanceof Error ? err.message : "Failed to send email");
+          } finally {
+            setEmailSending(false);
+          }
+        }}
+      />
 
       <DocumentPreviewModal
         documentType="purchase_order"

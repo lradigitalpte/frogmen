@@ -10,9 +10,7 @@ import {
   IndexTable,
   InlineStack,
   Link,
-  Modal,
   Text,
-  TextField,
   useSetIndexFiltersMode,
 } from "@shopify/polaris";
 import { Calculator, FileCheck, ShoppingCart } from "lucide-react";
@@ -29,7 +27,6 @@ import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
 import {
   listQuotations,
-  sendQuotationEmail,
   type Quotation,
 } from "@/lib/quotations-api";
 
@@ -74,14 +71,6 @@ export function SalesOrdersListPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
-
-  // Email Modal State
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<Quotation | null>(null);
-  const [emailRecipient, setEmailRecipient] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
-  const [emailSending, setEmailSending] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
@@ -153,31 +142,6 @@ export function SalesOrdersListPage() {
     );
   }, [orders]);
 
-  function openEmailModal(order: Quotation) {
-    setSelectedOrder(order);
-    setEmailRecipient(order.customerEmail || "mike@divingpro.com");
-    setEmailSubject(`Confirmed Sales Order ${order.number} - Subsea Operations`);
-    setEmailBody(
-      `Dear ${order.customerName || "mike"},\n\nPlease find attached confirmed Sales Order ${order.number} for your subsea equipment order.\n\nTotal Order Value: ${formatCurrency(order.amountTotal, order.currencyCode, formatOrgMoney)}\n\nBest regards,\nFrogmen Sales Operations`
-    );
-    setEmailModalOpen(true);
-  }
-
-  async function handleSendEmail() {
-    if (!selectedOrder) return;
-    setEmailSending(true);
-    try {
-      await sendQuotationEmail(selectedOrder.id, emailRecipient, emailSubject, emailBody);
-      setActionSuccess(`Sales Order PDF email dispatched to ${emailRecipient}`);
-      setEmailModalOpen(false);
-      void loadOrders();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send email");
-    } finally {
-      setEmailSending(false);
-    }
-  }
-
   const rowMarkup = orders.map((order, index) => {
     const viewHref = `/dashboard/sales/quotations/${order.id}`;
 
@@ -193,7 +157,7 @@ export function SalesOrdersListPage() {
         <IndexTable.Cell>
           <BlockStack gap="050">
             <Text as="span" fontWeight="semibold">
-              {order.customerName ?? "mike"}
+              {order.customerName ?? "Customer"}
             </Text>
             <Text as="span" tone="subdued" variant="bodySm">
               Ref: {order.customerReference || "Not provided"}
@@ -224,13 +188,6 @@ export function SalesOrdersListPage() {
               }
             >
               {order.invoiceStatus === "invoiced" ? "View Order" : "Create Invoice"}
-            </Button>
-
-            <Button
-              size="slim"
-              onClick={() => openEmailModal(order)}
-            >
-              Send Email
             </Button>
           </InlineStack>
         </IndexTable.Cell>
@@ -335,52 +292,6 @@ export function SalesOrdersListPage() {
           </IndexTable>
         </IndexSurface>
       </BlockStack>
-
-      {/* Send Email Modal */}
-      <Modal
-        open={emailModalOpen}
-        onClose={() => setEmailModalOpen(false)}
-        title={`Send Sales Order PDF ${selectedOrder?.number} to Customer`}
-        primaryAction={{
-          content: "Dispatch Order Email",
-          loading: emailSending,
-          onAction: () => void handleSendEmail(),
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setEmailModalOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <Banner tone="info">
-              Attached File: Sales_Order_{selectedOrder?.number}.pdf (142 KB PDF Document)
-            </Banner>
-
-            <TextField
-              autoComplete="email"
-              label="Recipient Customer Email"
-              value={emailRecipient}
-              onChange={setEmailRecipient}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Subject"
-              value={emailSubject}
-              onChange={setEmailSubject}
-            />
-            <TextField
-              autoComplete="off"
-              label="Email Body Preview"
-              multiline={5}
-              value={emailBody}
-              onChange={setEmailBody}
-            />
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
     </AppPage>
   );
 }

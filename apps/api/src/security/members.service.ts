@@ -20,6 +20,7 @@ import {
   type Database,
 } from "@frog1/db";
 import { DATABASE } from "../database/database.constants";
+import { escapeHtml } from "@frog1/shared";
 import { MailService } from "../mail/mail.service";
 import { normalizeRole, ROLES, type AppRole } from "./permissions";
 import type { SecurityContext } from "./security-context";
@@ -371,42 +372,23 @@ export class MembersService {
         ? "All branches"
         : branchRows.map((branch) => branch.name).join(", ") || "Assigned branches";
     const expiresText = "This invitation expires in 7 days.";
-    const safeOrganizationName = escapeHtml(organizationName);
-    const safeInviterName = escapeHtml(inviterName);
     const safeRoleLabel = escapeHtml(roleLabel);
     const safeBranchLabel = escapeHtml(branchLabel);
 
     try {
-      return await this.mail.sendMail({
+      return await this.mail.sendBrandedMail({
         to: recipientEmail,
         subject: `You’re invited to ${organizationName} on FrogmenDash`,
-        text: [
-          `${inviterName} invited you to join ${organizationName} on FrogmenDash.`,
-          `Role: ${roleLabel}`,
-          `Branch access: ${branchLabel}`,
-          "",
-          `Accept invitation: ${inviteUrl}`,
-          expiresText,
-        ].join("\n"),
-        html: `
-          <div style="background:#f4f7f5;padding:32px 16px;font-family:Inter,Arial,sans-serif;color:#17201c">
-            <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #dfe7e3;border-radius:16px;overflow:hidden">
-              <div style="padding:28px 30px;background:linear-gradient(135deg,#047857,#10b981);color:#fff">
-                <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">FrogmenDash</div>
-                <h1 style="margin:10px 0 0;font-size:25px;line-height:1.25">Join ${safeOrganizationName}</h1>
-              </div>
-              <div style="padding:30px">
-                <p style="margin:0 0 20px;font-size:16px;line-height:1.6">${safeInviterName} invited you to collaborate in their organization workspace.</p>
+        title: `Join ${organizationName}`,
+        bodyText: `${inviterName} invited you to collaborate in their organization workspace.`,
+        extraHtml: `
                 <div style="padding:16px;border-radius:12px;background:#f3f8f5">
                   <p style="margin:0 0 8px"><strong>Role:</strong> ${safeRoleLabel}</p>
                   <p style="margin:0"><strong>Branch access:</strong> ${safeBranchLabel}</p>
-                </div>
-                <a href="${inviteUrl}" style="display:inline-block;margin:24px 0 18px;padding:12px 20px;border-radius:9px;background:#059669;color:#fff;text-decoration:none;font-weight:700">Accept invitation</a>
-                <p style="margin:0;color:#66736d;font-size:13px">${expiresText}</p>
-              </div>
-            </div>
-          </div>
-        `,
+                </div>`,
+        ctaLabel: "Accept invitation",
+        ctaUrl: inviteUrl,
+        footerNote: expiresText,
       });
     } catch (error) {
       return {
@@ -417,18 +399,4 @@ export class MembersService {
       };
     }
   }
-}
-
-function escapeHtml(value: string) {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      })[character]!,
-  );
 }
