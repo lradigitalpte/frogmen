@@ -20,6 +20,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
+import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";

@@ -10,6 +10,7 @@ import {
   IndexTable,
   InlineStack,
   Link,
+  Modal,
   Text,
   useSetIndexFiltersMode,
 } from "@shopify/polaris";
