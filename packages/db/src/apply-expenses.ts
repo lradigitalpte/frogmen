@@ -83,7 +83,20 @@ export async function applyExpensesIfNeeded(connectionString: string) {
         am.organization_id,
         am.branch_id,
         am.id,
-        COALESCE(NULLIF(am.reference, ''), 'LEGACY-' || am.id::text),
+        COALESCE(
+          CASE
+            WHEN NULLIF(TRIM(am.reference), '') IS NULL THEN NULL
+            WHEN EXISTS (
+              SELECT 1
+              FROM expenses e
+              WHERE e.organization_id = am.organization_id
+                AND e.number = TRIM(am.reference)
+                AND e.deleted_at IS NULL
+            ) THEN 'LEGACY-' || am.id::text
+            ELSE TRIM(am.reference)
+          END,
+          'LEGACY-' || am.id::text
+        ),
         am.name,
         am.reference,
         aml.debit,
@@ -102,6 +115,7 @@ export async function applyExpensesIfNeeded(connectionString: string) {
         AND NOT EXISTS (
           SELECT 1 FROM expenses e WHERE e.account_move_id = am.id
         )
+      ON CONFLICT ("organization_id", "number") WHERE "deleted_at" IS NULL DO NOTHING
     `;
   } finally {
     await sql.end();
