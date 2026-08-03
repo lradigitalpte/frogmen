@@ -8,6 +8,7 @@ import {
   EmptyState,
   InlineGrid,
   InlineStack,
+  Modal,
   Tag,
   Text,
   TextField,
@@ -18,6 +19,8 @@ import {
   archiveProductTag,
   createProductTag,
   listProductTags,
+  seedDefaultProductTags,
+  updateProductTag,
 } from "@/lib/product-tags-api";
 import type { ProductTag } from "@/types/product-tag";
 
@@ -30,6 +33,9 @@ export function ProductTagsPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ProductTag | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 250);
@@ -46,6 +52,15 @@ export function ProductTagsPage() {
         perPage: 200,
       });
       setTags(result.data);
+
+      if (result.data.length === 0 && !debouncedSearch) {
+        try {
+          const seeded = await seedDefaultProductTags();
+          setTags(seeded.data);
+        } catch {
+          // ignore seed failures; user can add manually
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tags");
     } finally {
@@ -90,6 +105,29 @@ export function ProductTagsPage() {
       await loadTags();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete tag");
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    const name = editName.trim();
+    if (!name) {
+      setError("Enter a tag name");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError(null);
+
+    try {
+      await updateProductTag(editing.id, name);
+      setEditing(null);
+      setSuccess(`Updated “${name}”`);
+      await loadTags();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update tag");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -182,7 +220,18 @@ export function ProductTagsPage() {
               <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="200">
                 {tags.map((tag) => (
                   <div key={tag.id} className="product-tag-row">
-                    <Tag onRemove={() => void handleArchive(tag)}>{tag.name}</Tag>
+                    <InlineStack gap="150">
+                      <Tag onRemove={() => void handleArchive(tag)}>{tag.name}</Tag>
+                      <Button
+                        size="slim"
+                        onClick={() => {
+                          setEditing(tag);
+                          setEditName(tag.name);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </InlineStack>
                   </div>
                 ))}
               </InlineGrid>
@@ -190,6 +239,29 @@ export function ProductTagsPage() {
           </BlockStack>
         </Card>
       </BlockStack>
+
+      <Modal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title="Rename tag"
+        primaryAction={{
+          content: "Save",
+          loading: savingEdit,
+          onAction: () => void handleSaveEdit(),
+        }}
+        secondaryActions={[
+          { content: "Cancel", onAction: () => setEditing(null) },
+        ]}
+      >
+        <Modal.Section>
+          <TextField
+            autoComplete="off"
+            label="Tag name"
+            value={editName}
+            onChange={setEditName}
+          />
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

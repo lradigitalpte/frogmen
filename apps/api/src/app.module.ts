@@ -23,6 +23,8 @@ import { ProductTagsModule } from "./product-tags/product-tags.module";
 import { ProductCategoriesModule } from "./product-categories/product-categories.module";
 import { WarrantyModule } from "./warranty/warranty.module";
 import { RovInspectionModule } from "./rov-inspection/rov-inspection.module";
+import { BankAccountsModule } from "./bank-accounts/bank-accounts.module";
+import { ExpensesModule } from "./expenses/expenses.module";
 import { SecurityModule } from "./security/security.module";
 
 @Module({
@@ -42,6 +44,8 @@ import { SecurityModule } from "./security/security.module";
     SalesModule,
     InvoicesModule,
     AccountingModule,
+    BankAccountsModule,
+    ExpensesModule,
     VendorsModule,
     PurchaseOrdersModule,
     ProductTagsModule,

@@ -106,4 +106,50 @@ export class AccountingProvisionerService {
 
     return journal ?? null;
   }
+
+  async allocateBankGlAccount(organizationId: string, displayName: string) {
+    await this.ensureProvisioned(organizationId);
+
+    const existingAccounts = await this.db
+      .select({ id: glAccounts.id, code: glAccounts.code })
+      .from(glAccounts)
+      .where(eq(glAccounts.organizationId, organizationId));
+
+    const usedCodes = new Set(existingAccounts.map((account) => account.code));
+    let nextSuffix = 2;
+    while (usedCodes.has(`1014${String(nextSuffix).padStart(2, "0")}`)) {
+      nextSuffix += 1;
+      if (nextSuffix > 99) {
+        throw new Error("No available bank GL account codes remain");
+      }
+    }
+
+    const code = `1014${String(nextSuffix).padStart(2, "0")}`;
+    const [account] = await this.db
+      .insert(glAccounts)
+      .values({
+        organizationId,
+        code,
+        name: displayName.slice(0, 255),
+        accountType: "asset_current",
+      })
+      .returning();
+
+    return account;
+  }
+
+  async getAccountById(organizationId: string, accountId: string) {
+    const [account] = await this.db
+      .select()
+      .from(glAccounts)
+      .where(
+        and(
+          eq(glAccounts.organizationId, organizationId),
+          eq(glAccounts.id, accountId),
+        ),
+      )
+      .limit(1);
+
+    return account ?? null;
+  }
 }

@@ -25,6 +25,7 @@ import type { Product, ProductTab } from "@/types/product";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 
@@ -151,26 +152,32 @@ export function ProductsListPage() {
   const rowMarkup = products.map((product, index) => (
     <IndexTable.Row id={product.id} key={product.id} position={index}>
       <IndexTable.Cell>
-        <BlockStack gap="100">
-          <Link
-            dataPrimaryLink
-            url={`/dashboard/inventory/products/${product.id}`}
-          >
-            <Text as="span" fontWeight="semibold">
-              {product.name}
-            </Text>
-          </Link>
-          <InlineStack gap="200">
-            {getProductDisplayTags(product).map((tag) => (
-              <Badge
-                key={`${product.id}-${tag}`}
-                tone={getProductBadgeTone(tag)}
-              >
-                {tag}
-              </Badge>
-            ))}
-          </InlineStack>
-        </BlockStack>
+        <InlineStack gap="300" blockAlign="center">
+          <ProductListThumbnail
+            alt={product.name}
+            imagePath={product.images[0]}
+          />
+          <BlockStack gap="100">
+            <Link
+              dataPrimaryLink
+              url={`/dashboard/inventory/products/${product.id}`}
+            >
+              <Text as="span" fontWeight="semibold">
+                {product.name}
+              </Text>
+            </Link>
+            <InlineStack gap="200">
+              {getProductDisplayTags(product).map((tag) => (
+                <Badge
+                  key={`${product.id}-${tag}`}
+                  tone={getProductBadgeTone(tag)}
+                >
+                  {tag}
+                </Badge>
+              ))}
+            </InlineStack>
+          </BlockStack>
+        </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
         {(() => {

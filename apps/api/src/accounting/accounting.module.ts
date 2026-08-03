@@ -1,6 +1,7 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { CurrenciesModule } from "../currencies/currencies.module";
 import { DatabaseModule } from "../database/database.module";
+import { ExpensesModule } from "../expenses/expenses.module";
 import { InvoicesModule } from "../invoices/invoices.module";
 import { AccountingProvisionerService } from "./accounting-provisioner.service";
 import { AccountingReportsService } from "./accounting-reports.service";
@@ -10,13 +11,13 @@ import {
 import { AccountingService } from "./accounting.service";
 
 @Module({
-  imports: [DatabaseModule, CurrenciesModule, forwardRef(() => InvoicesModule)],
+  imports: [DatabaseModule, CurrenciesModule, forwardRef(() => ExpensesModule), forwardRef(() => InvoicesModule)],
   controllers: [AccountingController],
   providers: [
     AccountingProvisionerService,
     AccountingService,
     AccountingReportsService,
   ],
-  exports: [AccountingService, AccountingReportsService],
+  exports: [AccountingService, AccountingReportsService, AccountingProvisionerService],
 })
 export class AccountingModule {}

@@ -326,6 +326,7 @@ export const invoicePayments = pgTable("invoice_payments", {
   paymentDate: date("payment_date").notNull(),
   reference: varchar("reference", { length: 100 }),
   method: varchar("method", { length: 50 }),
+  bankAccountId: uuid("bank_account_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

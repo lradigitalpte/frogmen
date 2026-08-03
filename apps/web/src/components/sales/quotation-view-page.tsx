@@ -22,6 +22,7 @@ import { SendDocumentEmailModal } from "@/components/documents/send-document-ema
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
+import { formatQuantity } from "@/lib/format-quantity";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
 import {
@@ -488,7 +489,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                                 ) : null}
                               </BlockStack>
                             </td>
-                            <td>{line.quantity}</td>
+                            <td>{formatQuantity(line.quantity)}</td>
                             <td style={{ textAlign: "right" }}>
                               {formatMoney(line.unitPrice, currencyCode, decimalPlaces)}
                             </td>

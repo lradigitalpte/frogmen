@@ -90,6 +90,11 @@ export function CustomerPaymentsListPage() {
       <IndexTable.Cell>{p.journal}</IndexTable.Cell>
       <IndexTable.Cell>{p.paymentMethod}</IndexTable.Cell>
       <IndexTable.Cell>
+        <Text as="span" tone="subdued">
+          {p.bankAccountName ?? "—"}
+        </Text>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
         <Text as="span" fontWeight="semibold">
           {p.partner}
         </Text>
@@ -178,6 +183,7 @@ export function CustomerPaymentsListPage() {
               { title: "Name" },
               { title: "Journal" },
               { title: "Payment Method" },
+              { title: "Bank account" },
               { title: "Partner" },
               { title: "Amount (Currency)" },
               { title: "Amount" },

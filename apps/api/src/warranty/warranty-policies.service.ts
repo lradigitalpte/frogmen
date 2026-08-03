@@ -19,10 +19,14 @@ import type {
   UpdateWarrantyPolicyDto,
 } from "./dto/warranty-policy.dto";
 import { DATABASE } from "../database/database.constants";
+import { OrgInventoryService } from "../inventory/org-inventory.service";
 
 @Injectable()
 export class WarrantyPoliciesService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly orgInventory: OrgInventoryService,
+  ) {}
 
   private normalizeName(name: string) {
     return name.trim().replace(/\s+/g, " ");
@@ -45,21 +49,41 @@ export class WarrantyPoliciesService {
 
     const whereClause = and(...filters);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
+    let rows = await this.db
+      .select()
+      .from(warrantyPolicies)
+      .where(whereClause)
+      .orderBy(asc(warrantyPolicies.name))
+      .limit(perPage)
+      .offset(offset);
+
+    let total = Number(
+      (
+        await this.db
+          .select({ total: count() })
+          .from(warrantyPolicies)
+          .where(whereClause)
+      )[0]?.total ?? 0,
+    );
+
+    if (total === 0 && !query.search?.trim()) {
+      await this.orgInventory.provision(organizationId);
+      rows = await this.db
         .select()
         .from(warrantyPolicies)
         .where(whereClause)
         .orderBy(asc(warrantyPolicies.name))
         .limit(perPage)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(warrantyPolicies)
-        .where(whereClause),
-    ]);
-
-    const total = Number(totalResult[0]?.total ?? 0);
+        .offset(offset);
+      total = Number(
+        (
+          await this.db
+            .select({ total: count() })
+            .from(warrantyPolicies)
+            .where(whereClause)
+        )[0]?.total ?? 0,
+      );
+    }
 
     return {
       data: rows,
@@ -167,22 +191,7 @@ export class WarrantyPoliciesService {
   }
 
   async seedDefaultPolicy(organizationId: string) {
-    const [existing] = await this.db
-      .select()
-      .from(warrantyPolicies)
-      .where(eq(warrantyPolicies.organizationId, organizationId))
-      .limit(1);
-
-    if (existing) {
-      return existing;
-    }
-
-    return this.create(organizationId, {
-      name: "12-month manufacturer warranty",
-      description:
-        "Standard manufacturer warranty for ROVs, high-pressure hose systems, and diving regulators.",
-      durationMonths: 12,
-      isActive: true,
-    });
+    await this.orgInventory.provision(organizationId);
+    return this.list(organizationId, { perPage: 200 });
   }
 }

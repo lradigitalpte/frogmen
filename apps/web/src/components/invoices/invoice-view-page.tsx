@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
+import { formatQuantity } from "@/lib/format-quantity";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { AppPage } from "@/components/layout/page";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
@@ -192,6 +193,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
     currencyId?: string;
     method: string;
     reference?: string;
+    bankAccountId?: string;
   }) {
     if (!invoice) return;
     setPaymentProcessing(true);
@@ -202,6 +204,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
         currencyId: input.currencyId,
         method: input.method,
         reference: input.reference,
+        bankAccountId: input.bankAccountId,
       });
       setInvoice(updated);
       setPaymentModalOpen(false);
@@ -565,7 +568,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                               ) : null}
                             </BlockStack>
                           </td>
-                          <td style={{ textAlign: "right" }}>{l.quantity.toFixed(4)}</td>
+                          <td style={{ textAlign: "right" }}>{formatQuantity(l.quantity)}</td>
                           <td style={{ textAlign: "right" }}>
                             {fmt(l.unitPrice)}
                           </td>

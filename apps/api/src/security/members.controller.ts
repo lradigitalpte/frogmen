@@ -38,6 +38,14 @@ export class MembersController {
     return this.membersService.invite(context, body);
   }
 
+  @Post("provision")
+  provision(
+    @CurrentSecurity() context: SecurityContext,
+    @Body() body: Parameters<MembersService["provisionUser"]>[1],
+  ) {
+    return this.membersService.provisionUser(context, body);
+  }
+
   @Delete("invitations/:id")
   cancel(
     @CurrentSecurity() context: SecurityContext,

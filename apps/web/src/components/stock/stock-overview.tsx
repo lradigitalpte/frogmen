@@ -17,8 +17,12 @@ import { AlertTriangle, Boxes, Package, PackageX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useOrgCurrency } from "@/hooks/use-org-currency";
+import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
+import { formatQuantity } from "@/lib/format-quantity";
 import { listStock } from "@/lib/products-api";
 import { listWarehouses } from "@/lib/warehouses-api";
 import type { StockOverviewRow } from "@/types/product";
@@ -37,21 +41,23 @@ const tabs: { id: StockTab; content: string }[] = [
 
 function quantityBadge(row: StockOverviewRow) {
   const qty = Number(row.quantity) || 0;
+  const formatted = formatQuantity(row.quantity);
   if (qty === 0) {
     return <StatusBadge variant="destructive">0</StatusBadge>;
   }
   if (qty <= 2) {
-    return <StatusBadge variant="warning">{row.quantity}</StatusBadge>;
+    return <StatusBadge variant="warning">{formatted}</StatusBadge>;
   }
   return (
     <Text as="span" fontWeight="bold" variant="bodyLg">
-      {row.quantity}
+      {formatted}
     </Text>
   );
 }
 
 export function StockOverviewPage() {
   const router = useRouter();
+  const { currencies, catalogCurrencyId } = useOrgCurrency();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
@@ -175,6 +181,19 @@ export function StockOverviewPage() {
     ];
   }, [warehouseFilter, warehouses]);
 
+  function formatSellingPrice(row: StockOverviewRow) {
+    if (!row.sellingPrice) {
+      return " ";
+    }
+
+    const currency = currencyById(
+      currencies,
+      row.priceCurrencyId ?? catalogCurrencyId,
+    );
+
+    return formatCurrencyAmount(row.sellingPrice, currency);
+  }
+
   const rowMarkup = filteredRows.map((row, index) => (
     <IndexTable.Row
       id={`${row.productId}-${row.warehouseId}`}
@@ -182,18 +201,24 @@ export function StockOverviewPage() {
       position={index}
     >
       <IndexTable.Cell>
-        <BlockStack gap="100">
-          <Link url={`/dashboard/inventory/products/${row.productId}`}>
-            <Text as="span" fontWeight="semibold">
-              {row.productName}
+        <InlineStack gap="300" blockAlign="center">
+          <ProductListThumbnail
+            alt={row.productName}
+            imagePath={row.productImage}
+          />
+          <BlockStack gap="100">
+            <Link url={`/dashboard/inventory/products/${row.productId}`}>
+              <Text as="span" fontWeight="semibold">
+                {row.productName}
+              </Text>
+            </Link>
+            <Text as="span" tone="subdued" variant="bodySm">
+              {row.trackSerial && row.serialSummary
+                ? row.serialSummary
+                : row.productSku || "No SKU"}
             </Text>
-          </Link>
-          <Text as="span" tone="subdued" variant="bodySm">
-            {row.trackSerial && row.serialSummary
-              ? row.serialSummary
-              : row.productSku || "No SKU"}
-          </Text>
-        </BlockStack>
+          </BlockStack>
+        </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Link url={`/dashboard/inventory/warehouses/${row.warehouseId}`}>
@@ -201,6 +226,7 @@ export function StockOverviewPage() {
         </Link>
       </IndexTable.Cell>
       <IndexTable.Cell>{quantityBadge(row)}</IndexTable.Cell>
+      <IndexTable.Cell>{formatSellingPrice(row)}</IndexTable.Cell>
       <IndexTable.Cell>
         <StatusBadge variant={row.trackSerial ? "info" : "neutral"}>
           {row.trackSerial ? "Serialized" : "Bulk"}
@@ -340,6 +366,7 @@ export function StockOverviewPage() {
               { title: "Product" },
               { title: "Warehouse" },
               { title: "On hand" },
+              { title: "Selling price" },
               { title: "Type" },
               { title: "" },
             ]}

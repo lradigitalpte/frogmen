@@ -129,6 +129,7 @@ export const accountMoves = pgTable("account_moves", {
   invoiceId: uuid("invoice_id").references(() => invoices.id),
   paymentId: uuid("payment_id").references(() => invoicePayments.id),
   refundId: uuid("refund_id").references(() => customerRefunds.id),
+  bankAccountId: uuid("bank_account_id"),
   postedAt: timestamp("posted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

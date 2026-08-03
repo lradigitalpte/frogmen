@@ -149,9 +149,12 @@ export function updateWarrantyPolicy(
 }
 
 export function seedDefaultWarrantyPolicy() {
-  return apiFetch<WarrantyPolicy>("/api/v1/warranty-policies/seed-default", {
-    method: "POST",
-  });
+  return apiFetch<PaginatedWarrantyPolicies>(
+    "/api/v1/warranty-policies/seed-default",
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function listWarranties(

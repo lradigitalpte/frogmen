@@ -15,6 +15,7 @@
     ]
   },
   "deploy": {
+    "preDeployCommand": "node dist/migrate-production.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 900,
     "restartPolicyType": "ON_FAILURE",

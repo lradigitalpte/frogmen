@@ -22,6 +22,7 @@ import { pricingAdjustmentHelpText, pricingAdjustmentLabel } from "@frog1/shared
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
 import { formatMoney, todayIsoDate } from "@/components/sales/format-money";
 import { defaultValidityHeader } from "@/components/sales/validity-period";
 import {
@@ -45,6 +46,7 @@ import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
 import { useSalesPricing } from "@/hooks/use-sales-pricing";
 import { convertAmount, currencyInputPrefix } from "@/lib/currency-utils";
+import { formatQuantity } from "@/lib/format-quantity";
 import { getLatestExchangeRate } from "@/lib/exchange-rates-api";
 import { ConfiguredLineItemsList } from "@/components/sales/configured-line-items-list";
 import { EditConfiguredLineModal } from "@/components/sales/edit-configured-line-modal";
@@ -756,46 +758,48 @@ export function CreateQuotationPage() {
                             ? "No saleable products found."
                             : `Showing ${products.length} of ${catalogTotal} saleable product${catalogTotal === 1 ? "" : "s"}.`}
                         </Text>
-                        <ResourceList
-                          items={products}
-                          renderItem={(product) => (
-                          <ResourceItem
-                            id={product.id}
-                            onClick={() => void handleSelectProduct(product)}
-                            accessibilityLabel={`Select ${product.name}`}
-                          >
-                            <InlineStack align="space-between" blockAlign="center">
-                              <BlockStack gap="050">
-                                <InlineStack gap="200" blockAlign="center">
-                                  <Text as="span" fontWeight="bold">
-                                    {product.name}
+                        <ProductCatalogSearchResults>
+                          <ResourceList
+                            items={products}
+                            renderItem={(product) => (
+                            <ResourceItem
+                              id={product.id}
+                              onClick={() => void handleSelectProduct(product)}
+                              accessibilityLabel={`Select ${product.name}`}
+                            >
+                              <InlineStack align="space-between" blockAlign="center">
+                                <BlockStack gap="050">
+                                  <InlineStack gap="200" blockAlign="center">
+                                    <Text as="span" fontWeight="bold">
+                                      {product.name}
+                                    </Text>
+                                    {product.trackSerial ? (
+                                      <Badge tone="info">Serialized</Badge>
+                                    ) : null}
+                                  </InlineStack>
+                                  <Text as="span" tone="subdued" variant="bodySm">
+                                    SKU: {product.sku || "N/A"}
                                   </Text>
-                                  {product.trackSerial ? (
-                                    <Badge tone="info">Serialized</Badge>
-                                  ) : null}
+                                </BlockStack>
+                                <InlineStack gap="300" blockAlign="center">
+                                  <Text as="span" fontWeight="bold">
+                                    {formatProductCatalogPrice(product)}
+                                  </Text>
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      size="slim"
+                                      variant="primary"
+                                      onClick={() => void handleSelectProduct(product)}
+                                    >
+                                      Select Item
+                                    </Button>
+                                  </div>
                                 </InlineStack>
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  SKU: {product.sku || "N/A"}
-                                </Text>
-                              </BlockStack>
-                              <InlineStack gap="300" blockAlign="center">
-                                <Text as="span" fontWeight="bold">
-                                  {formatProductCatalogPrice(product)}
-                                </Text>
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <Button
-                                    size="slim"
-                                    variant="primary"
-                                    onClick={() => void handleSelectProduct(product)}
-                                  >
-                                    Select Item
-                                  </Button>
-                                </div>
                               </InlineStack>
-                            </InlineStack>
-                          </ResourceItem>
-                          )}
-                        />
+                            </ResourceItem>
+                            )}
+                          />
+                        </ProductCatalogSearchResults>
                       </>
                     )}
                   </BlockStack>
@@ -1059,7 +1063,7 @@ export function CreateQuotationPage() {
                                   <Text as="span" tone="subdued"> </Text>
                                 )}
                               </td>
-                              <td style={{ textAlign: "right" }}>{item.quantity}</td>
+                              <td style={{ textAlign: "right" }}>{formatQuantity(item.quantity)}</td>
                               <td style={{ textAlign: "right" }}>
                                 <BlockStack gap="050">
                                   <Text as="span">{fmt(item.unitPrice)}</Text>

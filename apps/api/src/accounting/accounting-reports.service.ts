@@ -3,9 +3,11 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   accountMoveLines,
   accountMoves,
+  bankAccounts,
   glAccounts,
   invoices,
   journals,
+  currencies,
   type Database,
 } from "@frog1/db";
 import { roundMoney } from "@frog1/shared";
@@ -572,11 +574,96 @@ export class AccountingReportsService {
       }),
     );
     const profitLossCard = await this.buildProfitLossCard(organizationId);
+    const bankBalances = await this.getBankBalances(organizationId);
 
     return {
       journals: [...cards, profitLossCard],
+      bankAccounts: bankBalances.accounts,
       unpaidInvoiceCount,
       unpaidInvoiceTotalBase: roundMoney(unpaidInvoiceTotalBase),
+    };
+  }
+
+  async getBankBalances(
+    organizationId: string,
+    asOf?: string,
+    dateFrom?: string,
+  ) {
+    await this.provisioner.ensureProvisioned(organizationId);
+
+    const asOfDate = asOf ?? new Date().toISOString().slice(0, 10);
+    const periodStart =
+      dateFrom ?? `${asOfDate.slice(0, 7)}-01`;
+
+    const rows = await this.db
+      .select({
+        id: bankAccounts.id,
+        name: bankAccounts.name,
+        currencyCode: currencies.code,
+        glAccountId: bankAccounts.glAccountId,
+        glAccountCode: glAccounts.code,
+      })
+      .from(bankAccounts)
+      .innerJoin(currencies, eq(currencies.id, bankAccounts.currencyId))
+      .innerJoin(glAccounts, eq(glAccounts.id, bankAccounts.glAccountId))
+      .where(
+        and(
+          eq(bankAccounts.organizationId, organizationId),
+          eq(bankAccounts.isActive, true),
+        ),
+      )
+      .orderBy(bankAccounts.name);
+
+    const accounts = await Promise.all(
+      rows.map(async (row) => {
+        const [balanceRow] = await this.db
+          .select({
+            balance: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric - ${accountMoveLines.credit}::numeric), 0)`,
+          })
+          .from(accountMoveLines)
+          .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+          .where(
+            and(
+              eq(accountMoves.organizationId, organizationId),
+              eq(accountMoves.state, "posted"),
+              eq(accountMoveLines.accountId, row.glAccountId),
+              lte(accountMoves.moveDate, asOfDate),
+            ),
+          );
+
+        const [periodRow] = await this.db
+          .select({
+            receipts: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric), 0)`,
+            expenses: sql<string>`coalesce(sum(${accountMoveLines.credit}::numeric), 0)`,
+          })
+          .from(accountMoveLines)
+          .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+          .where(
+            and(
+              eq(accountMoves.organizationId, organizationId),
+              eq(accountMoves.state, "posted"),
+              eq(accountMoveLines.accountId, row.glAccountId),
+              gte(accountMoves.moveDate, periodStart),
+              lte(accountMoves.moveDate, asOfDate),
+            ),
+          );
+
+        return {
+          id: row.id,
+          name: row.name,
+          currencyCode: row.currencyCode,
+          glAccountCode: row.glAccountCode,
+          balance: roundMoney(Number(balanceRow?.balance ?? 0)),
+          receiptsInPeriod: roundMoney(Number(periodRow?.receipts ?? 0)),
+          expensesInPeriod: roundMoney(Number(periodRow?.expenses ?? 0)),
+        };
+      }),
+    );
+
+    return {
+      asOf: asOfDate,
+      dateFrom: periodStart,
+      accounts,
     };
   }
 

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/status-badge";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
+import { formatQuantity } from "@/lib/format-quantity";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
 import {
@@ -129,15 +130,18 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
   >([]);
 
   const loadData = useCallback(async () => {
-    const [productData, stockData, unitsData, warehousesData, warrantiesData, policiesData] =
+    const [productData, stockData, warehousesData, warrantiesData, policiesData] =
       await Promise.all([
         getProduct(productId),
         getProductStock(productId),
-        listProductUnits(productId, { perPage: 50 }),
         listWarehouses({ perPage: 100 }),
         listWarranties({ productId, perPage: 50 }),
         listWarrantyPolicies({ perPage: 200 }),
       ]);
+
+    const unitsData = productData.trackSerial
+      ? await listProductUnits(productId, { perPage: 50 })
+      : { data: [] };
 
     setProduct(productData);
     setStockLevels(stockData.levels);
@@ -640,7 +644,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                         <IndexTable.Cell>{level.warehouseName}</IndexTable.Cell>
                         <IndexTable.Cell>
                           <Text as="span" fontWeight="semibold">
-                            {level.quantity}
+                            {formatQuantity(level.quantity)}
                           </Text>
                         </IndexTable.Cell>
                         <IndexTable.Cell>

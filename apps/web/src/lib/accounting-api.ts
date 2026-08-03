@@ -28,8 +28,19 @@ export interface AccountingJournalCard {
   chart: JournalChart;
 }
 
+export interface BankAccountBalance {
+  id: string;
+  name: string;
+  currencyCode: string;
+  glAccountCode: string;
+  balance: number;
+  receiptsInPeriod: number;
+  expensesInPeriod: number;
+}
+
 export interface AccountingOverview {
   journals: AccountingJournalCard[];
+  bankAccounts: BankAccountBalance[];
   unpaidInvoiceCount: number;
   unpaidInvoiceTotalBase: number;
 }
@@ -120,11 +131,17 @@ export function getInvoiceJournal(invoiceId: string) {
 
 export interface ExpenseRecord {
   id: string;
+  number: string;
   expenseDate: string;
   description: string;
   reference: string | null;
   amount: number;
+  paymentMethod?: string;
   paymentSource: "cash" | "bank";
+  bankAccountName?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  hasReceipt?: boolean;
 }
 
 export interface ExpensesListResponse {
@@ -137,19 +154,15 @@ export interface ExpensesListResponse {
   expenses: ExpenseRecord[];
 }
 
-export function listExpenses() {
-  return apiFetch<ExpensesListResponse>("/api/v1/accounting/expenses");
-}
-
-export function createExpense(input: {
-  amount: number;
-  expenseDate: string;
-  description: string;
-  paymentMethod: string;
-  reference?: string;
-}) {
-  return apiFetch<{ id: string }>("/api/v1/accounting/expenses", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
+export {
+  listExpenses,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  uploadExpenseReceipt,
+  getExpenseReceiptUrl,
+  listExpenseCategories,
+  createExpenseCategory,
+  updateExpenseCategory,
+  archiveExpenseCategory,
+} from "./expenses-api";

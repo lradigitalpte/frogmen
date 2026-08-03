@@ -156,7 +156,11 @@ export function WarrantyPoliciesPage() {
 
     try {
       const policy = await seedDefaultWarrantyPolicy();
-      setSuccess(`Default policy ready: “${policy.name}”`);
+      setSuccess(
+        policy.data.length > 0
+          ? `Starter policies ready (${policy.data.length})`
+          : "Starter policies ready",
+      );
       await loadPolicies();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to seed policy");
@@ -173,7 +177,7 @@ export function WarrantyPoliciesPage() {
       }}
       secondaryActions={[
         {
-          content: "Add default 12-month policy",
+          content: "Add starter policies",
           onAction: () => void handleSeedDefault(),
         },
       ]}

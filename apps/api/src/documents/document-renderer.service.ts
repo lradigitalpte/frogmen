@@ -18,6 +18,7 @@ import {
 } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { SettingsService } from "../settings/settings.service";
+import { DocumentBankAccountsService } from "./document-bank-accounts.service";
 import { PdfService } from "./pdf.service";
 
 @Injectable()
@@ -25,8 +26,27 @@ export class DocumentRendererService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     private readonly settingsService: SettingsService,
+    private readonly documentBankAccountsService: DocumentBankAccountsService,
     private readonly pdfService: PdfService,
   ) {}
+
+  private async buildBranding(
+    organizationId: string,
+    branchId?: string | null,
+  ) {
+    const branding = await this.settingsService.getOrganizationBranding(
+      organizationId,
+    );
+    const documentBankAccounts =
+      await this.documentBankAccountsService.listForDocuments(organizationId, {
+        branchId,
+      });
+
+    return {
+      ...branding,
+      documentBankAccounts,
+    };
+  }
 
   async buildQuotationDocumentData(
     organizationId: string,
@@ -103,8 +123,21 @@ export class DocumentRendererService {
   }
 
   async renderQuotationHtml(organizationId: string, quotationId: string) {
-    const branding = await this.settingsService.getOrganizationBranding(
+    const [header] = await this.db
+      .select({ branchId: salesOrders.branchId })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, quotationId),
+          eq(salesOrders.organizationId, organizationId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const branding = await this.buildBranding(
       organizationId,
+      header?.branchId,
     );
     const quotation = await this.buildQuotationDocumentData(
       organizationId,
@@ -190,7 +223,19 @@ export class DocumentRendererService {
   }
 
   async renderInvoiceHtml(organizationId: string, invoiceId: string) {
-    const branding = await this.settingsService.getOrganizationBranding(organizationId);
+    const [header] = await this.db
+      .select({ branchId: invoices.branchId })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const branding = await this.buildBranding(organizationId, header?.branchId);
     const invoice = await this.buildInvoiceDocumentData(organizationId, invoiceId);
     return renderQuotationDocumentHtml(
       { ...branding, documentTemplates: { ...branding.documentTemplates, documentStyle: "official_blue" } },
@@ -208,7 +253,19 @@ export class DocumentRendererService {
     organizationId: string,
     creditNote: { invoiceId: string; number: string; reason: string },
   ) {
-    const branding = await this.settingsService.getOrganizationBranding(organizationId);
+    const [header] = await this.db
+      .select({ branchId: invoices.branchId })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, creditNote.invoiceId),
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const branding = await this.buildBranding(organizationId, header?.branchId);
     const invoice = await this.buildInvoiceDocumentData(organizationId, creditNote.invoiceId);
     return renderQuotationDocumentHtml(
       { ...branding, documentTemplates: { ...branding.documentTemplates, documentStyle: "official_blue" } },
@@ -287,7 +344,7 @@ export class DocumentRendererService {
   }
 
   async renderPurchaseOrderHtml(organizationId: string, orderId: string) {
-    const branding = await this.settingsService.getOrganizationBranding(organizationId);
+    const branding = await this.buildBranding(organizationId);
     return renderQuotationDocumentHtml(
       { ...branding, documentTemplates: { ...branding.documentTemplates, documentStyle: "official_blue" } },
       await this.buildPurchaseOrderDocumentData(organizationId, orderId),

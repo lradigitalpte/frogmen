@@ -199,6 +199,9 @@ export interface StockOverviewRow {
   productId: string;
   productName: string;
   productSku: string | null;
+  productImage: string | null;
+  sellingPrice: string | null;
+  priceCurrencyId: string | null;
   productType: ProductType;
   trackSerial: boolean;
   warehouseId: string;

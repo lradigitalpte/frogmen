@@ -20,31 +20,14 @@ export class ExchangeRatesService {
     toCurrencyId: string,
     asOfDate?: string,
   ): Promise<number> {
-    if (fromCurrencyId === toCurrencyId) {
-      return 1;
-    }
-
-    const direct = await this.lookupDirectRate(
+    const rate = await this.resolveRate(
       organizationId,
       fromCurrencyId,
       toCurrencyId,
       asOfDate,
     );
-    if (direct != null) {
-      return direct;
-    }
 
-    const inverse = await this.lookupDirectRate(
-      organizationId,
-      toCurrencyId,
-      fromCurrencyId,
-      asOfDate,
-    );
-    if (inverse != null && inverse > 0) {
-      return 1 / inverse;
-    }
-
-    return 1;
+    return rate ?? 1;
   }
 
   async getRequiredRate(
@@ -53,43 +36,20 @@ export class ExchangeRatesService {
     toCurrencyId: string,
     asOfDate?: string,
   ): Promise<number> {
-    if (fromCurrencyId === toCurrencyId) {
-      return 1;
-    }
-
-    const direct = await this.lookupDirectRate(
+    const rate = await this.resolveRate(
       organizationId,
       fromCurrencyId,
       toCurrencyId,
       asOfDate,
     );
-    if (direct != null) {
-      return direct;
+
+    if (rate == null) {
+      throw new BadRequestException(
+        "No exchange rate is configured for this currency pair. Add a rate under Settings → Currencies before converting amounts.",
+      );
     }
 
-    const inverse = await this.lookupDirectRate(
-      organizationId,
-      toCurrencyId,
-      fromCurrencyId,
-      asOfDate,
-    );
-    if (inverse != null && inverse > 0) {
-      return 1 / inverse;
-    }
-
-    const viaBase = await this.getRateViaBase(
-      organizationId,
-      fromCurrencyId,
-      toCurrencyId,
-      asOfDate,
-    );
-    if (viaBase != null) {
-      return viaBase;
-    }
-
-    throw new BadRequestException(
-      "No exchange rate is configured for this currency pair. Add a rate under Settings → Currencies before converting amounts.",
-    );
+    return rate;
   }
 
   async hasConfiguredRate(
@@ -102,35 +62,14 @@ export class ExchangeRatesService {
       return true;
     }
 
-    if (
-      (await this.lookupDirectRate(
+    return (
+      (await this.resolveRate(
         organizationId,
         fromCurrencyId,
         toCurrencyId,
         asOfDate,
       )) != null
-    ) {
-      return true;
-    }
-
-    if (
-      (await this.lookupDirectRate(
-        organizationId,
-        toCurrencyId,
-        fromCurrencyId,
-        asOfDate,
-      )) != null
-    ) {
-      return true;
-    }
-
-    const viaBase = await this.getRateViaBase(
-      organizationId,
-      fromCurrencyId,
-      toCurrencyId,
-      asOfDate,
     );
-    return viaBase != null;
   }
 
   async listForOrganization(organizationId: string) {
@@ -184,6 +123,82 @@ export class ExchangeRatesService {
     );
   }
 
+  private async getBaseCurrencyId(organizationId: string) {
+    const [org] = await this.db
+      .select({ baseCurrencyId: organizations.baseCurrencyId })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+
+    return org?.baseCurrencyId ?? null;
+  }
+
+  private async resolveRate(
+    organizationId: string,
+    fromCurrencyId: string,
+    toCurrencyId: string,
+    asOfDate?: string,
+  ): Promise<number | null> {
+    if (fromCurrencyId === toCurrencyId) {
+      return 1;
+    }
+
+    const baseCurrencyId = await this.getBaseCurrencyId(organizationId);
+
+    if (baseCurrencyId) {
+      if (toCurrencyId === baseCurrencyId && fromCurrencyId !== baseCurrencyId) {
+        const foreignToBase = await this.lookupDirectRate(
+          organizationId,
+          fromCurrencyId,
+          baseCurrencyId,
+          asOfDate,
+        );
+        if (foreignToBase != null) {
+          return foreignToBase;
+        }
+      }
+
+      if (fromCurrencyId === baseCurrencyId && toCurrencyId !== baseCurrencyId) {
+        const foreignToBase = await this.lookupDirectRate(
+          organizationId,
+          toCurrencyId,
+          baseCurrencyId,
+          asOfDate,
+        );
+        if (foreignToBase != null && foreignToBase > 0) {
+          return 1 / foreignToBase;
+        }
+      }
+    }
+
+    const direct = await this.lookupDirectRate(
+      organizationId,
+      fromCurrencyId,
+      toCurrencyId,
+      asOfDate,
+    );
+    if (direct != null) {
+      return direct;
+    }
+
+    const inverse = await this.lookupDirectRate(
+      organizationId,
+      toCurrencyId,
+      fromCurrencyId,
+      asOfDate,
+    );
+    if (inverse != null && inverse > 0) {
+      return 1 / inverse;
+    }
+
+    return this.getRateViaBase(
+      organizationId,
+      fromCurrencyId,
+      toCurrencyId,
+      asOfDate,
+    );
+  }
+
   private async lookupDirectRate(
     organizationId: string,
     fromCurrencyId: string,
@@ -221,13 +236,7 @@ export class ExchangeRatesService {
     toCurrencyId: string,
     asOfDate?: string,
   ): Promise<number | null> {
-    const [org] = await this.db
-      .select({ baseCurrencyId: organizations.baseCurrencyId })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId))
-      .limit(1);
-
-    const baseCurrencyId = org?.baseCurrencyId;
+    const baseCurrencyId = await this.getBaseCurrencyId(organizationId);
     if (!baseCurrencyId || baseCurrencyId === fromCurrencyId || baseCurrencyId === toCurrencyId) {
       return null;
     }

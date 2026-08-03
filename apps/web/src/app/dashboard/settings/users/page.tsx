@@ -8,12 +8,14 @@ import {
   listBranches,
   listInvitations,
   listMembers,
+  provisionMember,
   resendInvitation,
   updateMember,
   type AppRole,
   type Branch,
   type OrganizationInvitation,
   type OrganizationMember,
+  type ProvisionedMember,
 } from "@/lib/security-api";
 import {
   Badge,
@@ -99,6 +101,12 @@ function memberInitials(member: OrganizationMember) {
   );
 }
 
+type InviteMode = "email" | "create";
+
+async function copyText(value: string) {
+  await navigator.clipboard.writeText(value);
+}
+
 export default function UsersSettingsPage() {
   const { showError, showSuccess } = useToast();
   const [members, setMembers] = useState<OrganizationMember[]>([]);
@@ -114,9 +122,14 @@ export default function UsersSettingsPage() {
   );
   const [pendingCancel, setPendingCancel] =
     useState<OrganizationInvitation | null>(null);
+  const [inviteMode, setInviteMode] = useState<InviteMode>("email");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AppRole>("staff");
   const [inviteBranches, setInviteBranches] = useState<string[]>([]);
+  const [sendCredentialsEmail, setSendCredentialsEmail] = useState(true);
+  const [provisionedMember, setProvisionedMember] =
+    useState<ProvisionedMember | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,13 +190,19 @@ export default function UsersSettingsPage() {
   const selectedRole =
     role === "owner" ? roleDetails.staff : roleDetails[role];
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const nameValid = name.trim().length >= 2;
   const inviteValid =
-    emailValid && (role === "admin" || inviteBranches.length > 0);
+    emailValid &&
+    (role === "admin" || inviteBranches.length > 0) &&
+    (inviteMode === "email" || nameValid);
 
   function resetInvite() {
+    setInviteMode("email");
+    setName("");
     setEmail("");
     setRole("staff");
     setInviteBranches(mainBranch ? [mainBranch.id] : []);
+    setSendCredentialsEmail(true);
   }
 
   async function changeRole(
@@ -251,6 +270,36 @@ export default function UsersSettingsPage() {
 
     setInviting(true);
     try {
+      if (inviteMode === "create") {
+        const result = await provisionMember({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          role,
+          branchIds: role === "admin" ? [] : inviteBranches,
+          sendEmail: sendCredentialsEmail,
+        });
+        resetInvite();
+        setInviteOpen(false);
+        setProvisionedMember(result);
+        await load();
+        if (sendCredentialsEmail && result.delivery.delivered) {
+          showSuccess(
+            `${result.name} was created and sign-in details were emailed.`,
+          );
+        } else if (sendCredentialsEmail && result.delivery.mode === "log") {
+          showSuccess(
+            `${result.name} was created. Configure SMTP or Resend to email credentials.`,
+          );
+        } else if (sendCredentialsEmail) {
+          showError(
+            "User created, but the credentials email could not be delivered. Share the details manually.",
+          );
+        } else {
+          showSuccess(`${result.name} can now sign in with the generated password.`);
+        }
+        return;
+      }
+
       const result = await inviteMember({
         email: email.trim().toLowerCase(),
         role,
@@ -322,7 +371,7 @@ export default function UsersSettingsPage() {
       title="Users & roles"
       subtitle="Control organization access with secure fixed roles and branch assignments."
       primaryAction={{
-        content: "Invite user",
+        content: "Add user",
         onAction: () => setInviteOpen(true),
       }}
     >
@@ -665,10 +714,10 @@ export default function UsersSettingsPage() {
             <header className="user-invite-panel__header">
               <div>
                 <Text as="h2" id="user-invite-panel-title" variant="headingLg">
-                  Invite user
+                  Add user
                 </Text>
                 <Text as="p" tone="subdued" variant="bodySm">
-                  Send secure access to your organization.
+                  Send an email invite or create an account with a temporary password.
                 </Text>
               </div>
               <Button
@@ -681,21 +730,54 @@ export default function UsersSettingsPage() {
             </header>
 
             <div className="user-invite-panel__body">
+              <div className="user-invite-panel__mode-toggle">
+                <Button
+                  pressed={inviteMode === "email"}
+                  onClick={() => setInviteMode("email")}
+                >
+                  Email invite
+                </Button>
+                <Button
+                  pressed={inviteMode === "create"}
+                  onClick={() => setInviteMode("create")}
+                >
+                  Create with password
+                </Button>
+              </div>
+
               <div className="user-invite-panel__intro">
                 <div className="users-settings__section-icon">
                   <UserPlus aria-hidden size={19} />
                 </div>
                 <div>
                   <Text as="h3" variant="headingMd">
-                    Invitation details
+                    {inviteMode === "email"
+                      ? "Invitation details"
+                      : "Account details"}
                   </Text>
                   <Text as="p" tone="subdued" variant="bodySm">
-                    The recipient receives a seven-day acceptance link by email.
+                    {inviteMode === "email"
+                      ? "The recipient receives a seven-day acceptance link by email."
+                      : "Generate a temporary password, share it securely, and require a new password on first sign-in."}
                   </Text>
                 </div>
               </div>
 
               <FormLayout>
+                {inviteMode === "create" ? (
+                  <TextField
+                    autoComplete="name"
+                    error={
+                      name.length > 0 && !nameValid
+                        ? "Enter the user's full name"
+                        : undefined
+                    }
+                    label="Full name"
+                    placeholder="name"
+                    value={name}
+                    onChange={setName}
+                  />
+                ) : null}
                 <TextField
                   autoComplete="email"
                   error={
@@ -715,6 +797,14 @@ export default function UsersSettingsPage() {
                   value={role}
                   onChange={(value) => setRole(value as AppRole)}
                 />
+                {inviteMode === "create" ? (
+                  <Checkbox
+                    checked={sendCredentialsEmail}
+                    helpText="Sends the temporary password and sign-in link to the user's email."
+                    label="Email sign-in details to the user"
+                    onChange={setSendCredentialsEmail}
+                  />
+                ) : null}
               </FormLayout>
 
               <div className="user-invite-panel__role-card">
@@ -785,7 +875,11 @@ export default function UsersSettingsPage() {
 
               <Banner tone="info">
                 <p>
-                  The invite can be resent or cancelled from Pending invitations.
+                  {inviteMode === "email"
+                    ? "The invite can be resent or cancelled from Pending invitations."
+                    : sendCredentialsEmail
+                      ? "The temporary password is emailed to the user and shown here once for your records."
+                      : "Copy the generated password immediately. It is shown only once and the user must replace it on first sign-in."}
                 </p>
               </Banner>
             </div>
@@ -806,12 +900,106 @@ export default function UsersSettingsPage() {
                 variant="primary"
                 onClick={sendInvite}
               >
-                Send invitation
+                {inviteMode === "email"
+                  ? "Send invitation"
+                  : "Create user"}
               </Button>
             </footer>
           </aside>
         </div>
       ) : null}
+
+      <Modal
+        open={Boolean(provisionedMember)}
+        title="User created"
+        onClose={() => setProvisionedMember(null)}
+        primaryAction={{
+          content: "Done",
+          onAction: () => setProvisionedMember(null),
+        }}
+      >
+        <Modal.Section>
+          {provisionedMember ? (
+            <BlockStack gap="400">
+              <Banner
+                tone={
+                  provisionedMember.delivery.delivered
+                    ? "success"
+                    : provisionedMember.delivery.mode === "error"
+                      ? "warning"
+                      : "info"
+                }
+              >
+                <p>
+                  {provisionedMember.delivery.delivered
+                    ? `Sign-in details were emailed to ${provisionedMember.email}. The temporary password is also shown below in case you need to share it another way.`
+                    : provisionedMember.delivery.mode === "skipped"
+                      ? `Share these sign-in details with ${provisionedMember.name}. They will be asked to set a new password on first sign-in.`
+                      : "The user was created, but the credentials email was not delivered. Share the details below manually."}
+                </p>
+              </Banner>
+              <div className="users-settings__provision-field">
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Email
+                </Text>
+                <InlineStack align="space-between" blockAlign="center" wrap>
+                  <Text as="p" fontWeight="semibold">
+                    {provisionedMember.email}
+                  </Text>
+                  <Button
+                    size="slim"
+                    onClick={() => void copyText(provisionedMember.email).then(() =>
+                      showSuccess("Email copied."),
+                    )}
+                  >
+                    Copy
+                  </Button>
+                </InlineStack>
+              </div>
+              <div className="users-settings__provision-field">
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Temporary password
+                </Text>
+                <InlineStack align="space-between" blockAlign="center" wrap>
+                  <Text as="p" fontWeight="semibold">
+                    {provisionedMember.temporaryPassword}
+                  </Text>
+                  <Button
+                    size="slim"
+                    onClick={() =>
+                      void copyText(provisionedMember.temporaryPassword).then(
+                        () => showSuccess("Password copied."),
+                      )
+                    }
+                  >
+                    Copy
+                  </Button>
+                </InlineStack>
+              </div>
+              <div className="users-settings__provision-field">
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Sign-in link
+                </Text>
+                <InlineStack align="space-between" blockAlign="center" wrap>
+                  <Text as="p" fontWeight="semibold">
+                    {provisionedMember.loginUrl}
+                  </Text>
+                  <Button
+                    size="slim"
+                    onClick={() =>
+                      void copyText(provisionedMember.loginUrl).then(() =>
+                        showSuccess("Sign-in link copied."),
+                      )
+                    }
+                  >
+                    Copy
+                  </Button>
+                </InlineStack>
+              </div>
+            </BlockStack>
+          ) : null}
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={Boolean(pendingCancel)}

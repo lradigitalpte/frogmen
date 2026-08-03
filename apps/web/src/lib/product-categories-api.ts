@@ -24,6 +24,20 @@ export function listProductCategories(params: ListProductCategoriesParams = {}) 
   );
 }
 
+export function seedDefaultProductCategories() {
+  return apiFetch<PaginatedProductCategories>(
+    "/api/v1/product-categories/seed-default",
+    { method: "POST" },
+  );
+}
+
+export function updateProductCategory(id: string, name: string) {
+  return apiFetch<ProductCategory>(`/api/v1/product-categories/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function createProductCategory(name: string) {
   return apiFetch<ProductCategory>("/api/v1/product-categories", {
     method: "POST",

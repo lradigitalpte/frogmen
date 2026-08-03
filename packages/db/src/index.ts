@@ -10,4 +10,7 @@ export { applyAccountingIfNeeded } from "./apply-accounting";
 export { applyPurchasingIfNeeded } from "./apply-purchasing";
 export { applyRovInspectionIfNeeded } from "./apply-rov-inspection";
 export { applyCreditNotesIfNeeded } from "./apply-credit-notes";
+export { applyUserAuthFlagsIfNeeded } from "./apply-user-auth-flags";
+export { applyBankAccountsIfNeeded } from "./apply-bank-accounts";
+export { applyExpensesIfNeeded } from "./apply-expenses";
 export * from "./schema";

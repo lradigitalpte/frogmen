@@ -21,6 +21,7 @@ import {
   Select,
 } from "@shopify/polaris";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
 import {
   applyPriceAdjustment,
   pricingAdjustmentLabel,
@@ -493,35 +494,37 @@ export function AddProductLineModal({
                   Loading equipment catalog…
                 </Text>
               ) : (
-                <ResourceList
-                  items={products}
-                  renderItem={(product) => (
-                    <ResourceItem
-                      id={product.id}
-                      onClick={() => void selectProduct(product)}
-                      accessibilityLabel={`Select ${product.name}`}
-                    >
-                      <InlineStack align="space-between" blockAlign="center">
-                        <BlockStack gap="100">
-                          <InlineStack gap="200" blockAlign="center">
-                            <Text as="span" variant="bodyMd" fontWeight="semibold">
-                              {product.name}
+                <ProductCatalogSearchResults>
+                  <ResourceList
+                    items={products}
+                    renderItem={(product) => (
+                      <ResourceItem
+                        id={product.id}
+                        onClick={() => void selectProduct(product)}
+                        accessibilityLabel={`Select ${product.name}`}
+                      >
+                        <InlineStack align="space-between" blockAlign="center">
+                          <BlockStack gap="100">
+                            <InlineStack gap="200" blockAlign="center">
+                              <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                {product.name}
+                              </Text>
+                              {product.trackSerial ? (
+                                <Badge tone="info">Serial Tracked</Badge>
+                              ) : null}
+                            </InlineStack>
+                            <Text as="span" tone="subdued" variant="bodySm">
+                              SKU: {product.sku || "N/A"}
                             </Text>
-                            {product.trackSerial ? (
-                              <Badge tone="info">Serial Tracked</Badge>
-                            ) : null}
-                          </InlineStack>
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            SKU: {product.sku || "N/A"}
+                          </BlockStack>
+                          <Text as="span" variant="bodyMd" fontWeight="bold">
+                            {formatProductCatalogPrice(product)}
                           </Text>
-                        </BlockStack>
-                        <Text as="span" variant="bodyMd" fontWeight="bold">
-                          {formatProductCatalogPrice(product)}
-                        </Text>
-                      </InlineStack>
-                    </ResourceItem>
-                  )}
-                />
+                        </InlineStack>
+                      </ResourceItem>
+                    )}
+                  />
+                </ProductCatalogSearchResults>
               )}
             </BlockStack>
           ) : null}

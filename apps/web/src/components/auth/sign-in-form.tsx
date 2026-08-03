@@ -5,7 +5,8 @@ import { Banner, BlockStack, Button, Checkbox, FormLayout, Text, TextField } fro
 import { LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { signIn } from "@/lib/auth-client";
+import { signIn, authClient } from "@/lib/auth-client";
+import { getMe } from "@/lib/security-api";
 
 export function SignInForm({ defaultEmail = "", redirectTo = "/dashboard" }: { defaultEmail?: string; redirectTo?: string }) {
   const router = useRouter();
@@ -14,15 +15,48 @@ export function SignInForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const invited = redirectTo.startsWith("/invite/");
+
+  async function waitForSession(maxAttempts = 12) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const session = await authClient.getSession();
+      if (session.data?.user) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  }
 
   async function handleSubmit() {
     if (!email.trim() || !password) return setError("Enter your email and password.");
     setLoading(true);
     setError(null);
     const result = await signIn.email({ email: email.trim(), password, rememberMe });
+    if (result.error) {
+      setLoading(false);
+      return setError(result.error.message ?? "Email or password is incorrect.");
+    }
+
+    await waitForSession();
+
+    let destination = invited
+      ? redirectTo
+      : redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+        ? redirectTo
+        : "/dashboard";
+
+    try {
+      const me = await getMe();
+      if (me.user.mustChangePassword) {
+        destination = "/change-password-required";
+      }
+    } catch {
+      // Continue with the default destination if profile lookup fails.
+    }
+
     setLoading(false);
-    if (result.error) return setError(result.error.message ?? "Email or password is incorrect.");
-    router.push(redirectTo.startsWith("/") && !redirectTo.startsWith("//") ? redirectTo : "/dashboard");
+    router.push(destination);
     router.refresh();
   }
 

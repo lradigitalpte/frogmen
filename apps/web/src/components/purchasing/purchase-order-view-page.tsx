@@ -27,6 +27,7 @@ import { PurchaseOrderNextSteps } from "@/components/purchasing/purchase-order-n
 import { PurchaseOrderWorkflowPanel } from "@/components/purchasing/purchase-order-workflow-panel";
 import { ReceiveGoodsModal } from "@/components/purchasing/receive-goods-modal";
 import { formatMoney } from "@/components/sales/format-money";
+import { formatQuantity } from "@/lib/format-quantity";
 import {
   purchaseOrderStateLabel,
   purchaseOrderStateVariant,
@@ -55,13 +56,6 @@ function formatDisplayDate(value: string | null | undefined) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatQuantity(value: string | number | null | undefined) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return " ";
-  if (Number.isInteger(amount)) return String(amount);
-  return amount.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
 function formatActivityActor(activity: PurchaseActivity) {

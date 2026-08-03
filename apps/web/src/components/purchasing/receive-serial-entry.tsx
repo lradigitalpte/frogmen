@@ -10,6 +10,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { useMemo, useState } from "react";
+import { formatQuantity } from "@/lib/format-quantity";
 
 interface ReceiveSerialEntryProps {
   quantity: number;
@@ -226,6 +227,5 @@ export function serialsAreValid(quantity: number, serials: string[]) {
 export function formatReceiveQuantity(value: string | number) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return "1";
-  if (Number.isInteger(amount)) return String(amount);
-  return String(amount);
+  return formatQuantity(value);
 }

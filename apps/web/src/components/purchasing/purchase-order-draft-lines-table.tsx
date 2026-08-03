@@ -9,6 +9,7 @@ import {
 } from "@shopify/polaris";
 import { DeleteIcon } from "@shopify/polaris-icons";
 import { formatMoney } from "@/components/sales/format-money";
+import { formatQuantity } from "@/lib/format-quantity";
 
 export interface PurchaseOrderDraftLine {
   id: string;
@@ -68,7 +69,7 @@ export function PurchaseOrderDraftLinesTable({
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" alignment="end" numeric>
-          {line.quantity}
+          {formatQuantity(line.quantity)}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>

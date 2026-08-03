@@ -64,6 +64,9 @@ export class StockService {
         productName: products.name,
         productSku: products.sku,
         productType: products.type,
+        productImages: products.images,
+        sellingPrice: products.sellingPrice,
+        priceCurrencyId: products.priceCurrencyId,
         trackSerial: products.trackSerial,
         warehouseId: warehouses.id,
         warehouseName: warehouses.name,
@@ -110,6 +113,9 @@ export class StockService {
         productName: products.name,
         productSku: products.sku,
         productType: products.type,
+        productImages: products.images,
+        sellingPrice: products.sellingPrice,
+        priceCurrencyId: products.priceCurrencyId,
         trackSerial: products.trackSerial,
         warehouseId: warehouses.id,
         warehouseName: warehouses.name,
@@ -128,11 +134,17 @@ export class StockService {
         products.name,
         products.sku,
         products.type,
+        products.images,
+        products.sellingPrice,
+        products.priceCurrencyId,
         products.trackSerial,
         warehouses.id,
         warehouses.name,
         warehouses.code,
       );
+
+    const firstProductImage = (images: string[] | null | undefined) =>
+      Array.isArray(images) && images.length > 0 ? images[0] : null;
 
     const combined = [
       ...bulkRows.map((row) => ({
@@ -141,6 +153,9 @@ export class StockService {
         productName: row.productName,
         productSku: row.productSku,
         productType: row.productType,
+        productImage: firstProductImage(row.productImages),
+        sellingPrice: row.sellingPrice,
+        priceCurrencyId: row.priceCurrencyId,
         trackSerial: row.trackSerial,
         warehouseId: row.warehouseId,
         warehouseName: row.warehouseName,
@@ -156,6 +171,9 @@ export class StockService {
         productName: row.productName,
         productSku: row.productSku,
         productType: row.productType,
+        productImage: firstProductImage(row.productImages),
+        sellingPrice: row.sellingPrice,
+        priceCurrencyId: row.priceCurrencyId,
         trackSerial: row.trackSerial,
         warehouseId: row.warehouseId,
         warehouseName: row.warehouseName,

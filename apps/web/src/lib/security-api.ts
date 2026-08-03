@@ -32,7 +32,12 @@ export interface SecurityContext {
 }
 
 export interface MeResponse {
-  user: { id: string; name: string; email: string };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    mustChangePassword?: boolean;
+  };
   security: SecurityContext | null;
 }
 
@@ -66,13 +71,25 @@ export interface OrganizationInvitation {
 
 export interface InvitationDelivery {
   delivered: boolean;
-  mode: "smtp" | "resend" | "log" | "error";
+  mode: "smtp" | "resend" | "log" | "error" | "skipped";
   error?: string;
 }
 
 export interface InvitationMutation {
   id: string;
   email: string;
+  delivery: InvitationDelivery;
+}
+
+export interface ProvisionedMember {
+  userId: string;
+  memberId: string;
+  email: string;
+  name: string;
+  role: AppRole;
+  branchIds: string[];
+  temporaryPassword: string;
+  loginUrl: string;
   delivery: InvitationDelivery;
 }
 
@@ -100,6 +117,11 @@ export interface AuditLogPage {
 }
 
 export const getMe = () => apiFetch<MeResponse>("/api/v1/me");
+export const setInitialPassword = (newPassword: string) =>
+  apiFetch<{ success: boolean }>("/api/v1/me/set-initial-password", {
+    method: "POST",
+    body: JSON.stringify({ newPassword }),
+  });
 export const listBranches = () => apiFetch<Branch[]>("/api/v1/branches");
 export const createBranch = (body: {
   name: string;
@@ -142,6 +164,17 @@ export const inviteMember = (body: {
   branchIds: string[];
 }) =>
   apiFetch<InvitationMutation>("/api/v1/members/invitations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const provisionMember = (body: {
+  name: string;
+  email: string;
+  role: AppRole;
+  branchIds: string[];
+  sendEmail?: boolean;
+}) =>
+  apiFetch<ProvisionedMember>("/api/v1/members/provision", {
     method: "POST",
     body: JSON.stringify(body),
   });

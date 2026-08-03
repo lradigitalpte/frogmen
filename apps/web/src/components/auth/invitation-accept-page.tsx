@@ -15,7 +15,7 @@ import {
 import { Building2, CheckCircle2, Mail, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface InvitationAcceptPageProps {
   invitationId: string;
@@ -30,8 +30,17 @@ export function InvitationAcceptPage({
   const { data: session, isPending } = useSession();
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoAcceptStarted = useRef(false);
   const invitePath = `/invite/${encodeURIComponent(invitationId)}?email=${encodeURIComponent(invitedEmail)}`;
   const authQuery = `email=${encodeURIComponent(invitedEmail)}&redirect=${encodeURIComponent(invitePath)}`;
+
+  async function completeInvitation(organizationId?: string | null) {
+    if (organizationId) {
+      await authClient.organization.setActive({ organizationId });
+    }
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   async function acceptInvitation() {
     setAccepting(true);
@@ -49,6 +58,14 @@ export function InvitationAcceptPage({
       return;
     }
 
+    const organizationId = invitation.data?.organizationId;
+    const status = invitation.data?.status;
+
+    if (status === "accepted" && organizationId) {
+      await completeInvitation(organizationId);
+      return;
+    }
+
     const result = await authClient.organization.acceptInvitation({
       invitationId,
     });
@@ -58,16 +75,24 @@ export function InvitationAcceptPage({
       return;
     }
 
-    const organizationId = invitation.data?.organizationId;
-    if (organizationId) {
-      await authClient.organization.setActive({ organizationId });
-    }
-
-    router.push("/dashboard");
-    router.refresh();
+    await completeInvitation(organizationId);
   }
 
-  if (isPending) {
+  const emailMismatch =
+    Boolean(session?.user && invitedEmail) &&
+    session?.user?.email?.toLowerCase() !== invitedEmail.toLowerCase();
+
+  useEffect(() => {
+    if (isPending || !session?.user || autoAcceptStarted.current || emailMismatch) {
+      return;
+    }
+
+    autoAcceptStarted.current = true;
+    setAccepting(true);
+    void acceptInvitation();
+  }, [isPending, session?.user, invitedEmail, invitationId, emailMismatch]);
+
+  if (isPending || accepting) {
     return (
       <AuthLayout>
         <Card>
@@ -75,7 +100,7 @@ export function InvitationAcceptPage({
             <InlineStack align="center" blockAlign="center" gap="200">
               <Spinner size="small" />
               <Text as="p" tone="subdued">
-                Checking invitation…
+                {session?.user ? "Joining organization…" : "Checking invitation…"}
               </Text>
             </InlineStack>
           </div>
@@ -127,13 +152,22 @@ export function InvitationAcceptPage({
             </Text>
           </div>
 
+          {emailMismatch ? (
+            <Banner tone="warning" title="Signed in with a different email">
+              <p>
+                This invitation was sent to <strong>{invitedEmail}</strong>. Sign
+                out and sign in with that email to continue.
+              </p>
+            </Banner>
+          ) : null}
+
           {error ? (
             <Banner tone="critical" title="Invitation could not be accepted">
               <p>{error}</p>
             </Banner>
           ) : null}
 
-          {session?.user ? (
+          {session?.user && !emailMismatch ? (
             <BlockStack gap="300">
               <div className="invitation-accept__signed-in">
                 <CheckCircle2 aria-hidden size={18} />

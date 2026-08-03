@@ -24,9 +24,11 @@ import { pricingAdjustmentHelpText, pricingAdjustmentLabel } from "@frog1/shared
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { DocumentNotesField } from "@/components/documents/document-notes-field";
 import { todayIsoDate } from "@/components/sales/format-money";
+import { formatQuantity } from "@/lib/format-quantity";
 import { listCustomers } from "@/lib/customers-api";
 import type { Customer } from "@/types/customer";
 import { createInvoice, confirmInvoice } from "@/lib/invoices-api";
@@ -766,46 +768,48 @@ export function CreateInvoicePage() {
                             ? "No saleable products found."
                             : `Showing ${products.length} of ${catalogTotal} saleable product${catalogTotal === 1 ? "" : "s"}.`}
                         </Text>
-                        <ResourceList
-                          items={products}
-                          renderItem={(product) => (
-                          <ResourceItem
-                            id={product.id}
-                            onClick={() => void handleSelectProduct(product)}
-                            accessibilityLabel={`Select ${product.name}`}
-                          >
-                            <InlineStack align="space-between" blockAlign="center">
-                              <BlockStack gap="050">
-                                <InlineStack gap="200" blockAlign="center">
-                                  <Text as="span" fontWeight="bold">
-                                    {product.name}
+                        <ProductCatalogSearchResults>
+                          <ResourceList
+                            items={products}
+                            renderItem={(product) => (
+                            <ResourceItem
+                              id={product.id}
+                              onClick={() => void handleSelectProduct(product)}
+                              accessibilityLabel={`Select ${product.name}`}
+                            >
+                              <InlineStack align="space-between" blockAlign="center">
+                                <BlockStack gap="050">
+                                  <InlineStack gap="200" blockAlign="center">
+                                    <Text as="span" fontWeight="bold">
+                                      {product.name}
+                                    </Text>
+                                    {product.trackSerial ? (
+                                      <Badge tone="info">Serialized</Badge>
+                                    ) : null}
+                                  </InlineStack>
+                                  <Text as="span" tone="subdued" variant="bodySm">
+                                    SKU: {product.sku || "N/A"}
                                   </Text>
-                                  {product.trackSerial ? (
-                                    <Badge tone="info">Serialized</Badge>
-                                  ) : null}
+                                </BlockStack>
+                                <InlineStack gap="300" blockAlign="center">
+                                  <Text as="span" fontWeight="bold">
+                                    {formatProductCatalogPrice(product)}
+                                  </Text>
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      size="slim"
+                                      variant="primary"
+                                      onClick={() => void handleSelectProduct(product)}
+                                    >
+                                      Select Item
+                                    </Button>
+                                  </div>
                                 </InlineStack>
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  SKU: {product.sku || "N/A"}
-                                </Text>
-                              </BlockStack>
-                              <InlineStack gap="300" blockAlign="center">
-                                <Text as="span" fontWeight="bold">
-                                  {formatProductCatalogPrice(product)}
-                                </Text>
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <Button
-                                    size="slim"
-                                    variant="primary"
-                                    onClick={() => void handleSelectProduct(product)}
-                                  >
-                                    Select Item
-                                  </Button>
-                                </div>
                               </InlineStack>
-                            </InlineStack>
-                          </ResourceItem>
-                          )}
-                        />
+                            </ResourceItem>
+                            )}
+                          />
+                        </ProductCatalogSearchResults>
                       </>
                     )}
                   </BlockStack>
@@ -1094,7 +1098,7 @@ export function CreateInvoicePage() {
                                   <Text as="span" tone="subdued"> </Text>
                                 )}
                               </td>
-                              <td style={{ textAlign: "right" }}>{l.quantity}</td>
+                              <td style={{ textAlign: "right" }}>{formatQuantity(l.quantity)}</td>
                               <td style={{ textAlign: "right" }}>{fmt(l.unitPrice)}</td>
                               <td style={{ textAlign: "right" }} className="frogmen-text-muted">{l.discountPercent}%</td>
                               <td style={{ textAlign: "right" }} className="frogmen-text-muted">{l.taxRatePercent}%</td>

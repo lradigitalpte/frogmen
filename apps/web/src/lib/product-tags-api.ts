@@ -24,6 +24,19 @@ export function listProductTags(params: ListProductTagsParams = {}) {
   );
 }
 
+export function seedDefaultProductTags() {
+  return apiFetch<PaginatedProductTags>("/api/v1/product-tags/seed-default", {
+    method: "POST",
+  });
+}
+
+export function updateProductTag(id: string, name: string) {
+  return apiFetch<ProductTag>(`/api/v1/product-tags/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function createProductTag(name: string) {
   return apiFetch<ProductTag>("/api/v1/product-tags", {
     method: "POST",

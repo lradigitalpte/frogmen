@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -53,6 +54,24 @@ export class ProductCategoriesController {
     @Body() body: CreateProductCategoryDto,
   ) {
     return this.productCategoriesService.create(this.orgId(session), body);
+  }
+
+  @Post("seed-default")
+  seedDefaults(@Session() session: UserSession) {
+    return this.productCategoriesService.seedDefaults(this.orgId(session));
+  }
+
+  @Patch(":id")
+  update(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: CreateProductCategoryDto,
+  ) {
+    return this.productCategoriesService.update(
+      this.orgId(session),
+      id,
+      body.name,
+    );
   }
 
   @Delete(":id")

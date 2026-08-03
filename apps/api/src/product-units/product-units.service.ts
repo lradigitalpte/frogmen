@@ -43,14 +43,23 @@ export class ProductUnitsService {
     query: ListProductUnitsQuery,
   ) {
     const product = await this.productsService.getById(organizationId, productId);
-
-    if (!product.trackSerial) {
-      throw new BadRequestException("This product does not track serial numbers");
-    }
-
     const page = Math.max(query.page ?? 1, 1);
     const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 100);
     const offset = (page - 1) * perPage;
+
+    // Quantity-tracked products have no serial units — return empty instead of 400
+    // so product detail / picker pages can call this safely.
+    if (!product.trackSerial) {
+      return {
+        data: [],
+        meta: {
+          page,
+          perPage,
+          total: 0,
+          totalPages: 1,
+        },
+      };
+    }
 
     const filters: SQL[] = [
       eq(productUnits.organizationId, organizationId),

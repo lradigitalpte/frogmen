@@ -2,12 +2,14 @@
 
 import { AppPage } from "@/components/layout/page";
 import { useToast } from "@/components/providers/toast-provider";
+import { listBankAccounts, type BankAccount } from "@/lib/bank-accounts-api";
 import {
   getCompanySettings,
   getDocumentTemplates,
   updateDocumentTemplates,
 } from "@/lib/settings-api";
 import {
+  buildDocumentPaymentDetailsText,
   DEFAULT_DOCUMENT_TEMPLATES,
   type DocumentTemplateSettings,
 } from "@frog1/shared";
@@ -26,7 +28,8 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const tabs = [
   { id: "identity", content: "Document setup" },
@@ -63,21 +66,43 @@ export default function DocumentTemplatesSettingsPage() {
   const [companyName, setCompanyName] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
   const [companyTagline, setCompanyTagline] = useState("");
+  const [documentBankAccounts, setDocumentBankAccounts] = useState<BankAccount[]>([]);
   const [templates, setTemplates] =
     useState<Required<DocumentTemplateSettings>>(DEFAULT_DOCUMENT_TEMPLATES);
+
+  const paymentDetailsPreview = useMemo(
+    () =>
+      buildDocumentPaymentDetailsText(
+        companyName,
+        templates,
+        documentBankAccounts
+          .filter((account) => account.isActive && account.showOnDocuments)
+          .map((account) => ({
+            name: account.name,
+            bankName: account.bankName,
+            accountNumber: account.accountNumber,
+            iban: account.iban,
+            swiftCode: account.swiftCode,
+            currencyCode: account.currencyCode,
+          })),
+      ),
+    [companyName, documentBankAccounts, templates],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [company, documentTemplates] = await Promise.all([
+      const [company, documentTemplates, bankAccounts] = await Promise.all([
         getCompanySettings(),
         getDocumentTemplates(),
+        listBankAccounts({ activeOnly: true }),
       ]);
       setCompanyName(company.name);
       setCompanyLogoUrl(company.logoUrl);
       setCompanyTagline(company.companyProfile.tagline);
       setTemplates(documentTemplates);
+      setDocumentBankAccounts(bankAccounts);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load document settings");
     } finally {
@@ -138,8 +163,9 @@ export default function DocumentTemplatesSettingsPage() {
             <span className="document-settings-hero__eyebrow">Official documents</span>
             <h2>One source for every customer-facing document</h2>
             <p>
-              Company identity and logo come from Company setup. Payment details,
-              legal terms, and email wording are controlled here.
+              Company identity and logo come from Company setup. Bank details
+              come from Bank accounts. Payment instructions, legal terms, and
+              email wording are controlled here.
             </p>
             <div className="document-settings-hero__status">
               <span>Invoice title</span>
@@ -266,20 +292,34 @@ export default function DocumentTemplatesSettingsPage() {
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">Payment details</Text>
                     <Text as="p" tone="subdued">
-                      Bank information printed in the payment panel of documents.
+                      Bank accounts shown on invoices and quotations are managed
+                      in Bank accounts. Add optional payment instructions here.
                     </Text>
                   </BlockStack>
+                  <Banner tone="info">
+                    <p>
+                      Accounts with <strong>Show on invoices and quotations</strong>{" "}
+                      enabled appear in the payment panel of customer documents.
+                      {documentBankAccounts.filter((account) => account.showOnDocuments).length === 0
+                        ? " No bank accounts are currently marked for documents."
+                        : null}
+                    </p>
+                  </Banner>
+                  <Link
+                    className="company-settings__text-link"
+                    href="/dashboard/settings/bank-accounts"
+                  >
+                    Manage bank accounts →
+                  </Link>
                   <FormLayout>
-                    <FormLayout.Group>
-                      <TextField autoComplete="off" label="Account holder / beneficiary" value={templates.bankAccountName} onChange={(value) => updateTemplate("bankAccountName", value)} />
-                      <TextField autoComplete="off" label="Bank name" value={templates.bankName} onChange={(value) => updateTemplate("bankName", value)} />
-                    </FormLayout.Group>
-                    <FormLayout.Group>
-                      <TextField autoComplete="off" label="Account number" value={templates.bankAccount} onChange={(value) => updateTemplate("bankAccount", value)} />
-                      <TextField autoComplete="off" label="IBAN" value={templates.bankIban} onChange={(value) => updateTemplate("bankIban", value)} />
-                    </FormLayout.Group>
-                    <TextField autoComplete="off" label="SWIFT / BIC code" value={templates.bankSwiftCode} onChange={(value) => updateTemplate("bankSwiftCode", value)} />
-                    <TextField autoComplete="off" label="Payment instructions" multiline={3} value={templates.paymentInstructions} onChange={(value) => updateTemplate("paymentInstructions", value)} helpText="Example: Use the invoice number as the payment reference." />
+                    <TextField
+                      autoComplete="off"
+                      label="Payment instructions"
+                      multiline={4}
+                      value={templates.paymentInstructions}
+                      onChange={(value) => updateTemplate("paymentInstructions", value)}
+                      helpText="Example: Use the invoice number as the payment reference."
+                    />
                   </FormLayout>
                 </BlockStack>
               ) : null}
@@ -373,7 +413,16 @@ export default function DocumentTemplatesSettingsPage() {
               </section>
               <section className="document-full-preview__bank">
                 <strong>Payment Details</strong>
-                <p>{templates.bankAccountName || companyName}<br />{templates.bankName || "Bank name"}<br />{templates.bankIban || "IBAN"}</p>
+                <p>
+                  {paymentDetailsPreview
+                    ? paymentDetailsPreview.split("\n").map((line, index) => (
+                        <span key={`${line}-${index}`}>
+                          {line}
+                          <br />
+                        </span>
+                      ))
+                    : "Add bank accounts marked for documents to show payment details here."}
+                </p>
               </section>
             </div>
           </Modal.Section>

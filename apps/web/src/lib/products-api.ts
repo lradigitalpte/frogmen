@@ -44,6 +44,12 @@ export function getProduct(id: string) {
   return apiFetch<ProductDetail>(`/api/v1/products/${id}`);
 }
 
+export function suggestProductReference(name: string) {
+  return apiFetch<{ reference: string }>(
+    `/api/v1/products/suggest-reference${toQuery({ name })}`,
+  );
+}
+
 export function createProduct(input: CreateProductInput) {
   return apiFetch<Product>("/api/v1/products", {
     method: "POST",

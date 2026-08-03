@@ -65,6 +65,7 @@ export function AccountingOverviewPage() {
 
   const cashBalance = journalBalance(overview?.journals ?? [], "cash");
   const bankBalance = journalBalance(overview?.journals ?? [], "bank");
+  const bankAccounts = overview?.bankAccounts ?? [];
   const unpaidCount = overview?.unpaidInvoiceCount ?? 0;
   const unpaidTotal = overview?.unpaidInvoiceTotalBase ?? 0;
   const netProfit =
@@ -120,11 +121,32 @@ export function AccountingOverviewPage() {
             icon={<Landmark className="size-5" />}
             label="Bank Balance"
             value={formatBaseMoney(bankBalance)}
-            hint="BANK journal"
+            hint="BANK journal (all accounts)"
             tone="default"
             loading={loading && !overview}
           />
         </div>
+
+        {bankAccounts.length > 0 ? (
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">
+              Bank accounts
+            </Text>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {bankAccounts.map((account) => (
+                <KpiCard
+                  key={account.id}
+                  icon={<Landmark className="size-5" />}
+                  label={account.name}
+                  value={formatBaseMoney(account.balance)}
+                  hint={`${account.currencyCode} · ${account.glAccountCode} · ${formatBaseMoney(account.receiptsInPeriod)} in / ${formatBaseMoney(account.expensesInPeriod)} out this month`}
+                  tone={account.balance >= 0 ? "success" : "warning"}
+                  loading={loading && !overview}
+                />
+              ))}
+            </div>
+          </BlockStack>
+        ) : null}
 
         <BlockStack gap="400">
           <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab} />

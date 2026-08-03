@@ -17,8 +17,10 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { AdjustStockModal } from "@/components/stock/adjust-stock-modal";
 import { QuickAddSerialModal } from "@/components/stock/quick-add-serial-modal";
+import { formatQuantity } from "@/lib/format-quantity";
 import { listStock } from "@/lib/products-api";
 import { archiveWarehouse, getWarehouse } from "@/lib/warehouses-api";
 import type { StockOverviewRow } from "@/types/product";
@@ -100,14 +102,20 @@ export function ViewWarehousePage({ warehouseId }: ViewWarehousePageProps) {
       position={index}
     >
       <IndexTable.Cell>
-        <Link url={`/dashboard/inventory/products/${row.productId}`}>
-          {row.productName}
-        </Link>
+        <InlineStack gap="300" blockAlign="center">
+          <ProductListThumbnail
+            alt={row.productName}
+            imagePath={row.productImage}
+          />
+          <Link url={`/dashboard/inventory/products/${row.productId}`}>
+            {row.productName}
+          </Link>
+        </InlineStack>
       </IndexTable.Cell>
       <IndexTable.Cell>{row.productSku || " "}</IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" fontWeight="semibold">
-          {row.quantity}
+          {formatQuantity(row.quantity)}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>

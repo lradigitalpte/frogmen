@@ -24,6 +24,7 @@ import {
   creditNotes,
   customerRefunds,
   customers,
+  bankAccounts,
   invoiceLines,
   invoicePayments,
   invoiceNotifications,
@@ -42,6 +43,7 @@ import {
 import { convertPaymentToInvoiceAmount, applyTemplatePlaceholders } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { AccountingService } from "../accounting/accounting.service";
+import { BankAccountsService } from "../bank-accounts/bank-accounts.service";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
 import { SettingsService } from "../settings/settings.service";
 import { StockService } from "../stock/stock.service";
@@ -97,6 +99,7 @@ export interface RegisterPaymentInput {
   currencyId?: string;
   reference?: string;
   method?: string;
+  bankAccountId?: string;
 }
 
 @Injectable()
@@ -107,6 +110,7 @@ export class InvoicesService {
     private readonly stockService: StockService,
     private readonly settingsService: SettingsService,
     private readonly accountingService: AccountingService,
+    private readonly bankAccountsService: BankAccountsService,
     private readonly warrantiesService: WarrantiesService,
     private readonly mailService: MailService,
     private readonly documentRenderer: DocumentRendererService,
@@ -607,6 +611,24 @@ export class InvoicesService {
       input.paymentDate,
     );
 
+    const method = input.method ?? "bank_transfer";
+    const isCashMethod = method === "cash" || method === "cheque";
+    let bankAccountId: string | null = null;
+
+    if (!isCashMethod) {
+      if (input.bankAccountId) {
+        await this.bankAccountsService.assertUsableForTransaction(
+          organizationId,
+          input.bankAccountId,
+          {
+            branchId: invoice.branchId,
+            currencyId: paymentCurrencyId,
+          },
+        );
+        bankAccountId = input.bankAccountId;
+      }
+    }
+
     const [payment] = await this.db
       .insert(invoicePayments)
       .values({
@@ -617,7 +639,8 @@ export class InvoicesService {
         exchangeRate: String(paymentToBaseRate),
         paymentDate: input.paymentDate,
         reference: input.reference ?? null,
-        method: input.method ?? null,
+        method,
+        bankAccountId,
       })
       .returning();
 
@@ -666,11 +689,13 @@ export class InvoicesService {
         invoiceNumber: invoices.number,
         customerName: customers.name,
         currencyCode: currencies.code,
+        bankAccountName: bankAccounts.name,
       })
       .from(invoicePayments)
       .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
       .innerJoin(customers, eq(customers.id, invoices.customerId))
       .innerJoin(currencies, eq(currencies.id, invoicePayments.currencyId))
+      .leftJoin(bankAccounts, eq(bankAccounts.id, invoicePayments.bankAccountId))
       .where(eq(invoicePayments.organizationId, organizationId))
       .orderBy(desc(invoicePayments.paymentDate));
   }

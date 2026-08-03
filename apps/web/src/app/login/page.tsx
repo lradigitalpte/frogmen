@@ -2,11 +2,12 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import { AuthLayout } from "@/components/layout/auth-layout";
+import { getServerAppOrigin } from "@/lib/app-origin.server";
 
 async function hasSession() {
   const headerStore = await headers();
   const cookie = headerStore.get("cookie") ?? "";
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await getServerAppOrigin();
 
   const response = await fetch(`${appUrl}/api/auth/get-session`, {
     headers: { cookie },

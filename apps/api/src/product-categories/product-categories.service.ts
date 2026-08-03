@@ -20,10 +20,14 @@ import type {
   ListProductCategoriesQuery,
 } from "./dto/product-category.dto";
 import { DATABASE } from "../database/database.constants";
+import { OrgInventoryService } from "../inventory/org-inventory.service";
 
 @Injectable()
 export class ProductCategoriesService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly orgInventory: OrgInventoryService,
+  ) {}
 
   private normalizeName(name: string) {
     return name.trim().replace(/\s+/g, " ");
@@ -47,21 +51,41 @@ export class ProductCategoriesService {
 
     const whereClause = and(...filters);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
+    let rows = await this.db
+      .select()
+      .from(productCategoryCatalog)
+      .where(whereClause)
+      .orderBy(asc(sql`lower(${productCategoryCatalog.name})`))
+      .limit(perPage)
+      .offset(offset);
+
+    let total = Number(
+      (
+        await this.db
+          .select({ total: count() })
+          .from(productCategoryCatalog)
+          .where(whereClause)
+      )[0]?.total ?? 0,
+    );
+
+    if (total === 0 && !query.search?.trim()) {
+      await this.orgInventory.provision(organizationId);
+      rows = await this.db
         .select()
         .from(productCategoryCatalog)
         .where(whereClause)
         .orderBy(asc(sql`lower(${productCategoryCatalog.name})`))
         .limit(perPage)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(productCategoryCatalog)
-        .where(whereClause),
-    ]);
-
-    const total = Number(totalResult[0]?.total ?? 0);
+        .offset(offset);
+      total = Number(
+        (
+          await this.db
+            .select({ total: count() })
+            .from(productCategoryCatalog)
+            .where(whereClause)
+        )[0]?.total ?? 0,
+      );
+    }
 
     return {
       data: rows,
@@ -106,6 +130,57 @@ export class ProductCategoriesService {
       .returning();
 
     return created;
+  }
+
+  async update(organizationId: string, id: string, nameInput: string) {
+    const name = this.normalizeName(nameInput);
+
+    if (!name) {
+      throw new BadRequestException("Category name is required");
+    }
+
+    const [duplicate] = await this.db
+      .select({ id: productCategoryCatalog.id })
+      .from(productCategoryCatalog)
+      .where(
+        and(
+          eq(productCategoryCatalog.organizationId, organizationId),
+          isNull(productCategoryCatalog.deletedAt),
+          sql`lower(${productCategoryCatalog.name}) = lower(${name})`,
+          sql`${productCategoryCatalog.id} <> ${id}`,
+        ),
+      )
+      .limit(1);
+
+    if (duplicate) {
+      throw new BadRequestException("A category with this name already exists");
+    }
+
+    const [updated] = await this.db
+      .update(productCategoryCatalog)
+      .set({
+        name,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(productCategoryCatalog.id, id),
+          eq(productCategoryCatalog.organizationId, organizationId),
+          isNull(productCategoryCatalog.deletedAt),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      throw new NotFoundException("Category not found");
+    }
+
+    return updated;
+  }
+
+  async seedDefaults(organizationId: string) {
+    await this.orgInventory.provision(organizationId);
+    return this.list(organizationId, { perPage: 200 });
   }
 
   async archive(organizationId: string, id: string) {

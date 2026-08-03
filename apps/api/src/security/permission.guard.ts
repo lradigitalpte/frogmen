@@ -59,8 +59,10 @@ export class PermissionGuard implements CanActivate {
     }
 
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+    const isSeedDefault = /\/seed-default$/.test(request.path);
     if (
       isWrite &&
+      !isSeedDefault &&
       context.branchScope === "all" &&
       !request.path.endsWith("/branches/select")
     ) {
@@ -111,7 +113,7 @@ export class PermissionGuard implements CanActivate {
         : write
           ? "sales.write"
           : "sales.read";
-    if (path.includes("/accounting"))
+    if (path.includes("/accounting") || path.includes("/bank-accounts") || path.includes("/expenses") || path.includes("/expense-categories"))
       return write ? "accounting.manage" : "accounting.read";
     if (path.includes("/warrant")) return write ? "warranty.manage" : "warranty.read";
     if (path.includes("/rov"))

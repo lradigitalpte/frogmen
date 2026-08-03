@@ -41,10 +41,11 @@ import {
   mergeProductTags,
   splitCustomTags,
 } from "@/lib/product-tags";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProductTagPicker } from "./product-tag-picker";
 import { ProductCategoryPicker } from "./product-category-picker";
 import { WarrantyPolicyPicker } from "@/components/warranty/warranty-policy-picker";
+import { suggestProductReference } from "@/lib/products-api";
 import {
   getCategoryBadgeTone,
   getProductBadgeTone,
@@ -325,7 +326,39 @@ export function ProductForm({
 }: ProductFormProps) {
   const { catalogCurrencyId, defaultPricingCurrencyId } = useOrgCurrency();
   const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [debouncedName, setDebouncedName] = useState(values.name);
+  const valuesRef = useRef(values);
   const isCreate = !productId;
+
+  valuesRef.current = values;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedName(values.name), 300);
+    return () => clearTimeout(timer);
+  }, [values.name]);
+
+  useEffect(() => {
+    if (!isCreate) {
+      return;
+    }
+
+    const name = debouncedName.trim();
+
+    if (!name) {
+      if (valuesRef.current.reference) {
+        onChange({ ...valuesRef.current, reference: "" });
+      }
+      return;
+    }
+
+    void suggestProductReference(name)
+      .then((result) => {
+        onChange({ ...valuesRef.current, reference: result.reference });
+      })
+      .catch(() => {
+        // Keep the field empty until a unique reference can be suggested.
+      });
+  }, [debouncedName, isCreate, onChange]);
 
   useEffect(() => {
     void listCurrencies()
@@ -637,7 +670,7 @@ export function ProductForm({
                 <FormLayout>
                   <TextField
                     autoComplete="off"
-                    disabled={disabled}
+                    disabled={disabled || isCreate}
                     label="Reference"
                     value={values.reference}
                     onChange={(value) => update("reference", value)}

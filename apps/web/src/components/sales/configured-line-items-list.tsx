@@ -13,6 +13,7 @@ import {
   formatMarginPercent,
 } from "@/lib/line-item-utils";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
+import { formatQuantity } from "@/lib/format-quantity";
 
 interface ConfiguredLineItemsListProps {
   lines: ConfiguredLineItem[];
@@ -82,7 +83,7 @@ export function ConfiguredLineItemsList({
                     Qty
                   </Text>
                   <Text as="span" fontWeight="semibold">
-                    {line.quantity}
+                    {formatQuantity(line.quantity)}
                   </Text>
                 </div>
                 <div className="frogmen-line-card__metric">

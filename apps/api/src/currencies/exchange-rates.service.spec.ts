@@ -7,6 +7,12 @@ describe("ExchangeRatesService", () => {
 
   beforeEach(() => {
     service = new ExchangeRatesService({} as never);
+    vi.spyOn(
+      service as unknown as {
+        getBaseCurrencyId: (...args: unknown[]) => Promise<string | null>;
+      },
+      "getBaseCurrencyId",
+    ).mockResolvedValue(null);
   });
 
   it("getRequiredRate returns 1 for same currency", async () => {
@@ -64,5 +70,57 @@ describe("ExchangeRatesService", () => {
     await expect(
       service.hasConfiguredRate("org-1", "usd-id", "usd-id"),
     ).resolves.toBe(true);
+  });
+
+  it("getLatestRate prefers foreign→base rate when converting base→foreign", async () => {
+    vi.spyOn(
+      service as unknown as {
+        getBaseCurrencyId: (...args: unknown[]) => Promise<string | null>;
+      },
+      "getBaseCurrencyId",
+    ).mockResolvedValue("aed-id");
+    const lookup = vi.spyOn(
+      service as unknown as {
+        lookupDirectRate: (...args: unknown[]) => Promise<number | null>;
+      },
+      "lookupDirectRate",
+    );
+    lookup.mockImplementation(async (_org, from, to) => {
+      if (from === "aed-id" && to === "usd-id") {
+        return 3.67;
+      }
+      if (from === "usd-id" && to === "aed-id") {
+        return 3.67;
+      }
+      return null;
+    });
+
+    await expect(
+      service.getLatestRate("org-1", "aed-id", "usd-id"),
+    ).resolves.toBeCloseTo(1 / 3.67);
+  });
+
+  it("getRequiredRate prefers foreign→base rate when converting foreign→base", async () => {
+    vi.spyOn(
+      service as unknown as {
+        getBaseCurrencyId: (...args: unknown[]) => Promise<string | null>;
+      },
+      "getBaseCurrencyId",
+    ).mockResolvedValue("aed-id");
+    vi.spyOn(
+      service as unknown as {
+        lookupDirectRate: (...args: unknown[]) => Promise<number | null>;
+      },
+      "lookupDirectRate",
+    ).mockImplementation(async (_org, from, to) => {
+      if (from === "usd-id" && to === "aed-id") {
+        return 3.67;
+      }
+      return null;
+    });
+
+    await expect(
+      service.getRequiredRate("org-1", "usd-id", "aed-id"),
+    ).resolves.toBe(3.67);
   });
 });

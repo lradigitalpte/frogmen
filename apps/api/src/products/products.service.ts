@@ -65,6 +65,11 @@ import type {
 import { DATABASE } from "../database/database.constants";
 
 import { UploadsService } from "../uploads/uploads.service";
+import {
+  assertUniqueProductSku,
+  generateUniqueProductSku,
+  isProductSkuTaken,
+} from "./product-reference";
 
 
 
@@ -536,6 +541,24 @@ export class ProductsService {
 
 
 
+  async suggestReference(organizationId: string, name: string) {
+    const trimmedName = name?.trim();
+
+    if (!trimmedName) {
+      throw new BadRequestException("Product name is required");
+    }
+
+    const reference = await generateUniqueProductSku(
+      this.db,
+      organizationId,
+      trimmedName,
+    );
+
+    return { reference };
+  }
+
+
+
   async create(organizationId: string, dto: CreateProductDto) {
 
     if (!dto.name?.trim()) {
@@ -658,6 +681,32 @@ export class ProductsService {
 
 
 
+    const trimmedSku = dto.sku?.trim();
+    let resolvedSku: string;
+
+    if (trimmedSku) {
+      const taken = await isProductSkuTaken(
+        this.db,
+        organizationId,
+        trimmedSku,
+      );
+      resolvedSku = taken
+        ? await generateUniqueProductSku(
+            this.db,
+            organizationId,
+            dto.name.trim(),
+          )
+        : trimmedSku;
+    } else {
+      resolvedSku = await generateUniqueProductSku(
+        this.db,
+        organizationId,
+        dto.name.trim(),
+      );
+    }
+
+
+
     const product = await this.db.transaction(async (tx) => {
 
       const [created] = await tx
@@ -672,7 +721,7 @@ export class ProductsService {
 
           name: dto.name.trim(),
 
-          sku: dto.sku?.trim() || null,
+          sku: resolvedSku,
 
           barcode: dto.barcode?.trim() || null,
 
@@ -883,6 +932,21 @@ export class ProductsService {
           ? null
 
           : undefined;
+
+
+
+    if (dto.sku !== undefined) {
+      const trimmedSku = dto.sku?.trim();
+
+      if (trimmedSku) {
+        await assertUniqueProductSku(
+          this.db,
+          organizationId,
+          trimmedSku,
+          id,
+        );
+      }
+    }
 
 
 

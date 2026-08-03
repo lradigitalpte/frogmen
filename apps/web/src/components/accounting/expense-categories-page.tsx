@@ -1,0 +1,252 @@
+"use client";
+
+import {
+  Banner,
+  BlockStack,
+  Button,
+  Card,
+  EmptyState,
+  InlineGrid,
+  InlineStack,
+  Modal,
+  Tag,
+  Text,
+  TextField,
+} from "@shopify/polaris";
+import { useCallback, useEffect, useState } from "react";
+import { AppPage } from "@/components/layout/page";
+import {
+  archiveExpenseCategory,
+  createExpenseCategory,
+  listExpenseCategories,
+  updateExpenseCategory,
+  type ExpenseCategory,
+} from "@/lib/expenses-api";
+
+export function ExpenseCategoriesPage() {
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ExpenseCategory | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadCategories = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await listExpenseCategories({
+        search: debouncedSearch || undefined,
+        perPage: 200,
+      });
+      setCategories(result.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load categories");
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
+
+  async function handleCreate() {
+    const name = newCategory.trim();
+    if (!name) {
+      setError("Enter a category name");
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const created = await createExpenseCategory(name);
+      setNewCategory("");
+      setSuccess(`Added “${created.name}”`);
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create category");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleArchive(category: ExpenseCategory) {
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await archiveExpenseCategory(category.id);
+      setSuccess(`Removed “${category.name}”`);
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete category");
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    const name = editName.trim();
+    if (!name) {
+      setError("Enter a category name");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError(null);
+
+    try {
+      await updateExpenseCategory(editing.id, name);
+      setEditing(null);
+      setSuccess(`Updated “${name}”`);
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update category");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  return (
+    <AppPage
+      backAction={{ content: "Expenses", url: "/dashboard/accounting/expenses" }}
+      fullWidth
+      subtitle="Manage quick-pick categories used when recording expenses."
+      title="Expense categories"
+    >
+      <BlockStack gap="400">
+        {error ? (
+          <Banner tone="critical" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        ) : null}
+        {success ? (
+          <Banner tone="success" onDismiss={() => setSuccess(null)}>
+            {success}
+          </Banner>
+        ) : null}
+
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingSm">
+              New category
+            </Text>
+            <InlineStack align="end" gap="200" wrap={false}>
+              <div style={{ flex: 1 }}>
+                <TextField
+                  autoComplete="off"
+                  label="Category name"
+                  labelHidden
+                  placeholder="e.g. Office, Fuel, Travel"
+                  value={newCategory}
+                  onChange={setNewCategory}
+                />
+              </div>
+              <Button
+                disabled={!newCategory.trim()}
+                loading={creating}
+                variant="primary"
+                onClick={() => void handleCreate()}
+              >
+                Add category
+              </Button>
+            </InlineStack>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="h2" variant="headingSm">
+                Your categories
+              </Text>
+              <Text as="span" tone="subdued" variant="bodySm">
+                {loading
+                  ? "Loading…"
+                  : `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`}
+              </Text>
+            </InlineStack>
+
+            <TextField
+              autoComplete="off"
+              clearButton
+              label="Search"
+              labelHidden
+              placeholder="Filter categories…"
+              value={search}
+              onChange={setSearch}
+              onClearButtonClick={() => setSearch("")}
+            />
+
+            {!loading && categories.length === 0 ? (
+              <EmptyState
+                heading="No categories yet"
+                image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
+              >
+                <p>Add categories to speed up expense entry.</p>
+              </EmptyState>
+            ) : (
+              <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="200">
+                {categories.map((category) => (
+                  <div key={category.id} className="product-tag-row">
+                    <InlineStack gap="150">
+                      <Tag onRemove={() => void handleArchive(category)}>
+                        {category.name}
+                      </Tag>
+                      <Button
+                        size="slim"
+                        onClick={() => {
+                          setEditing(category);
+                          setEditName(category.name);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </InlineStack>
+                  </div>
+                ))}
+              </InlineGrid>
+            )}
+          </BlockStack>
+        </Card>
+      </BlockStack>
+
+      <Modal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title="Rename category"
+        primaryAction={{
+          content: "Save",
+          loading: savingEdit,
+          onAction: () => void handleSaveEdit(),
+        }}
+        secondaryActions={[
+          { content: "Cancel", onAction: () => setEditing(null) },
+        ]}
+      >
+        <Modal.Section>
+          <TextField
+            autoComplete="off"
+            label="Category name"
+            value={editName}
+            onChange={setEditName}
+          />
+        </Modal.Section>
+      </Modal>
+    </AppPage>
+  );
+}

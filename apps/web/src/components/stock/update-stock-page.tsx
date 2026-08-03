@@ -27,6 +27,7 @@ import {
   productUnitStatusLabel,
   StatusBadge,
 } from "@/components/ui/status-badge";
+import { formatQuantity } from "@/lib/format-quantity";
 import {
   adjustStock,
   createProductUnit,
@@ -447,7 +448,7 @@ function UpdateStockPageContent() {
                       <Text as="span" fontWeight="bold" variant="heading2xl">
                         {product.trackSerial
                           ? units.length
-                          : Number(currentQuantity) || 0}
+                          : formatQuantity(currentQuantity)}
                       </Text>
                     </BlockStack>
                   </InlineStack>
@@ -566,7 +567,7 @@ function UpdateStockPageContent() {
                             Current on hand
                           </Text>
                           <Text as="span" fontWeight="semibold">
-                            {currentQuantity}
+                            {formatQuantity(currentQuantity)}
                           </Text>
                         </div>
                         <div className="quotation-summary-row">

@@ -9,11 +9,16 @@ import { S3Service } from "../rov-inspection/s3.service";
 
 const OBJECT_PREFIX = "app-uploads/";
 
-const ALLOWED_MIME_TYPES = new Set([
+const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
+]);
+
+const ALLOWED_RECEIPT_TYPES = new Set([
+  ...ALLOWED_IMAGE_TYPES,
+  "application/pdf",
 ]);
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -21,6 +26,7 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "image/gif": ".gif",
+  "application/pdf": ".pdf",
 };
 
 @Injectable()
@@ -54,7 +60,7 @@ export class UploadsService {
     if (!file) {
       throw new BadRequestException("Avatar file is required");
     }
-    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
       throw new BadRequestException("Avatar must be a JPEG, PNG, WebP, or GIF");
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -64,6 +70,20 @@ export class UploadsService {
 
   validateImageFile(file: Express.Multer.File) {
     this.validateAvatarFile(file);
+  }
+
+  validateReceiptFile(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException("Receipt file is required");
+    }
+    if (!ALLOWED_RECEIPT_TYPES.has(file.mimetype)) {
+      throw new BadRequestException(
+        "Receipt must be a JPEG, PNG, WebP, GIF, or PDF",
+      );
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new BadRequestException("Receipt must be smaller than 10 MB");
+    }
   }
 
   private async save(relativePath: string, file: Express.Multer.File) {
@@ -110,6 +130,20 @@ export class UploadsService {
     return this.save(`org-logos/${organizationId}/logo${ext}`, file);
   }
 
+  async saveExpenseReceipt(
+    organizationId: string,
+    expenseId: string,
+    file: Express.Multer.File,
+  ) {
+    this.validateReceiptFile(file);
+    const ext =
+      MIME_TO_EXT[file.mimetype] ?? extname(file.originalname) ?? ".jpg";
+    return this.save(
+      `expenses/${organizationId}/${expenseId}/${randomUUID()}${ext}`,
+      file,
+    );
+  }
+
   private async open(relativePath: string) {
     try {
       return await this.s3.getObjectStream(this.objectKey(relativePath));
@@ -139,6 +173,14 @@ export class UploadsService {
     relativePath: string,
   ) {
     this.assertOrganizationPath(relativePath, "avatars", organizationId);
+    return this.open(relativePath);
+  }
+
+  async getExpenseReceiptStream(
+    organizationId: string,
+    relativePath: string,
+  ) {
+    this.assertOrganizationPath(relativePath, "expenses", organizationId);
     return this.open(relativePath);
   }
 

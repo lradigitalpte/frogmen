@@ -2,6 +2,13 @@ import type { CompanyProfileSettings } from "../schemas/company-settings";
 import { resolveCompanyProfile } from "../schemas/company-settings";
 import type { DocumentTemplateSettings } from "../schemas/document-templates";
 import { resolveDocumentTemplates } from "../schemas/document-templates";
+import { formatQuantity } from "../format-quantity";
+import {
+  type DocumentBankAccount,
+  renderDocumentPaymentDetailsHtml,
+} from "./document-payment-details";
+
+export type { DocumentBankAccount } from "./document-payment-details";
 
 export interface QuotationDocumentLine {
   description: string;
@@ -38,6 +45,7 @@ export interface OrganizationBranding {
   logoUrl: string | null;
   companyProfile: Required<CompanyProfileSettings>;
   documentTemplates: Required<DocumentTemplateSettings>;
+  documentBankAccounts?: DocumentBankAccount[];
 }
 
 export function formatDocumentMoney(
@@ -72,6 +80,7 @@ export function renderQuotationDocumentHtml(
   const isPurchaseOrder = quotation.documentType === "purchase_order";
   const isCreditNote = quotation.documentType === "credit_note";
   const title = isCreditNote ? "Credit Note" : isInvoice ? templates.invoiceTitle : isPurchaseOrder ? "Purchase Order" : templates.quotationTitle;
+  const showPaymentDetails = !isPurchaseOrder && !isCreditNote;
   const addressLine = [profile.address, profile.city, profile.country]
     .filter(Boolean)
     .join(", ");
@@ -81,7 +90,7 @@ export function renderQuotationDocumentHtml(
       (line) => `
       <tr>
         <td>${escapeHtml(line.description)}</td>
-        <td class="num">${escapeHtml(line.quantity)}</td>
+        <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(line.discountPercent)}%</td>
         <td class="num">${escapeHtml(line.taxRatePercent)}%</td>
@@ -105,7 +114,7 @@ export function renderQuotationDocumentHtml(
     const officialRows = quotation.lines.map((line) => `
       <tr>
         <td>${escapeHtml(line.description)}</td>
-        <td class="num">${escapeHtml(line.quantity)}</td>
+        <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
         <td class="num">${money(line.priceSubtotal)}</td>
       </tr>`).join("");
@@ -128,6 +137,13 @@ export function renderQuotationDocumentHtml(
     const customerLines = quotation.customerAddress.length
       ? quotation.customerAddress
       : ["No billing address provided"];
+    const paymentDetailsHtml = showPaymentDetails
+      ? renderDocumentPaymentDetailsHtml({
+          companyName: branding.name,
+          documentTemplates: templates,
+          documentBankAccounts: branding.documentBankAccounts,
+        })
+      : "";
 
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8" />
@@ -159,9 +175,18 @@ table{width:100%;border-collapse:collapse;margin:22px 0 12px}th{padding:10px;col
 <div class="row"><span>VAT</span><span>${money(quotation.amountTax)}</span></div>
 <div class="row grand"><span>Total Amount<br />(Including VAT)</span><span>${money(quotation.amountTotal)}</span></div>
 </div></div>
-${isInvoice && (templates.bankName || templates.bankAccount || templates.bankIban) ? `<div class="notes" style="width:55%;margin-top:24px"><strong>Payment Details</strong>${escapeHtml(templates.bankAccountName || branding.name)}\n${escapeHtml(templates.bankName)}${templates.bankAccount ? `\nBank Account: ${escapeHtml(templates.bankAccount)}` : ""}${templates.bankIban ? `\nIBAN: ${escapeHtml(templates.bankIban)}` : ""}</div>` : ""}
+${paymentDetailsHtml}
 ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}</body></html>`;
   }
+
+  const paymentDetailsHtml = showPaymentDetails
+    ? renderDocumentPaymentDetailsHtml({
+        companyName: branding.name,
+        documentTemplates: templates,
+        documentBankAccounts: branding.documentBankAccounts,
+        className: "terms",
+      })
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -258,6 +283,7 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   ${!quotation.notes && templates.defaultDeliveryTerms ? `<div class="terms"><strong>Delivery terms</strong>\n${escapeHtml(templates.defaultDeliveryTerms)}</div>` : ""}
   ${!quotation.notes && templates.defaultWarrantyNotes ? `<div class="terms"><strong>Warranty</strong>\n${escapeHtml(templates.defaultWarrantyNotes)}</div>` : ""}
   ${templates.termsAndConditions ? `<div class="terms"><strong>Terms &amp; conditions</strong>\n${escapeHtml(templates.termsAndConditions)}</div>` : ""}
+  ${paymentDetailsHtml}
   ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}
 </body>
 </html>`;

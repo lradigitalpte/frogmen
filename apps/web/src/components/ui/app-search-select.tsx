@@ -141,7 +141,7 @@ export function AppSearchSelect({
           preferredAlignment="left"
           onClose={closePopover}
         >
-          <div className="max-h-48 overflow-y-auto">
+          <div className="app-search-select__dropdown">
             <Box padding="100">
               {filteredOptions.length === 0 ? (
               <div className="app-search-select__empty">

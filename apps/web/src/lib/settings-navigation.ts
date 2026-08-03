@@ -44,6 +44,12 @@ export const settingsNavGroups: SettingsNavGroup[] = [
         description: "Base currency and exchange rates",
       },
       {
+        label: "Bank accounts",
+        href: "/dashboard/settings/bank-accounts",
+        permission: "accounting.manage",
+        description: "Receiving accounts for payments and GL tracking",
+      },
+      {
         label: "Taxes & pricing",
         href: "/dashboard/settings/sales-pricing",
         description: "VAT rates and customer price rules",

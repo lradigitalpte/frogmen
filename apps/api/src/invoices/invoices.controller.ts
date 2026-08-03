@@ -163,8 +163,10 @@ export class InvoicesController {
       {
         amount: body.amount,
         paymentDate: body.paymentDate,
+        currencyId: body.currencyId,
         reference: body.journal ?? body.reference,
         method: body.method,
+        bankAccountId: body.bankAccountId,
       },
     );
   }
@@ -220,6 +222,7 @@ export class PaymentsController {
         amount: convertAmount(paymentAmount, exchangeRate),
         currencyId: row.payment.currencyId,
         currencyCode: row.currencyCode?.trim() ?? null,
+        bankAccountName: row.bankAccountName ?? null,
         state: "paid" as const,
       };
     });

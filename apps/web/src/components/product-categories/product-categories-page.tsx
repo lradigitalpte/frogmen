@@ -8,6 +8,7 @@ import {
   EmptyState,
   InlineGrid,
   InlineStack,
+  Modal,
   Tag,
   Text,
   TextField,
@@ -18,6 +19,8 @@ import {
   archiveProductCategory,
   createProductCategory,
   listProductCategories,
+  seedDefaultProductCategories,
+  updateProductCategory,
 } from "@/lib/product-categories-api";
 import type { ProductCategory } from "@/types/product-category";
 
@@ -30,6 +33,9 @@ export function ProductCategoriesPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ProductCategory | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 250);
@@ -46,6 +52,19 @@ export function ProductCategoriesPage() {
         perPage: 200,
       });
       setCategories(result.data);
+
+      if (result.data.length === 0 && !debouncedSearch) {
+        try {
+          const seeded = await seedDefaultProductCategories();
+          setCategories(seeded.data);
+        } catch (seedError) {
+          setError(
+            seedError instanceof Error
+              ? seedError.message
+              : "Failed to load starter categories",
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load categories");
     } finally {
@@ -90,6 +109,29 @@ export function ProductCategoriesPage() {
       await loadCategories();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete category");
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    const name = editName.trim();
+    if (!name) {
+      setError("Enter a category name");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError(null);
+
+    try {
+      await updateProductCategory(editing.id, name);
+      setEditing(null);
+      setSuccess(`Updated “${name}”`);
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update category");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -184,9 +226,20 @@ export function ProductCategoriesPage() {
               <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="200">
                 {categories.map((category) => (
                   <div key={category.id} className="product-tag-row">
-                    <Tag onRemove={() => void handleArchive(category)}>
-                      {category.name}
-                    </Tag>
+                    <InlineStack gap="150">
+                      <Tag onRemove={() => void handleArchive(category)}>
+                        {category.name}
+                      </Tag>
+                      <Button
+                        size="slim"
+                        onClick={() => {
+                          setEditing(category);
+                          setEditName(category.name);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </InlineStack>
                   </div>
                 ))}
               </InlineGrid>
@@ -194,6 +247,29 @@ export function ProductCategoriesPage() {
           </BlockStack>
         </Card>
       </BlockStack>
+
+      <Modal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title="Rename category"
+        primaryAction={{
+          content: "Save",
+          loading: savingEdit,
+          onAction: () => void handleSaveEdit(),
+        }}
+        secondaryActions={[
+          { content: "Cancel", onAction: () => setEditing(null) },
+        ]}
+      >
+        <Modal.Section>
+          <TextField
+            autoComplete="off"
+            label="Category name"
+            value={editName}
+            onChange={setEditName}
+          />
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

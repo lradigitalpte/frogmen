@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS "invoice_notifications" (
 );
 ALTER TABLE "account_moves" ADD COLUMN IF NOT EXISTS "refund_id" uuid REFERENCES "customer_refunds"("id");
 ALTER TABLE "customer_refunds" ENABLE ROW LEVEL SECURITY; ALTER TABLE "customer_refunds" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "customer_refunds_scope" ON "customer_refunds";
 CREATE POLICY "customer_refunds_scope" ON "customer_refunds" USING (organization_id = app_current_organization_id() AND (app_all_branches() OR branch_id = app_current_branch_id())) WITH CHECK (organization_id = app_current_organization_id() AND branch_id = app_current_branch_id());
 ALTER TABLE "invoice_notifications" ENABLE ROW LEVEL SECURITY; ALTER TABLE "invoice_notifications" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "invoice_notifications_scope" ON "invoice_notifications";
 CREATE POLICY "invoice_notifications_scope" ON "invoice_notifications" USING (organization_id = app_current_organization_id() AND (app_all_branches() OR branch_id = app_current_branch_id())) WITH CHECK (organization_id = app_current_organization_id() AND branch_id = app_current_branch_id());

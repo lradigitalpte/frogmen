@@ -20,10 +20,14 @@ import type {
   ListProductTagsQuery,
 } from "./dto/product-tag.dto";
 import { DATABASE } from "../database/database.constants";
+import { OrgInventoryService } from "../inventory/org-inventory.service";
 
 @Injectable()
 export class ProductTagsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly orgInventory: OrgInventoryService,
+  ) {}
 
   private normalizeName(name: string) {
     return name.trim().replace(/\s+/g, " ");
@@ -45,18 +49,41 @@ export class ProductTagsService {
 
     const whereClause = and(...filters);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
+    let rows = await this.db
+      .select()
+      .from(productTagCatalog)
+      .where(whereClause)
+      .orderBy(asc(sql`lower(${productTagCatalog.name})`))
+      .limit(perPage)
+      .offset(offset);
+
+    let total = Number(
+      (
+        await this.db
+          .select({ total: count() })
+          .from(productTagCatalog)
+          .where(whereClause)
+      )[0]?.total ?? 0,
+    );
+
+    if (total === 0 && !query.search?.trim()) {
+      await this.orgInventory.provision(organizationId);
+      rows = await this.db
         .select()
         .from(productTagCatalog)
         .where(whereClause)
         .orderBy(asc(sql`lower(${productTagCatalog.name})`))
         .limit(perPage)
-        .offset(offset),
-      this.db.select({ total: count() }).from(productTagCatalog).where(whereClause),
-    ]);
-
-    const total = Number(totalResult[0]?.total ?? 0);
+        .offset(offset);
+      total = Number(
+        (
+          await this.db
+            .select({ total: count() })
+            .from(productTagCatalog)
+            .where(whereClause)
+        )[0]?.total ?? 0,
+      );
+    }
 
     return {
       data: rows,
@@ -101,6 +128,57 @@ export class ProductTagsService {
       .returning();
 
     return created;
+  }
+
+  async update(organizationId: string, id: string, nameInput: string) {
+    const name = this.normalizeName(nameInput);
+
+    if (!name) {
+      throw new BadRequestException("Tag name is required");
+    }
+
+    const [duplicate] = await this.db
+      .select({ id: productTagCatalog.id })
+      .from(productTagCatalog)
+      .where(
+        and(
+          eq(productTagCatalog.organizationId, organizationId),
+          isNull(productTagCatalog.deletedAt),
+          sql`lower(${productTagCatalog.name}) = lower(${name})`,
+          sql`${productTagCatalog.id} <> ${id}`,
+        ),
+      )
+      .limit(1);
+
+    if (duplicate) {
+      throw new BadRequestException("A tag with this name already exists");
+    }
+
+    const [updated] = await this.db
+      .update(productTagCatalog)
+      .set({
+        name,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(productTagCatalog.id, id),
+          eq(productTagCatalog.organizationId, organizationId),
+          isNull(productTagCatalog.deletedAt),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      throw new NotFoundException("Tag not found");
+    }
+
+    return updated;
+  }
+
+  async seedDefaults(organizationId: string) {
+    await this.orgInventory.provision(organizationId);
+    return this.list(organizationId, { perPage: 200 });
   }
 
   async archive(organizationId: string, id: string) {

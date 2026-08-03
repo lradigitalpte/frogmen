@@ -8,6 +8,7 @@ import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   accountMoveLines,
   accountMoves,
+  bankAccounts,
   glAccounts,
   invoiceLines,
   invoicePayments,
@@ -28,6 +29,7 @@ import { AccountingProvisionerService } from "./accounting-provisioner.service";
 
 interface MoveLineInput {
   accountCode: string;
+  accountId?: string;
   label: string;
   debit: number;
   credit: number;
@@ -227,6 +229,13 @@ export class AccountingService {
     );
 
     const journalCode = this.paymentJournalCode(row.payment.method);
+    const liquidityAccount = await this.resolveLiquidityAccount(
+      organizationId,
+      {
+        method: row.payment.method,
+        bankAccountId: row.payment.bankAccountId,
+      },
+    );
 
     return this.createPostedMove(organizationId, {
       journalCode,
@@ -234,9 +243,11 @@ export class AccountingService {
       reference: row.payment.reference ?? row.payment.method ?? "Payment",
       moveDate: row.payment.paymentDate,
       paymentId,
+      bankAccountId: row.payment.bankAccountId ?? undefined,
       lines: [
         {
-          accountCode: journalCode === "CASH" ? "101501" : "101401",
+          accountCode: liquidityAccount.accountCode,
+          accountId: liquidityAccount.accountId,
           label: `Payment received ${row.invoice.number}`,
           debit: paymentAmountBase,
           credit: 0,
@@ -410,10 +421,12 @@ export class AccountingService {
         reference: accountMoves.reference,
         amount: accountMoveLines.debit,
         journalCode: journals.code,
+        bankAccountName: bankAccounts.name,
       })
       .from(accountMoveLines)
       .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
       .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .leftJoin(bankAccounts, eq(bankAccounts.id, accountMoves.bankAccountId))
       .where(
         and(
           eq(accountMoves.organizationId, organizationId),
@@ -449,6 +462,7 @@ export class AccountingService {
         reference: row.reference,
         amount,
         paymentSource,
+        bankAccountName: row.bankAccountName,
       };
     });
 
@@ -471,16 +485,43 @@ export class AccountingService {
       description: string;
       paymentMethod: string;
       reference?: string;
+      bankAccountId?: string;
+    },
+  ) {
+    const moveId = await this.postExpenseJournal(organizationId, {
+      ...input,
+      reference: input.reference ?? input.description,
+    });
+    return { id: moveId };
+  }
+
+  async postExpenseJournal(
+    organizationId: string,
+    input: {
+      amount: number;
+      expenseDate: string;
+      description: string;
+      paymentMethod: string;
+      reference: string;
+      bankAccountId?: string;
     },
   ) {
     const journalCode = this.paymentJournalCode(input.paymentMethod);
     const amountBase = roundMoney(input.amount);
+    const liquidityAccount = await this.resolveLiquidityAccount(
+      organizationId,
+      {
+        method: input.paymentMethod,
+        bankAccountId: input.bankAccountId,
+      },
+    );
 
     return this.createPostedMove(organizationId, {
       journalCode,
       name: input.description.slice(0, 255),
-      reference: input.reference ?? input.description,
+      reference: input.reference,
       moveDate: input.expenseDate,
+      bankAccountId: input.bankAccountId,
       lines: [
         {
           accountCode: "600000",
@@ -489,12 +530,94 @@ export class AccountingService {
           credit: 0,
         },
         {
-          accountCode: journalCode === "CASH" ? "101501" : "101401",
+          accountCode: liquidityAccount.accountCode,
+          accountId: liquidityAccount.accountId,
           label: input.description,
           debit: 0,
           credit: amountBase,
         },
       ],
+    });
+  }
+
+  async updateJournalMoveMetadata(
+    organizationId: string,
+    moveId: string,
+    input: { name?: string; reference?: string },
+  ) {
+    const [updated] = await this.db
+      .update(accountMoves)
+      .set({
+        ...(input.name !== undefined ? { name: input.name.slice(0, 255) } : {}),
+        ...(input.reference !== undefined ? { reference: input.reference } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(accountMoves.id, moveId),
+          eq(accountMoves.organizationId, organizationId),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      throw new NotFoundException("Journal entry not found");
+    }
+
+    return updated;
+  }
+
+  async reverseJournalMove(
+    organizationId: string,
+    moveId: string,
+    label: string,
+  ) {
+    const [move] = await this.db
+      .select({
+        move: accountMoves,
+        journalCode: journals.code,
+      })
+      .from(accountMoves)
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .where(
+        and(
+          eq(accountMoves.id, moveId),
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.state, "posted"),
+        ),
+      )
+      .limit(1);
+
+    if (!move) {
+      throw new NotFoundException("Journal entry not found");
+    }
+
+    const lines = await this.db
+      .select({
+        accountCode: glAccounts.code,
+        accountId: accountMoveLines.accountId,
+        label: accountMoveLines.label,
+        debit: accountMoveLines.debit,
+        credit: accountMoveLines.credit,
+      })
+      .from(accountMoveLines)
+      .innerJoin(glAccounts, eq(glAccounts.id, accountMoveLines.accountId))
+      .where(eq(accountMoveLines.moveId, moveId))
+      .orderBy(accountMoveLines.lineNumber);
+
+    return this.createPostedMove(organizationId, {
+      journalCode: move.journalCode,
+      name: label.slice(0, 255),
+      reference: `Reversal ${move.move.reference ?? move.move.name}`,
+      moveDate: move.move.moveDate,
+      bankAccountId: move.move.bankAccountId ?? undefined,
+      lines: lines.map((line) => ({
+        accountCode: line.accountCode,
+        accountId: line.accountId,
+        label: line.label,
+        debit: roundMoney(Number(line.credit)),
+        credit: roundMoney(Number(line.debit)),
+      })),
     });
   }
 
@@ -579,6 +702,76 @@ export class AccountingService {
     return "BANK";
   }
 
+  private async resolveLiquidityAccount(
+    organizationId: string,
+    input: { method?: string | null; bankAccountId?: string | null },
+  ) {
+    if (input.method === "cash" || input.method === "cheque") {
+      const cashAccount = await this.provisioner.getAccountByCode(
+        organizationId,
+        "101501",
+      );
+      if (!cashAccount) {
+        throw new BadRequestException("Cash account is not configured");
+      }
+      return { accountId: cashAccount.id, accountCode: cashAccount.code };
+    }
+
+    if (input.bankAccountId) {
+      const [bankAccount] = await this.db
+        .select({
+          glAccountId: bankAccounts.glAccountId,
+          glAccountCode: glAccounts.code,
+        })
+        .from(bankAccounts)
+        .innerJoin(glAccounts, eq(glAccounts.id, bankAccounts.glAccountId))
+        .where(
+          and(
+            eq(bankAccounts.id, input.bankAccountId),
+            eq(bankAccounts.organizationId, organizationId),
+            eq(bankAccounts.isActive, true),
+          ),
+        )
+        .limit(1);
+
+      if (!bankAccount) {
+        throw new BadRequestException("Bank account is not available");
+      }
+
+      return {
+        accountId: bankAccount.glAccountId,
+        accountCode: bankAccount.glAccountCode,
+      };
+    }
+
+    const [activeBank] = await this.db
+      .select({ id: bankAccounts.id })
+      .from(bankAccounts)
+      .where(
+        and(
+          eq(bankAccounts.organizationId, organizationId),
+          eq(bankAccounts.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    if (activeBank) {
+      throw new BadRequestException(
+        "Select a bank account for this transaction",
+      );
+    }
+
+    const legacyBank = await this.provisioner.getAccountByCode(
+      organizationId,
+      "101401",
+    );
+    if (!legacyBank) {
+      throw new BadRequestException("Bank account is not configured");
+    }
+
+    return { accountId: legacyBank.id, accountCode: legacyBank.code };
+  }
+
   private async createPostedMove(
     organizationId: string,
     input: {
@@ -589,6 +782,7 @@ export class AccountingService {
       invoiceId?: string;
       paymentId?: string;
       refundId?: string;
+      bankAccountId?: string;
       lines: MoveLineInput[];
     },
   ) {
@@ -615,6 +809,7 @@ export class AccountingService {
         invoiceId: input.invoiceId ?? null,
         paymentId: input.paymentId ?? null,
         refundId: input.refundId ?? null,
+        bankAccountId: input.bankAccountId ?? null,
         postedAt: new Date(),
       })
       .returning();
@@ -625,10 +820,16 @@ export class AccountingService {
         continue;
       }
 
-      const account = await this.provisioner.getAccountByCode(
-        organizationId,
-        line.accountCode,
-      );
+      const account =
+        line.accountId != null
+          ? await this.provisioner.getAccountById(
+              organizationId,
+              line.accountId,
+            )
+          : await this.provisioner.getAccountByCode(
+              organizationId,
+              line.accountCode,
+            );
 
       if (!account) {
         throw new BadRequestException(

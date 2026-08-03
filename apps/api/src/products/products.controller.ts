@@ -63,6 +63,14 @@ export class ProductsController {
     });
   }
 
+  @Get("suggest-reference")
+  suggestReference(
+    @Session() session: UserSession,
+    @Query("name") name: string,
+  ) {
+    return this.productsService.suggestReference(this.orgId(session), name);
+  }
+
   @Get(":id/sub-products")
   listSubProducts(
     @Session() session: UserSession,

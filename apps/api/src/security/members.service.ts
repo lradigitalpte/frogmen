@@ -21,6 +21,7 @@ import {
 } from "@frog1/db";
 import { DATABASE } from "../database/database.constants";
 import { escapeHtml } from "@frog1/shared";
+import { provisionOrganizationUser } from "../auth/provision-user";
 import { MailService } from "../mail/mail.service";
 import { normalizeRole, ROLES, type AppRole } from "./permissions";
 import type { SecurityContext } from "./security-context";
@@ -280,6 +281,114 @@ export class MembersService {
     return { ...invitation, branchIds, delivery };
   }
 
+  async provisionUser(
+    context: SecurityContext,
+    input: {
+      name?: string;
+      email?: string;
+      role?: string;
+      branchIds?: string[];
+      sendEmail?: boolean;
+    },
+  ) {
+    const name = input.name?.trim();
+    const email = input.email?.trim().toLowerCase();
+    const role = normalizeRole(input.role);
+    if (!name) {
+      throw new BadRequestException("A full name is required");
+    }
+    if (!email || !email.includes("@")) {
+      throw new BadRequestException("A valid email is required");
+    }
+    if (!input.role || !ROLES.includes(input.role as AppRole) || role === "owner") {
+      throw new BadRequestException("A valid non-owner role is required");
+    }
+
+    const branchIds = [...new Set(input.branchIds ?? [])];
+    if (branchIds.length === 0 && !["admin"].includes(role)) {
+      throw new BadRequestException("At least one branch is required");
+    }
+    if (branchIds.length > 0) {
+      const validBranches = await this.db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(
+          and(
+            eq(branches.organizationId, context.organizationId),
+            eq(branches.isActive, true),
+            inArray(branches.id, branchIds),
+          ),
+        );
+      if (validBranches.length !== branchIds.length) {
+        throw new BadRequestException("One or more branches are invalid");
+      }
+    }
+
+    const [existingUser] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .limit(1);
+    if (existingUser) {
+      throw new ConflictException(
+        "A user with this email already exists. Send an email invite instead.",
+      );
+    }
+
+    const [existingInvitation] = await this.db
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.organizationId, context.organizationId),
+          sql`lower(${invitations.email}) = ${email}`,
+          eq(invitations.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (existingInvitation) {
+      throw new ConflictException(
+        "A pending invitation already exists for this email",
+      );
+    }
+
+    const provisioned = await provisionOrganizationUser(this.db, {
+      name,
+      email,
+      organizationId: context.organizationId,
+      role,
+      branchIds,
+    });
+
+    const webUrl = (
+      this.config.get<string>("WEB_URL") ?? "http://localhost:3000"
+    ).replace(/\/$/, "");
+    const loginUrl = `${webUrl}/login?email=${encodeURIComponent(email)}`;
+    const delivery =
+      input.sendEmail === false
+        ? { delivered: false, mode: "skipped" as const }
+        : await this.sendProvisionCredentialsEmail(context, {
+            recipientEmail: email,
+            recipientName: name,
+            role,
+            branchIds,
+            temporaryPassword: provisioned.temporaryPassword,
+            loginUrl,
+          });
+
+    return {
+      userId: provisioned.userId,
+      memberId: provisioned.memberId,
+      email,
+      name,
+      role,
+      branchIds,
+      temporaryPassword: provisioned.temporaryPassword,
+      loginUrl,
+      delivery,
+    };
+  }
+
   async resendInvitation(context: SecurityContext, invitationId: string) {
     const [invitation] = await this.db
       .select()
@@ -331,6 +440,84 @@ export class MembersService {
       .returning();
     if (!cancelled) throw new NotFoundException("Invitation not found");
     return cancelled;
+  }
+
+  private async sendProvisionCredentialsEmail(
+    context: SecurityContext,
+    input: {
+      recipientEmail: string;
+      recipientName: string;
+      role: AppRole;
+      branchIds: string[];
+      temporaryPassword: string;
+      loginUrl: string;
+    },
+  ) {
+    const [[organization], [inviter], branchRows] = await Promise.all([
+      this.db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, context.organizationId))
+        .limit(1),
+      this.db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, context.userId))
+        .limit(1),
+      input.branchIds.length
+        ? this.db
+            .select({ name: branches.name })
+            .from(branches)
+            .where(inArray(branches.id, input.branchIds))
+            .orderBy(asc(branches.name))
+        : Promise.resolve([]),
+    ]);
+
+    const organizationName = organization?.name ?? "your organization";
+    const inviterName = inviter?.name ?? inviter?.email ?? "An administrator";
+    const roleLabel = input.role[0]!.toUpperCase() + input.role.slice(1);
+    const branchLabel =
+      input.role === "admin"
+        ? "All branches"
+        : branchRows.map((branch) => branch.name).join(", ") ||
+          "Assigned branches";
+    const safeRoleLabel = escapeHtml(roleLabel);
+    const safeBranchLabel = escapeHtml(branchLabel);
+    const safeEmail = escapeHtml(input.recipientEmail);
+    const safePassword = escapeHtml(input.temporaryPassword);
+
+    try {
+      return await this.mail.sendBrandedMail({
+        to: input.recipientEmail,
+        subject: `Your FrogmenDash account for ${organizationName}`,
+        title: `Welcome to ${organizationName}`,
+        bodyText: `Hello ${input.recipientName},
+
+${inviterName} created a FrogmenDash account for you.
+
+Sign in with the email address ${input.recipientEmail} and the temporary password below. You will be asked to choose a new password on your first sign-in.`,
+        extraHtml: `
+                <div style="padding:16px;border-radius:12px;background:#f3f8f5">
+                  <p style="margin:0 0 8px"><strong>Email:</strong> ${safeEmail}</p>
+                  <p style="margin:0 0 8px"><strong>Temporary password:</strong> ${safePassword}</p>
+                  <p style="margin:0 0 8px"><strong>Role:</strong> ${safeRoleLabel}</p>
+                  <p style="margin:0"><strong>Branch access:</strong> ${safeBranchLabel}</p>
+                </div>`,
+        ctaLabel: "Sign in to FrogmenDash",
+        ctaUrl: input.loginUrl,
+        footerNote:
+          "For security, choose a new password immediately after signing in.",
+      });
+    } catch (error) {
+      return {
+        delivered: false,
+        mode: "error" as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Account credentials email failed",
+      };
+    }
   }
 
   private async sendInvitationEmail(

@@ -13,6 +13,7 @@ import {
 } from "@thallesp/nestjs-better-auth";
 import { AccountingReportsService } from "./accounting-reports.service";
 import { AccountingService } from "./accounting.service";
+import { ExpensesService } from "../expenses/expenses.service";
 
 @Controller("v1/accounting")
 @RequireActiveOrg()
@@ -20,6 +21,7 @@ export class AccountingController {
   constructor(
     private readonly accountingService: AccountingService,
     private readonly reportsService: AccountingReportsService,
+    private readonly expensesService: ExpensesService,
   ) {}
 
   private orgId(session: UserSession) {
@@ -61,13 +63,26 @@ export class AccountingController {
     return this.reportsService.getBalanceSheet(this.orgId(session), asOf);
   }
 
+  @Get("reports/bank-balances")
+  getBankBalances(
+    @Session() session: UserSession,
+    @Query("asOf") asOf?: string,
+    @Query("dateFrom") dateFrom?: string,
+  ) {
+    return this.reportsService.getBankBalances(
+      this.orgId(session),
+      asOf,
+      dateFrom,
+    );
+  }
+
   @Get("expenses")
   listExpenses(@Session() session: UserSession) {
-    return this.accountingService.listExpenses(this.orgId(session));
+    return this.expensesService.list(this.orgId(session));
   }
 
   @Post("expenses")
-  createExpense(
+  async createExpense(
     @Session() session: UserSession,
     @Body()
     body: {
@@ -76,8 +91,14 @@ export class AccountingController {
       description: string;
       paymentMethod: string;
       reference?: string;
+      bankAccountId?: string;
+      categoryId?: string;
     },
   ) {
-    return this.accountingService.createExpense(this.orgId(session), body);
+    return this.expensesService.create(
+      this.orgId(session),
+      session.user.id,
+      body,
+    );
   }
 }

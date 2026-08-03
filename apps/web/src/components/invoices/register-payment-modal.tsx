@@ -18,6 +18,7 @@ import { todayIsoDate } from "@/components/sales/format-money";
 import type { CurrencyLike } from "@/lib/currency-utils";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
 import { getExchangeRate } from "@/lib/currencies-api";
+import { listBankAccounts, type BankAccount } from "@/lib/bank-accounts-api";
 import type { Invoice } from "@/lib/invoices-api";
 
 const PAYMENT_METHODS = [
@@ -34,6 +35,7 @@ export interface RegisterPaymentInput {
   currencyId?: string;
   method: string;
   reference?: string;
+  bankAccountId?: string;
 }
 
 interface RegisterPaymentModalProps {
@@ -62,6 +64,9 @@ export function RegisterPaymentModal({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentCurrencyId, setPaymentCurrencyId] = useState(invoice.currencyId);
   const [paymentReference, setPaymentReference] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [banksLoading, setBanksLoading] = useState(false);
   const [paymentToInvoiceRate, setPaymentToInvoiceRate] = useState(1);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState<string | null>(null);
@@ -99,6 +104,63 @@ export function RegisterPaymentModal({
   const invoiceEquivalent = parsedAmount * paymentToInvoiceRate;
   const amountExceedsOutstanding =
     invoiceEquivalent - outstanding > 0.01;
+
+  const requiresBankAccount =
+    paymentMethod !== "cash" && paymentMethod !== "cheque";
+
+  const eligibleBanks = useMemo(
+    () =>
+      bankAccounts.filter(
+        (bank) => bank.currencyId === (paymentCurrencyId || invoice.currencyId),
+      ),
+    [bankAccounts, paymentCurrencyId, invoice.currencyId],
+  );
+
+  const bankAccountOptions = useMemo(
+    () =>
+      eligibleBanks.map((bank) => ({
+        label: `${bank.name} (${bank.currencyCode})`,
+        value: bank.id,
+      })),
+    [eligibleBanks],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    setBanksLoading(true);
+
+    listBankAccounts({ branchId: invoice.branchId, activeOnly: true })
+      .then((accounts) => {
+        if (cancelled) return;
+        setBankAccounts(accounts);
+      })
+      .catch(() => {
+        if (!cancelled) setBankAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setBanksLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, invoice.branchId]);
+
+  useEffect(() => {
+    if (!requiresBankAccount || eligibleBanks.length === 0) {
+      setBankAccountId("");
+      return;
+    }
+
+    const currentValid = eligibleBanks.some((bank) => bank.id === bankAccountId);
+    if (currentValid) return;
+
+    const defaultBank =
+      eligibleBanks.find((bank) => bank.isDefault) ?? eligibleBanks[0];
+    setBankAccountId(defaultBank?.id ?? "");
+  }, [requiresBankAccount, eligibleBanks, bankAccountId]);
 
   useEffect(() => {
     if (!open || !paymentCurrencyId) return;
@@ -158,8 +220,13 @@ export function RegisterPaymentModal({
       currencyId: paymentCurrencyId || invoice.currencyId,
       method: paymentMethod,
       reference: paymentReference.trim() || undefined,
+      bankAccountId:
+        requiresBankAccount && bankAccountId ? bankAccountId : undefined,
     });
   }
+
+  const bankSelectionRequired =
+    requiresBankAccount && eligibleBanks.length > 0 && !bankAccountId;
 
   const primaryLabel =
     parsedAmount > 0
@@ -179,7 +246,8 @@ export function RegisterPaymentModal({
           parsedAmount <= 0 ||
           amountExceedsOutstanding ||
           rateLoading ||
-          Boolean(rateError),
+          Boolean(rateError) ||
+          bankSelectionRequired,
         onAction: () => void handleSubmit(),
       }}
       secondaryActions={[
@@ -322,6 +390,33 @@ export function RegisterPaymentModal({
                   onChange={setPaymentCurrencyId}
                 />
               </Grid.Cell>
+              {requiresBankAccount ? (
+                <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                  <Select
+                    label="Receiving bank account"
+                    options={
+                      bankAccountOptions.length
+                        ? bankAccountOptions
+                        : [{ label: "No bank accounts available", value: "" }]
+                    }
+                    value={bankAccountId}
+                    onChange={setBankAccountId}
+                    disabled={banksLoading || bankAccountOptions.length === 0}
+                    helpText={
+                      banksLoading
+                        ? "Loading bank accounts..."
+                        : bankAccountOptions.length === 0
+                          ? "Add bank accounts under Settings → Bank accounts."
+                          : "Payment will post to this bank's GL account."
+                    }
+                    error={
+                      bankSelectionRequired
+                        ? "Select a receiving bank account"
+                        : undefined
+                    }
+                  />
+                </Grid.Cell>
+              ) : null}
               <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
                 <TextField
                   autoComplete="off"

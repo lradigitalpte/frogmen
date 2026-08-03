@@ -77,6 +77,7 @@ export interface CustomerPayment {
   amount: number;
   currencyId?: string;
   currencyCode?: string | null;
+  bankAccountName?: string | null;
   state: PaymentStatus;
 }
 
@@ -170,6 +171,7 @@ export function registerInvoicePayment(
     method?: string;
     reference?: string;
     journal?: string;
+    bankAccountId?: string;
   },
 ) {
   return apiFetch<Invoice>(`/api/v1/invoices/${id}/pay`, {

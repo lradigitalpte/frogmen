@@ -11,6 +11,7 @@ import {
 } from "@shopify/polaris";
 import { useEffect, useMemo, useState } from "react";
 import { formatMoney } from "@/components/sales/format-money";
+import { AppSearchSelect } from "@/components/ui/app-search-select";
 import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
 import type { Product } from "@/types/product";
 import type { Warehouse } from "@/types/warehouse";
@@ -118,6 +119,15 @@ export function AddPurchaseOrderLineModal({
   const unitCostHelpText = product
     ? `Catalog cost ${formatProductCatalogCost(product)} converted to ${displayCurrencyCode}`
     : "Defaults to catalog cost converted to PO currency";
+  const productOptions = useMemo(
+    () =>
+      products.map((item) => ({
+        value: item.id,
+        label: item.name,
+        description: item.sku ? `SKU: ${item.sku}` : undefined,
+      })),
+    [products],
+  );
 
   function handleAdd() {
     if (!product || !warehouse) return;
@@ -176,12 +186,10 @@ export function AddPurchaseOrderLineModal({
           ) : null}
 
           <FormLayout>
-            <Select
+            <AppSearchSelect
               label="Product"
-              options={products.map((item) => ({
-                label: item.sku ? `${item.name} (${item.sku})` : item.name,
-                value: item.id,
-              }))}
+              options={productOptions}
+              placeholder="Search by product name or SKU..."
               value={productId}
               onChange={setProductId}
             />

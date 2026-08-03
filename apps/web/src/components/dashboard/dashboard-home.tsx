@@ -198,20 +198,12 @@ export function DashboardHome() {
   }, [alertFeed, baseCurrencyCode]);
 
   return (
-    <AppPage
-      fullWidth
-      subtitle="Executive command center for revenue, collections, overdue alerts, and pipeline health."
-      title="ERP Dashboard"
-    >
+    <AppPage fullWidth title="Dashboard">
       <div className="flex flex-col gap-6">
         {/* Header strip */}
         <div className="erp-command-hero">
           <div className="erp-command-hero__copy">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1 text-xs font-semibold text-secondary">
-              <span className="size-1.5 animate-pulse rounded-full bg-secondary" />
-              ERP Live Workspace
-            </span>
             {overdueCount > 0 ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 px-3 py-1 text-xs font-semibold text-destructive">
                 <AlertTriangle className="size-3.5" />
@@ -220,7 +212,6 @@ export function DashboardHome() {
             ) : null}
           </div>
           <h2>Good morning. Here’s what needs attention.</h2>
-          <p>Monitor revenue, payment risk, and the active sales pipeline from one live workspace.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => router.push("/dashboard/sales/quotations/new")}>

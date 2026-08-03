@@ -12,6 +12,7 @@ import {
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { formatQuantity } from "@/lib/format-quantity";
 import { getWarranty, type WarrantyRegistration } from "@/lib/warranty-api";
 
 interface WarrantyDetailPageProps {
@@ -129,7 +130,7 @@ export function WarrantyDetailPage({ warrantyId }: WarrantyDetailPageProps) {
                 label="Serial number"
                 value={warranty.serialNumber ?? " "}
               />
-              <DetailRow label="Quantity" value={String(warranty.quantity)} />
+              <DetailRow label="Quantity" value={formatQuantity(warranty.quantity)} />
             </InlineGrid>
 
             {warranty.policyDescription ? (

@@ -12,7 +12,9 @@ export * from "./product-units";
 export * from "./sales";
 export * from "./purchasing";
 export * from "./accounting";
+export * from "./bank-accounts";
 export * from "./warranty";
+export * from "./expenses";
 export * from "./rov-inspection";
 
 import * as auth from "./auth";
@@ -29,7 +31,9 @@ import * as productUnits from "./product-units";
 import * as sales from "./sales";
 import * as purchasing from "./purchasing";
 import * as accounting from "./accounting";
+import * as bankAccounts from "./bank-accounts";
 import * as warranty from "./warranty";
+import * as expenses from "./expenses";
 import * as rovInspection from "./rov-inspection";
 
 export const schema = {
@@ -47,6 +51,8 @@ export const schema = {
   ...sales,
   ...purchasing,
   ...accounting,
+  ...bankAccounts,
   ...warranty,
+  ...expenses,
   ...rovInspection,
 };

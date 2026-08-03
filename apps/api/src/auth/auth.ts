@@ -5,6 +5,11 @@ import { defaultStatements } from "better-auth/plugins/organization/access";
 import { eq, asc } from "drizzle-orm";
 import { createDb, currencies, members, schema, sessions } from "@frog1/db";
 import { sendPasswordResetEmail } from "./auth-email";
+import {
+  acceptPendingInvitationsForUser,
+  assignInvitationBranches,
+} from "./invite-acceptance";
+import { provisionOrgInventory } from "../inventory/org-inventory-seed";
 
 const organizationAccess = createAccessControl(defaultStatements);
 const ownerRole = organizationAccess.newRole(defaultStatements);
@@ -52,6 +57,16 @@ export function createAuth(databaseUrl: string) {
     basePath: "/api/auth",
     secret: authSecret,
     trustedOrigins: resolveTrustedOrigins(),
+    user: {
+      additionalFields: {
+        mustChangePassword: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+          input: false,
+        },
+      },
+    },
     database: drizzleAdapter(db, {
       provider: "pg",
       schema,
@@ -92,12 +107,33 @@ export function createAuth(databaseUrl: string) {
             },
           },
         },
+        organizationHooks: {
+          afterAcceptInvitation: async ({ invitation, member }) => {
+            await assignInvitationBranches(db, invitation.id, member.id);
+          },
+        },
       }),
     ],
     databaseHooks: {
       user: {
         create: {
           after: async (user) => {
+            if (user.email) {
+              const invitedOrganizationId =
+                await acceptPendingInvitationsForUser(
+                  db,
+                  user.id,
+                  user.email,
+                );
+              if (invitedOrganizationId) {
+                await db
+                  .update(sessions)
+                  .set({ activeOrganizationId: invitedOrganizationId })
+                  .where(eq(sessions.userId, user.id));
+                return;
+              }
+            }
+
             const defaultCode = process.env.DEFAULT_CURRENCY ?? "USD";
             const [currency] = await db
               .select({ id: currencies.id })
@@ -119,6 +155,7 @@ export function createAuth(databaseUrl: string) {
             });
 
             if (org?.id) {
+              await provisionOrgInventory(db, org.id);
               await db
                 .update(sessions)
                 .set({ activeOrganizationId: org.id })

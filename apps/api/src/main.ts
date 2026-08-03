@@ -2,33 +2,22 @@ import "./load-env";
 import { config } from "dotenv";
 import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
-import { runMigrations, ensureCurrencies, applyCustomersIfNeeded, applyCustomerCreditIfNeeded, applyCustomerIsLocalIfNeeded, applyInventoryIfNeeded, applyPaymentRemindersIfNeeded, applyAccountingIfNeeded, applyPurchasingIfNeeded, applyRovInspectionIfNeeded, applyCreditNotesIfNeeded } from "@frog1/db";
 import { AppModule } from "./app.module";
+import { runDatabaseSetup } from "./database-setup";
 
 async function bootstrap() {
   config({ path: resolve(__dirname, "../../../.env") });
 
   const databaseUrl = process.env.DATABASE_URL;
-  const autoMigrate = process.env.AUTO_MIGRATE !== "false";
+  const autoMigrate = process.env.AUTO_MIGRATE === "true";
 
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not configured");
   }
 
   if (autoMigrate) {
-    await runMigrations(databaseUrl);
-    await applyCustomersIfNeeded(databaseUrl);
-    await applyCustomerCreditIfNeeded(databaseUrl);
-    await applyCustomerIsLocalIfNeeded(databaseUrl);
-    await applyInventoryIfNeeded(databaseUrl);
-    await applyPaymentRemindersIfNeeded(databaseUrl);
-    await applyAccountingIfNeeded(databaseUrl);
-    await applyPurchasingIfNeeded(databaseUrl);
-    await applyCreditNotesIfNeeded(databaseUrl);
-    await applyRovInspectionIfNeeded(databaseUrl);
+    await runDatabaseSetup(databaseUrl);
   }
-
-  await ensureCurrencies(databaseUrl);
 
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 

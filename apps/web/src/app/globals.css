@@ -562,6 +562,16 @@ textarea.Polaris-TextField__Input:focus {
 }
 
 /* Searchable select (combobox) */
+.product-catalog-search-results {
+  max-height: 15.75rem;
+  overflow-y: auto;
+}
+
+.app-search-select__dropdown {
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
 .app-search-select__activator {
   width: 100%;
 }
@@ -4030,6 +4040,22 @@ textarea.Polaris-TextField__Input:focus {
   gap: 1.4rem;
   overflow-y: auto;
   padding: 1.5rem;
+}
+
+.user-invite-panel__mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.users-settings__provision-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #dfe5e2;
+  border-radius: 12px;
+  background: #f8faf9;
 }
 
 .user-invite-panel__intro {
