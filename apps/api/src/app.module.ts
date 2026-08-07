@@ -26,6 +26,7 @@ import { RovInspectionModule } from "./rov-inspection/rov-inspection.module";
 import { BankAccountsModule } from "./bank-accounts/bank-accounts.module";
 import { ExpensesModule } from "./expenses/expenses.module";
 import { SecurityModule } from "./security/security.module";
+import { PlatformModule } from "./platform/platform.module";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SecurityModule } from "./security/security.module";
     DatabaseModule,
     AuthModule,
     SecurityModule,
+    PlatformModule,
     HealthModule,
     MeModule,
     UploadsModule,

@@ -5,6 +5,8 @@ export interface SettingsNavItem {
   disabled?: boolean;
   badge?: string;
   permission?: string;
+  /** Cross-tenant platform admin only (not an org permission). */
+  platformAdmin?: boolean;
 }
 
 export interface SettingsNavGroup {
@@ -74,6 +76,12 @@ export const settingsNavGroups: SettingsNavGroup[] = [
         href: "/dashboard/settings/audit-log",
         permission: "audit.read",
         description: "Track changes across the organization",
+      },
+      {
+        label: "Platform admin",
+        href: "/dashboard/settings/platform",
+        platformAdmin: true,
+        description: "List and delete organizations across all tenants",
       },
     ],
   },

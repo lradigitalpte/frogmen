@@ -12,6 +12,7 @@ export function SettingsNav() {
   const pathname = usePathname();
   const [companyName, setCompanyName] = useState("Organization");
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   useEffect(() => {
     getCompanySettings()
@@ -27,8 +28,14 @@ export function SettingsNav() {
 
   useEffect(() => {
     getMe()
-      .then((result) => setPermissions(result.security?.permissions ?? []))
-      .catch(() => setPermissions([]));
+      .then((result) => {
+        setPermissions(result.security?.permissions ?? []);
+        setIsPlatformAdmin(Boolean(result.isPlatformAdmin));
+      })
+      .catch(() => {
+        setPermissions([]);
+        setIsPlatformAdmin(false);
+      });
   }, []);
 
   return (
@@ -53,6 +60,9 @@ export function SettingsNav() {
               <p className="settings-nav__group-title">{group.title}</p>
               <div className="settings-nav__items">
                 {group.items.map((item) => {
+                  if (item.platformAdmin && !isPlatformAdmin) {
+                    return null;
+                  }
                   if (
                     item.permission &&
                     !permissions.includes(item.permission)

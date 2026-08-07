@@ -7,6 +7,7 @@ import {
   Inject,
   Post,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Session, type UserSession } from "@thallesp/nestjs-better-auth";
 import type { Database } from "@frog1/db";
 import {
@@ -16,6 +17,7 @@ import {
 } from "../auth/provision-user";
 import { DATABASE } from "../database/database.constants";
 import { OrganizationContextService } from "../organization/organization-context.service";
+import { isPlatformAdminEmail } from "../platform/platform-admin";
 import { SecurityContextService } from "../security/security-context.service";
 import { OrgInventoryService } from "../inventory/org-inventory.service";
 
@@ -25,6 +27,7 @@ export class MeController {
     private readonly organizationContext: OrganizationContextService,
     private readonly securityContext: SecurityContextService,
     private readonly orgInventory: OrgInventoryService,
+    private readonly config: ConfigService,
     @Inject(DATABASE) private readonly db: Database,
   ) {}
 
@@ -68,6 +71,7 @@ export class MeController {
         expiresAt: session.session.expiresAt,
       },
       security,
+      isPlatformAdmin: isPlatformAdminEmail(session.user.email, this.config),
     };
   }
 

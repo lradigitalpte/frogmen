@@ -39,6 +39,11 @@ export class PermissionGuard implements CanActivate {
       return true;
     }
 
+    // Cross-tenant platform admin routes use RAW_DATABASE + PlatformAdminGuard.
+    if (request.path.toLowerCase().includes("/platform")) {
+      return true;
+    }
+
     const context = await this.contexts.resolve({
       sessionId: session.session.id,
       userId: session.user.id,
@@ -80,6 +85,7 @@ export class PermissionGuard implements CanActivate {
     const elevated = /(confirm|approve|validate|post|reset|cancel)/.test(path);
 
     if (path.includes("/me")) return null;
+    if (path.includes("/platform")) return null;
     if (path.includes("/branches")) return write ? "branches.manage" : "organization.read";
     if (path.includes("/members") || path.includes("/invitations")) return "members.manage";
     if (path.includes("/audit")) return "audit.read";

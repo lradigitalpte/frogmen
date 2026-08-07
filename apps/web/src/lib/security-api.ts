@@ -39,6 +39,7 @@ export interface MeResponse {
     mustChangePassword?: boolean;
   };
   security: SecurityContext | null;
+  isPlatformAdmin?: boolean;
 }
 
 export interface OrganizationMember {
