@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgEnum,
   pgTable,
@@ -44,10 +45,9 @@ export const productUnits = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("product_units_org_serial_idx").on(
-      table.organizationId,
-      table.serialNumber,
-    ),
+    uniqueIndex("product_units_org_serial_active_idx")
+      .on(table.organizationId, table.serialNumber)
+      .where(sql`${table.status} in ('in_stock', 'assigned', 'sold')`),
   ],
 );
 

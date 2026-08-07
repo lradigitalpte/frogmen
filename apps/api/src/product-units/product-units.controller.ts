@@ -20,6 +20,7 @@ import type {
   LinkProductUnitDto,
   ListLinkableUnitsQuery,
   ListProductUnitsQuery,
+  RemoveProductUnitDto,
   UpdateProductUnitDto,
 } from "./dto/product-unit.dto";
 
@@ -123,7 +124,15 @@ export class ProductUnitsController {
   }
 
   @Delete("v1/units/:id")
-  remove(@Session() session: UserSession, @Param("id") id: string) {
-    return this.productUnitsService.remove(this.orgId(session), id);
+  remove(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: RemoveProductUnitDto,
+  ) {
+    return this.productUnitsService.remove(
+      this.orgId(session),
+      id,
+      body?.reason === "sold" ? "sold" : "scrapped",
+    );
   }
 }

@@ -1,10 +1,16 @@
 export type ProductUnitStatus = "in_stock" | "assigned" | "sold" | "scrapped";
 
+export type RemoveProductUnitReason = "scrapped" | "sold";
+
 export interface CreateProductUnitDto {
   serialNumber: string;
   warehouseId: string;
   notes?: string;
   parentUnitId?: string;
+}
+
+export interface RemoveProductUnitDto {
+  reason?: RemoveProductUnitReason;
 }
 
 export interface UpdateProductUnitDto {

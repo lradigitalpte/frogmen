@@ -189,9 +189,13 @@ export function unlinkProductUnit(id: string) {
   });
 }
 
-export function removeProductUnit(id: string) {
+export function removeProductUnit(
+  id: string,
+  reason: "scrapped" | "sold" = "scrapped",
+) {
   return apiFetch<ProductUnit>(`/api/v1/units/${id}`, {
     method: "DELETE",
+    body: JSON.stringify({ reason }),
   });
 }
 

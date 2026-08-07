@@ -176,6 +176,13 @@
       "when": 1785049500000,
       "tag": "0023_invoice_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785049600000,
+      "tag": "0024_product_unit_serial_reuse",
+      "breakpoints": true
     }
   ]
 }

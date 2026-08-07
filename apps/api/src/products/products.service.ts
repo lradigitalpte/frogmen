@@ -24,6 +24,8 @@ import {
 
   ilike,
 
+  inArray,
+
   isNotNull,
 
   isNull,
@@ -161,36 +163,41 @@ export class ProductsService {
 
 
 
-  private async assertWarehouse(organizationId: string, warehouseId: string) {
-
+  private async assertWarehouse(
+    organizationId: string,
+    warehouseId: string,
+    options?: { activeBranchId?: string | null; branchScope?: "single" | "all" },
+  ) {
     const [warehouse] = await this.db
-
-      .select({ id: warehouses.id })
-
+      .select({
+        id: warehouses.id,
+        branchId: warehouses.branchId,
+        name: warehouses.name,
+      })
       .from(warehouses)
-
       .where(
-
         and(
-
           eq(warehouses.id, warehouseId),
-
           eq(warehouses.organizationId, organizationId),
-
         ),
-
       )
-
       .limit(1);
 
-
-
     if (!warehouse) {
-
       throw new BadRequestException("Warehouse not found");
-
     }
 
+    if (
+      options?.branchScope === "single" &&
+      options.activeBranchId &&
+      warehouse.branchId !== options.activeBranchId
+    ) {
+      throw new BadRequestException(
+        `This warehouse belongs to a different branch. Switch Active branch to match "${warehouse.name}", then try again.`,
+      );
+    }
+
+    return warehouse;
   }
 
 
@@ -559,7 +566,11 @@ export class ProductsService {
 
 
 
-  async create(organizationId: string, dto: CreateProductDto) {
+  async create(
+    organizationId: string,
+    dto: CreateProductDto,
+    options?: { activeBranchId?: string | null; branchScope?: "single" | "all" },
+  ) {
 
     if (!dto.name?.trim()) {
 
@@ -773,7 +784,11 @@ export class ProductsService {
 
       if (dto.initialStock?.warehouseId) {
 
-        await this.assertWarehouse(organizationId, dto.initialStock.warehouseId);
+        await this.assertWarehouse(
+          organizationId,
+          dto.initialStock.warehouseId,
+          options,
+        );
 
 
 
@@ -800,23 +815,58 @@ export class ProductsService {
 
 
           if (serialNumbers.length > 0) {
+            const existingSerials = await tx
+              .select({ serialNumber: productUnits.serialNumber })
+              .from(productUnits)
+              .where(
+                and(
+                  eq(productUnits.organizationId, organizationId),
+                  inArray(productUnits.serialNumber, serialNumbers),
+                  inArray(productUnits.status, [
+                    "in_stock",
+                    "assigned",
+                    "sold",
+                  ]),
+                ),
+              );
 
-            await tx.insert(productUnits).values(
+            if (existingSerials.length > 0) {
+              throw new BadRequestException(
+                `Serial number already used (in stock, assigned, or sold): ${existingSerials
+                  .map((row) => row.serialNumber)
+                  .join(", ")}`,
+              );
+            }
 
-              serialNumbers.map((serialNumber) => ({
-
-                organizationId,
-
-                productId: created.id,
-
-                warehouseId: dto.initialStock!.warehouseId,
-
-                serialNumber,
-
-              })),
-
-            );
-
+            try {
+              await tx.insert(productUnits).values(
+                serialNumbers.map((serialNumber) => ({
+                  organizationId,
+                  productId: created.id,
+                  warehouseId: dto.initialStock!.warehouseId,
+                  serialNumber,
+                })),
+              );
+            } catch (error) {
+              const code = (error as { code?: string }).code;
+              const message = String(
+                (error as { message?: string }).message ?? error,
+              );
+              if (code === "23505") {
+                throw new BadRequestException(
+                  "One or more serial numbers are already used (in stock, assigned, or sold)",
+                );
+              }
+              if (
+                code === "42501" ||
+                message.toLowerCase().includes("row-level security")
+              ) {
+                throw new BadRequestException(
+                  "Cannot add stock to this warehouse from the current branch. Switch Active branch to the warehouse branch and try again.",
+                );
+              }
+              throw error;
+            }
           }
 
         } else {

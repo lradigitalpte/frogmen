@@ -16,6 +16,8 @@ import {
   Session,
   type UserSession,
 } from "@thallesp/nestjs-better-auth";
+import { CurrentSecurity } from "../security/current-security.decorator";
+import type { SecurityContext } from "../security/security-context";
 import { ProductsService } from "./products.service";
 import type {
   CreateProductDto,
@@ -85,8 +87,15 @@ export class ProductsController {
   }
 
   @Post()
-  create(@Session() session: UserSession, @Body() body: CreateProductDto) {
-    return this.productsService.create(this.orgId(session), body);
+  create(
+    @Session() session: UserSession,
+    @CurrentSecurity() security: SecurityContext,
+    @Body() body: CreateProductDto,
+  ) {
+    return this.productsService.create(this.orgId(session), body, {
+      activeBranchId: security.activeBranchId,
+      branchScope: security.branchScope,
+    });
   }
 
   @Patch(":id")

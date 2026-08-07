@@ -14,6 +14,7 @@ import {
   InlineStack,
   Layout,
   Link,
+  Modal,
   RadioButton,
   ResourceItem,
   ResourceList,
@@ -71,6 +72,11 @@ function UpdateStockPageContent() {
 
   const [newSerial, setNewSerial] = useState("");
   const [serialSaving, setSerialSaving] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<ProductUnit | null>(null);
+  const [removeReason, setRemoveReason] = useState<"scrapped" | "sold">(
+    "scrapped",
+  );
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -236,18 +242,27 @@ function UpdateStockPageContent() {
     }
   }
 
-  async function handleScrapUnit(unit: ProductUnit) {
-    if (!product) return;
+  async function handleConfirmRemove() {
+    if (!product || !pendingRemove) return;
 
+    setRemoving(true);
     setError(null);
     setSuccess(null);
 
     try {
-      await removeProductUnit(unit.id);
-      setSuccess(`Serial ${unit.serialNumber} removed from stock.`);
+      await removeProductUnit(pendingRemove.id, removeReason);
+      setSuccess(
+        removeReason === "sold"
+          ? `Serial ${pendingRemove.serialNumber} marked as sold. This serial stays reserved and cannot be reused.`
+          : `Serial ${pendingRemove.serialNumber} marked as scrapped. You can reuse this serial on a new unit.`,
+      );
+      setPendingRemove(null);
+      setRemoveReason("scrapped");
       await loadWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove serial");
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -531,7 +546,10 @@ function UpdateStockPageContent() {
                                 <Button
                                   tone="critical"
                                   variant="plain"
-                                  onClick={() => void handleScrapUnit(unit)}
+                                  onClick={() => {
+                                    setPendingRemove(unit);
+                                    setRemoveReason("scrapped");
+                                  }}
                                 >
                                   Remove
                                 </Button>
@@ -690,6 +708,61 @@ function UpdateStockPageContent() {
           </Layout.Section>
         </Layout>
       </BlockStack>
+
+      <Modal
+        open={Boolean(pendingRemove)}
+        title="Remove serial from stock?"
+        onClose={() => {
+          if (removing) return;
+          setPendingRemove(null);
+          setRemoveReason("scrapped");
+        }}
+        primaryAction={{
+          content:
+            removeReason === "sold" ? "Mark as sold" : "Mark as scrapped",
+          destructive: true,
+          loading: removing,
+          onAction: () => void handleConfirmRemove(),
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            disabled: removing,
+            onAction: () => {
+              setPendingRemove(null);
+              setRemoveReason("scrapped");
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            <Text as="p">
+              Serial{" "}
+              <Text as="span" fontWeight="semibold">
+                {pendingRemove?.serialNumber}
+              </Text>{" "}
+              will leave active stock. Choose why:
+            </Text>
+            <RadioButton
+              label="Scrapped"
+              helpText="Damaged, lost, or written off. Serial can be reused afterward."
+              checked={removeReason === "scrapped"}
+              id="remove-reason-scrapped"
+              name="remove-reason"
+              onChange={() => setRemoveReason("scrapped")}
+            />
+            <RadioButton
+              label="Sold"
+              helpText="Sold outside a FrogmenDash invoice. Serial stays reserved and cannot be reused. Prefer invoicing when you need warranty/COGS."
+              checked={removeReason === "sold"}
+              id="remove-reason-sold"
+              name="remove-reason"
+              onChange={() => setRemoveReason("sold")}
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

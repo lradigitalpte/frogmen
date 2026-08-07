@@ -11,6 +11,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNull,
   ne,
   or,
@@ -23,6 +24,7 @@ import type {
   LinkProductUnitDto,
   ListLinkableUnitsQuery,
   ListProductUnitsQuery,
+  RemoveProductUnitReason,
   UpdateProductUnitDto,
 } from "./dto/product-unit.dto";
 import { ProductsService } from "../products/products.service";
@@ -316,20 +318,48 @@ export class ProductUnitsService {
       );
     }
 
-    const [unit] = await this.db
-      .insert(productUnits)
-      .values({
-        organizationId,
-        productId,
-        warehouseId: dto.warehouseId,
-        serialNumber: dto.serialNumber.trim(),
-        parentUnitId: dto.parentUnitId ?? null,
-        linkedAt: dto.parentUnitId ? new Date() : null,
-        notes: dto.notes?.trim() || null,
-      })
-      .returning();
+    const serialNumber = dto.serialNumber.trim();
+    const [activeSerial] = await this.db
+      .select({ id: productUnits.id })
+      .from(productUnits)
+      .where(
+        and(
+          eq(productUnits.organizationId, organizationId),
+          eq(productUnits.serialNumber, serialNumber),
+          inArray(productUnits.status, ["in_stock", "assigned", "sold"]),
+        ),
+      )
+      .limit(1);
 
-    return unit;
+    if (activeSerial) {
+      throw new BadRequestException(
+        "Serial number is already used (in stock, assigned, or sold)",
+      );
+    }
+
+    try {
+      const [unit] = await this.db
+        .insert(productUnits)
+        .values({
+          organizationId,
+          productId,
+          warehouseId: dto.warehouseId,
+          serialNumber,
+          parentUnitId: dto.parentUnitId ?? null,
+          linkedAt: dto.parentUnitId ? new Date() : null,
+          notes: dto.notes?.trim() || null,
+        })
+        .returning();
+
+      return unit;
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        throw new BadRequestException(
+          "Serial number is already used (in stock, assigned, or sold)",
+        );
+      }
+      throw error;
+    }
   }
 
   async update(
@@ -450,13 +480,28 @@ export class ProductUnitsService {
     return updated;
   }
 
-  async remove(organizationId: string, id: string) {
-    await this.getById(organizationId, id);
+  async remove(
+    organizationId: string,
+    id: string,
+    reason: RemoveProductUnitReason = "scrapped",
+  ) {
+    const unit = await this.getById(organizationId, id);
+
+    if (unit.status === "sold" || unit.status === "scrapped") {
+      throw new BadRequestException(
+        `Serial is already marked as ${unit.status}`,
+      );
+    }
+
+    const nextStatus: RemoveProductUnitReason =
+      reason === "sold" ? "sold" : "scrapped";
 
     const [updated] = await this.db
       .update(productUnits)
       .set({
-        status: "scrapped",
+        status: nextStatus,
+        parentUnitId: null,
+        linkedAt: null,
         updatedAt: new Date(),
       })
       .where(
