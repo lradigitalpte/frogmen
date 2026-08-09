@@ -9,10 +9,11 @@ import {
   Card,
   Checkbox,
   Divider,
+  FormLayout,
   InlineStack,
   Layout,
+  Modal,
   ResourceItem,
-  ResourceList,
   Select,
   Tabs,
   Text,
@@ -23,6 +24,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
+import { ProductCatalogResourceList } from "@/components/products/product-catalog-resource-list";
 import { formatMoney, todayIsoDate } from "@/components/sales/format-money";
 import { defaultValidityHeader } from "@/components/sales/validity-period";
 import {
@@ -49,9 +51,41 @@ import { convertAmount, currencyInputPrefix } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
 import { getLatestExchangeRate } from "@/lib/exchange-rates-api";
 import { ConfiguredLineItemsList } from "@/components/sales/configured-line-items-list";
-import { EditConfiguredLineModal } from "@/components/sales/edit-configured-line-modal";
+import {
+  EditConfiguredLineModal,
+  type DeliveryFeeMode,
+} from "@/components/sales/edit-configured-line-modal";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { useToast } from "@/components/providers/toast-provider";
+
+function buildDeliveryFeePayload(mode: DeliveryFeeMode, value: string) {
+  if (mode === "none") {
+    return {
+      deliveryFeeAmount: null,
+      deliveryFeePercent: null,
+    };
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return {
+      deliveryFeeAmount: null,
+      deliveryFeePercent: null,
+    };
+  }
+
+  if (mode === "amount") {
+    return {
+      deliveryFeeAmount: parsed,
+      deliveryFeePercent: null,
+    };
+  }
+
+  return {
+    deliveryFeeAmount: null,
+    deliveryFeePercent: parsed,
+  };
+}
 
 function emptyHeader(): QuotationHeaderValues {
   const quoteDate = todayIsoDate();
@@ -67,6 +101,7 @@ function emptyHeader(): QuotationHeaderValues {
     internalReference: "",
     paymentReference: "",
     notes: "",
+    internalNotes: "",
   };
 }
 
@@ -153,7 +188,10 @@ export function CreateQuotationPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState("");
   const [catalogTotal, setCatalogTotal] = useState(0);
+  const [deliveryFeeMode, setDeliveryFeeMode] = useState<DeliveryFeeMode>("none");
+  const [deliveryFeeValue, setDeliveryFeeValue] = useState("");
 
   // Serial Selection State for serial-tracked items
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -169,7 +207,10 @@ export function CreateQuotationPage() {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+  const [productsError, setProductsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [internalNotesModalOpen, setInternalNotesModalOpen] = useState(false);
+  const [tempInternalNotes, setTempInternalNotes] = useState("");
   const [documentCurrencyError, setDocumentCurrencyError] = useState<string | null>(null);
   const prevCurrencyIdRef = useRef<string | null>(null);
 
@@ -210,24 +251,39 @@ export function CreateQuotationPage() {
     }
   }, [baseCurrency]);
 
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedCatalogSearch(catalogSearch),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [catalogSearch]);
+
   // Fetch Products from Backend
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
+    setProductsError(null);
     try {
       const result = await listProducts({
-        search: catalogSearch || undefined,
+        search: debouncedCatalogSearch || undefined,
         perPage: 50,
         forSaleOnly: true,
+        rootOnly: true,
+        includeStock: true,
+        inStockOnly: true,
       });
       setProducts(result.data);
       setCatalogTotal(result.meta.total);
-    } catch {
+    } catch (err) {
       setProducts([]);
       setCatalogTotal(0);
+      setProductsError(
+        err instanceof Error ? err.message : "Failed to load product catalog",
+      );
     } finally {
       setProductsLoading(false);
     }
-  }, [catalogSearch]);
+  }, [debouncedCatalogSearch]);
 
   useEffect(() => {
     void loadCurrencies();
@@ -463,8 +519,14 @@ export function CreateQuotationPage() {
 
   // Financial Calculations
   const financials = useMemo(
-    () => computeLineFinancialSummary(lines),
-    [lines],
+    () =>
+      computeLineFinancialSummary(lines, {
+        deliveryFeeAmount:
+          deliveryFeeMode === "amount" ? deliveryFeeValue : null,
+        deliveryFeePercent:
+          deliveryFeeMode === "percent" ? deliveryFeeValue : null,
+      }),
+    [lines, deliveryFeeMode, deliveryFeeValue],
   );
 
   const {
@@ -473,6 +535,7 @@ export function CreateQuotationPage() {
     lineSubtotal: rawSubtotal,
     totalDiscount,
     netSubtotal,
+    deliveryFee,
     totalVat,
     grandTotal: estimatedGrandTotal,
     totalCost,
@@ -530,6 +593,8 @@ export function CreateQuotationPage() {
         internalReference: values.internalReference || undefined,
         paymentReference: values.paymentReference || undefined,
         notes: values.notes || undefined,
+        internalNotes: values.internalNotes || undefined,
+        ...buildDeliveryFeePayload(deliveryFeeMode, deliveryFeeValue),
       });
 
       // Add each configured line item to backend quotation
@@ -573,6 +638,13 @@ export function CreateQuotationPage() {
         },
       }}
       secondaryActions={[
+        {
+          content: values.internalNotes ? "Internal Notes (Saved)" : "Internal Notes",
+          onAction: () => {
+            setTempInternalNotes(values.internalNotes || "");
+            setInternalNotesModalOpen(true);
+          },
+        },
         ...(selectedTab > 0
           ? [
               {
@@ -620,6 +692,12 @@ export function CreateQuotationPage() {
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
             {error}
+          </Banner>
+        ) : null}
+
+        {productsError ? (
+          <Banner tone="critical" onDismiss={() => setProductsError(null)}>
+            {productsError}
           </Banner>
         ) : null}
 
@@ -749,59 +827,60 @@ export function CreateQuotationPage() {
                       value={catalogSearch}
                     />
 
-                    {productsLoading ? (
-                      <Text as="p" tone="subdued">Loading products...</Text>
-                    ) : (
-                      <>
-                        <Text as="p" tone="subdued" variant="bodySm">
-                          {catalogTotal === 0
-                            ? "No saleable products found."
-                            : `Showing ${products.length} of ${catalogTotal} saleable product${catalogTotal === 1 ? "" : "s"}.`}
-                        </Text>
-                        <ProductCatalogSearchResults>
-                          <ResourceList
-                            items={products}
-                            renderItem={(product) => (
-                            <ResourceItem
-                              id={product.id}
-                              onClick={() => void handleSelectProduct(product)}
-                              accessibilityLabel={`Select ${product.name}`}
-                            >
-                              <InlineStack align="space-between" blockAlign="center">
-                                <BlockStack gap="050">
-                                  <InlineStack gap="200" blockAlign="center">
-                                    <Text as="span" fontWeight="bold">
-                                      {product.name}
-                                    </Text>
-                                    {product.trackSerial ? (
-                                      <Badge tone="info">Serialized</Badge>
-                                    ) : null}
-                                  </InlineStack>
-                                  <Text as="span" tone="subdued" variant="bodySm">
-                                    SKU: {product.sku || "N/A"}
-                                  </Text>
-                                </BlockStack>
-                                <InlineStack gap="300" blockAlign="center">
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      {productsLoading && products.length === 0
+                        ? "Loading products..."
+                        : catalogTotal === 0
+                          ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
+                          : `Showing ${products.length} of ${catalogTotal} in-stock product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`}
+                    </Text>
+                    {products.length > 0 ? (
+                      <ProductCatalogSearchResults>
+                        <ProductCatalogResourceList
+                          products={products}
+                          renderItem={(product) => (
+                          <ResourceItem
+                            id={product.id}
+                            onClick={() => void handleSelectProduct(product)}
+                            accessibilityLabel={`Select ${product.name}`}
+                          >
+                            <InlineStack align="space-between" blockAlign="center">
+                              <BlockStack gap="050">
+                                <InlineStack gap="200" blockAlign="center">
                                   <Text as="span" fontWeight="bold">
-                                    {formatProductCatalogPrice(product)}
+                                    {product.name}
                                   </Text>
-                                  <div onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="slim"
-                                      variant="primary"
-                                      onClick={() => void handleSelectProduct(product)}
-                                    >
-                                      Select Item
-                                    </Button>
-                                  </div>
+                                  {product.trackSerial ? (
+                                    <Badge tone="info">Serialized</Badge>
+                                  ) : null}
                                 </InlineStack>
+                                <Text as="span" tone="subdued" variant="bodySm">
+                                  SKU: {product.sku || "N/A"}
+                                  {product.availableQuantity == null
+                                    ? ""
+                                    : ` · Qty on hand: ${product.availableQuantity}`}
+                                </Text>
+                              </BlockStack>
+                              <InlineStack gap="300" blockAlign="center">
+                                <Text as="span" fontWeight="bold">
+                                  {formatProductCatalogPrice(product)}
+                                </Text>
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  <Button
+                                    size="slim"
+                                    variant="primary"
+                                    onClick={() => void handleSelectProduct(product)}
+                                  >
+                                    Select Item
+                                  </Button>
+                                </div>
                               </InlineStack>
-                            </ResourceItem>
-                            )}
-                          />
-                        </ProductCatalogSearchResults>
-                      </>
-                    )}
+                            </InlineStack>
+                          </ResourceItem>
+                          )}
+                        />
+                      </ProductCatalogSearchResults>
+                    ) : null}
                   </BlockStack>
                 </Card>
 
@@ -876,7 +955,8 @@ export function CreateQuotationPage() {
                       </Text>
                       <Text as="p" tone="subdued">
                         Each line is shown as a summary card. Use Edit to set
-                        quantity, pricing, discount, VAT, and review profit.
+                        quantity, pricing, discount, VAT, delivery fee, and
+                        review profit.
                       </Text>
                     </BlockStack>
 
@@ -961,6 +1041,19 @@ export function CreateQuotationPage() {
                         {fmt(netSubtotal)}
                       </Text>
                     </div>
+                    {deliveryFee > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Delivery fee
+                          {deliveryFeeMode === "percent" && deliveryFeeValue
+                            ? ` (${deliveryFeeValue}%)`
+                            : ""}
+                        </Text>
+                        <Text as="span" fontWeight="semibold">
+                          +{fmt(deliveryFee)}
+                        </Text>
+                      </div>
+                    ) : null}
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
                         VAT / tax
@@ -1154,6 +1247,19 @@ export function CreateQuotationPage() {
                         {fmt(netSubtotal)}
                       </Text>
                     </div>
+                    {deliveryFee > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Delivery fee
+                          {deliveryFeeMode === "percent" && deliveryFeeValue
+                            ? ` (${deliveryFeeValue}%)`
+                            : ""}
+                        </Text>
+                        <Text as="span" fontWeight="semibold">
+                          +{fmt(deliveryFee)}
+                        </Text>
+                      </div>
+                    ) : null}
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
                         VAT / tax
@@ -1201,12 +1307,56 @@ export function CreateQuotationPage() {
 
       <EditConfiguredLineModal
         allLines={lines}
+        deliveryFee={{
+          mode: deliveryFeeMode,
+          value: deliveryFeeValue,
+          pricePrefix,
+          onModeChange: setDeliveryFeeMode,
+          onValueChange: setDeliveryFeeValue,
+        }}
         documentCurrencyId={values.currencyId}
         line={editingLine}
         open={Boolean(editingLine)}
         onClose={() => setEditingLineId(null)}
         onSave={saveLine}
       />
+
+      {/* Internal Notes Modal */}
+      <Modal
+        open={internalNotesModalOpen}
+        onClose={() => setInternalNotesModalOpen(false)}
+        title="Internal Team Notes"
+        primaryAction={{
+          content: "Save internal notes",
+          onAction: () => {
+            setValues((prev) => ({ ...prev, internalNotes: tempInternalNotes }));
+            setInternalNotesModalOpen(false);
+          },
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => setInternalNotesModalOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <FormLayout>
+            <Text as="p" tone="subdued">
+              Internal team notes are preserved across quotes and converted invoices. They are visible only to your staff and will never appear on customer prints or PDFs.
+            </Text>
+            <TextField
+              autoComplete="off"
+              label="Internal Notes"
+              labelHidden
+              multiline={8}
+              onChange={setTempInternalNotes}
+              placeholder="Enter internal details, special pricing approvals, or delivery instructions for team members..."
+              value={tempInternalNotes}
+            />
+          </FormLayout>
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

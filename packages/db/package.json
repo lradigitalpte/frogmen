@@ -15,7 +15,8 @@
     "apply-customers": "tsx src/run-apply-customers.ts",
     "apply-inventory": "tsx src/run-apply-inventory.ts",
     "apply-product-currency": "tsx src/apply-product-currency.ts",
-    "repair-invoice-cost-currency": "tsx src/repair-invoice-cost-currency.ts"
+    "repair-invoice-cost-currency": "tsx src/repair-invoice-cost-currency.ts",
+    "apply-signature-fields": "tsx src/apply-quotation-signature-fields.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

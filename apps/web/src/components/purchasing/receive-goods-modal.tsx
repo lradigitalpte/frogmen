@@ -16,11 +16,21 @@ import {
 import { Package, ScanBarcode } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  buildPoLandedUnitCostsByLineId,
+  resolveDeliveryFee,
+} from "@frog1/shared";
+import {
   buildSerialSlots,
   formatReceiveQuantity,
   ReceiveSerialEntry,
   serialsAreValid,
 } from "@/components/purchasing/receive-serial-entry";
+import {
+  buildProductPricingPayload,
+  buildReceiptPricingRows,
+  ReceiptPricingPanel,
+} from "@/components/purchasing/receipt-pricing-panel";
+import { formatMoney } from "@/components/sales/format-money";
 import {
   createGoodsReceipt,
   getGoodsReceipt,
@@ -28,11 +38,13 @@ import {
   validateGoodsReceipt,
   type GoodsReceipt,
   type GoodsReceiptLine,
+  type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
 
 interface ReceiveGoodsModalProps {
   open: boolean;
   orderId: string;
+  order?: PurchaseOrder | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -64,6 +76,7 @@ function lineIsReady(line: GoodsReceiptLine, input: LineInput | undefined) {
 export function ReceiveGoodsModal({
   open,
   orderId,
+  order,
   onClose,
   onSuccess,
 }: ReceiveGoodsModalProps) {
@@ -72,6 +85,7 @@ export function ReceiveGoodsModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lineInputs, setLineInputs] = useState<Record<string, LineInput>>({});
+  const [sellingPrices, setSellingPrices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -81,6 +95,7 @@ export function ReceiveGoodsModal({
       setError(null);
       setReceipt(null);
       setLineInputs({});
+      setSellingPrices({});
 
       try {
         const created = await createGoodsReceipt(orderId);
@@ -102,6 +117,17 @@ export function ReceiveGoodsModal({
           };
         }
         setLineInputs(inputs);
+
+        const pricingRows = buildReceiptPricingRows(detail.lines ?? []);
+        const prices: Record<string, string> = {};
+        for (const row of pricingRows) {
+          prices[row.productId] =
+            detail.lines?.find((line) => line.productId === row.productId)
+              ?.suggestedSellingPrice ??
+            row.currentSellingPrice ??
+            "";
+        }
+        setSellingPrices(prices);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to create receipt",
@@ -213,7 +239,12 @@ export function ReceiveGoodsModal({
         });
       }
 
-      await validateGoodsReceipt(receipt.id);
+      const productPricing = buildProductPricingPayload(
+        buildReceiptPricingRows(lines),
+        sellingPrices,
+      );
+
+      await validateGoodsReceipt(receipt.id, { productPricing });
       onSuccess();
     } catch (err) {
       setError(
@@ -226,6 +257,46 @@ export function ReceiveGoodsModal({
   const allLinesReady =
     (receipt?.lines?.length ?? 0) > 0 &&
     readyCount === (receipt?.lines?.length ?? 0);
+
+  const lineNet = useMemo(() => {
+    if (!order?.lines?.length) return 0;
+    return order.lines.reduce(
+      (sum, line) => sum + Number(line.priceSubtotal),
+      0,
+    );
+  }, [order?.lines]);
+
+  const freight = useMemo(
+    () =>
+      resolveDeliveryFee(
+        lineNet,
+        order?.freightAmount,
+        order?.freightPercent,
+      ),
+    [lineNet, order?.freightAmount, order?.freightPercent],
+  );
+  const otherCharges = Number(order?.otherChargesAmount ?? 0);
+  const hasLandedCharges = freight + otherCharges > 0;
+
+  const landedByLineId = useMemo(() => {
+    if (!order?.lines?.length || !hasLandedCharges) {
+      return new Map<string, number>();
+    }
+
+    return buildPoLandedUnitCostsByLineId(order.lines, {
+      freightAmount: order.freightAmount,
+      freightPercent: order.freightPercent,
+      otherChargesAmount: order.otherChargesAmount,
+    });
+  }, [
+    hasLandedCharges,
+    order?.freightAmount,
+    order?.freightPercent,
+    order?.lines,
+    order?.otherChargesAmount,
+  ]);
+
+  const currencyCode = order?.currencyCode ?? "USD";
 
   return (
     <Modal
@@ -258,6 +329,14 @@ export function ReceiveGoodsModal({
             </Banner>
           ) : null}
 
+          {hasLandedCharges ? (
+            <Banner tone="success">
+              Freight and other PO charges will be allocated to received products.
+              Catalog <strong>cost price</strong> will update to the estimated
+              landed unit cost shown below.
+            </Banner>
+          ) : null}
+
           {!loading && receipt ? (
             <Text as="p" tone="subdued">
               {readyCount} of {receipt.lines?.length ?? 0} line
@@ -273,6 +352,7 @@ export function ReceiveGoodsModal({
             const maxQty = line.qtyRemaining ?? Number(line.quantity);
             const quantity = parseQuantity(input?.quantity ?? "0", maxQty);
             const ready = lineIsReady(line, input);
+            const landedUnitCost = landedByLineId.get(line.purchaseOrderLineId);
 
             return (
               <Card key={line.id}>
@@ -308,6 +388,9 @@ export function ReceiveGoodsModal({
                         <Text as="p" tone="subdued" variant="bodySm">
                           Receive into {line.warehouseName ?? "warehouse"} · up
                           to {formatReceiveQuantity(maxQty)} remaining on PO
+                          {landedUnitCost != null
+                            ? ` · catalog cost will update to ${formatMoney(String(landedUnitCost), currencyCode)} landed`
+                            : ""}
                         </Text>
                       </BlockStack>
                     </InlineStack>
@@ -351,6 +434,20 @@ export function ReceiveGoodsModal({
               </Card>
             );
           })}
+
+          {receipt ? (
+            <ReceiptPricingPanel
+              currencyCode={receipt.currencyCode ?? currencyCode}
+              lines={receipt.lines ?? []}
+              sellingPrices={sellingPrices}
+              onSellingPriceChange={(productId, value) =>
+                setSellingPrices((current) => ({
+                  ...current,
+                  [productId]: value,
+                }))
+              }
+            />
+          ) : null}
         </BlockStack>
       </Modal.Section>
     </Modal>

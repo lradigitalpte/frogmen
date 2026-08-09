@@ -24,6 +24,7 @@ import {
   organizations,
   products,
   purchaseActivities,
+  purchaseOrderCharges,
   purchaseOrderLines,
   purchaseOrders,
   users,
@@ -31,7 +32,8 @@ import {
   warehouses,
   type Database,
 } from "@frog1/db";
-import { applyTemplatePlaceholders } from "@frog1/shared";
+import { applyTemplatePlaceholders, buildPoLandedUnitCostsByLineId, roundMoney, suggestSellingPrice } from "@frog1/shared";
+import { sumDocumentAmounts } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
 import { VendorsService } from "../vendors/vendors.service";
@@ -42,11 +44,9 @@ import { ProductUnitsService } from "../product-units/product-units.service";
 import { MailService } from "../mail/mail.service";
 import { SettingsService } from "../settings/settings.service";
 import { DocumentRendererService } from "../documents/document-renderer.service";
+import { ProductCostEventsService } from "../product-cost-events/product-cost-events.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
-import {
-  calculateLineAmounts,
-  sumDocumentAmounts,
-} from "../sales/sales-calculations";
+import { calculateLineAmounts } from "../sales/sales-calculations";
 
 export interface ListPurchaseOrdersQuery {
   state?: "draft" | "confirmed" | "cancelled";
@@ -61,6 +61,13 @@ export interface ListPurchaseOrdersQuery {
   sortDir?: "asc" | "desc";
 }
 
+export interface PurchaseOrderNamedChargeInput {
+  name: string;
+  amount: number;
+  scope: "order" | "line";
+  purchaseOrderLineId?: string | null;
+}
+
 export interface CreatePurchaseOrderInput {
   vendorId: string;
   currencyId: string;
@@ -69,6 +76,11 @@ export interface CreatePurchaseOrderInput {
   vendorReference?: string;
   internalReference?: string;
   notes?: string;
+  freightAmount?: number | null;
+  freightPercent?: number | null;
+  otherChargesAmount?: number | null;
+  targetMarginPercent?: number | null;
+  additionalCharges?: PurchaseOrderNamedChargeInput[];
 }
 
 export interface UpdatePurchaseOrderInput {
@@ -79,6 +91,11 @@ export interface UpdatePurchaseOrderInput {
   vendorReference?: string | null;
   internalReference?: string | null;
   notes?: string | null;
+  freightAmount?: number | null;
+  freightPercent?: number | null;
+  otherChargesAmount?: number | null;
+  targetMarginPercent?: number | null;
+  additionalCharges?: PurchaseOrderNamedChargeInput[];
 }
 
 export interface AddPurchaseOrderLineInput {
@@ -105,6 +122,13 @@ export interface UpdateGoodsReceiptLineInput {
   serialNumbers?: string[];
 }
 
+export interface ValidateGoodsReceiptInput {
+  productPricing?: Array<{
+    productId: string;
+    sellingPrice?: string | null;
+  }>;
+}
+
 @Injectable()
 export class PurchaseOrdersService {
   constructor(
@@ -118,6 +142,7 @@ export class PurchaseOrdersService {
     private readonly mailService: MailService,
     private readonly settingsService: SettingsService,
     private readonly documentRenderer: DocumentRendererService,
+    private readonly productCostEventsService: ProductCostEventsService,
   ) {}
 
   async list(organizationId: string, query: ListPurchaseOrdersQuery) {
@@ -274,12 +299,15 @@ export class PurchaseOrdersService {
       )
       .orderBy(desc(purchaseActivities.createdAt));
 
+    const additionalCharges = await this.loadPurchaseOrderCharges(id);
+
     return {
       ...header.order,
       vendorName: header.vendorName,
       vendorEmail: header.vendorEmail,
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
+      additionalCharges,
       lines: lines.map((row) => ({
         ...row.line,
         productName: row.productName,
@@ -314,6 +342,14 @@ export class PurchaseOrdersService {
       input.orderDate,
     );
 
+    const { freightAmount, freightPercent } = this.resolveFreightFields({
+      freightAmount: input.freightAmount ?? null,
+      freightPercent: input.freightPercent ?? null,
+    });
+    const otherChargesAmount = this.resolveOtherChargesAmount(
+      input.otherChargesAmount,
+    );
+
     const [order] = await this.db
       .insert(purchaseOrders)
       .values({
@@ -327,9 +363,34 @@ export class PurchaseOrdersService {
         vendorReference: input.vendorReference ?? null,
         internalReference: input.internalReference ?? null,
         notes: input.notes ?? null,
+        freightAmount,
+        freightPercent,
+        otherChargesAmount,
+        targetMarginPercent:
+          input.targetMarginPercent != null &&
+          Number.isFinite(input.targetMarginPercent)
+            ? String(input.targetMarginPercent)
+            : null,
         createdByUserId: userId ?? null,
       })
       .returning();
+
+    if (input.additionalCharges?.length) {
+      await this.syncPurchaseOrderCharges(order.id, input.additionalCharges);
+    }
+
+    if (
+      freightAmount ||
+      freightPercent ||
+      Number(otherChargesAmount) > 0 ||
+      (input.additionalCharges?.length ?? 0) > 0
+    ) {
+      await this.recomputeOrderTotals(organizationId, order.id, {
+        currencyId: input.currencyId,
+        exchangeRate: String(exchangeRate),
+        exchangeRateLockedAt: null,
+      });
+    }
 
     await this.logActivity(
       organizationId,
@@ -369,6 +430,28 @@ export class PurchaseOrdersService {
     }
     if (input.notes !== undefined) updates.notes = input.notes;
 
+    if (input.targetMarginPercent !== undefined) {
+      updates.targetMarginPercent =
+        input.targetMarginPercent != null &&
+        Number.isFinite(input.targetMarginPercent)
+          ? String(input.targetMarginPercent)
+          : null;
+    }
+
+    this.applyFreightUpdates(input, updates);
+
+    if (input.otherChargesAmount !== undefined) {
+      updates.otherChargesAmount = this.resolveOtherChargesAmount(
+        input.otherChargesAmount,
+      );
+    }
+
+    const chargeFieldsChanged =
+      input.freightAmount !== undefined ||
+      input.freightPercent !== undefined ||
+      input.otherChargesAmount !== undefined ||
+      input.additionalCharges !== undefined;
+
     if (
       input.currencyId !== undefined &&
       input.currencyId !== order.currencyId
@@ -388,10 +471,19 @@ export class PurchaseOrdersService {
       .set(updates)
       .where(eq(purchaseOrders.id, orderId));
 
-    if (input.currencyId && input.currencyId !== order.currencyId) {
+    if (input.additionalCharges !== undefined) {
+      await this.syncPurchaseOrderCharges(orderId, input.additionalCharges);
+    }
+
+    if (
+      chargeFieldsChanged ||
+      (input.currencyId && input.currencyId !== order.currencyId)
+    ) {
       await this.recomputeOrderTotals(organizationId, orderId, {
-        currencyId: input.currencyId,
-        exchangeRate: String(updates.exchangeRate),
+        currencyId: input.currencyId ?? order.currencyId,
+        exchangeRate: String(
+          updates.exchangeRate ?? order.exchangeRate ?? "1",
+        ),
         exchangeRateLockedAt: order.exchangeRateLockedAt,
       });
     }
@@ -831,13 +923,25 @@ export class PurchaseOrdersService {
       throw new NotFoundException("Goods receipt not found");
     }
 
+    const order = await this.getById(organizationId, header.receipt.purchaseOrderId);
+    const landedCosts = buildPoLandedUnitCostsByLineId(
+      order.lines,
+      this.buildLandedCostCharges(order, order.additionalCharges ?? []),
+    );
+    const targetMargin = Number(order.targetMarginPercent ?? 0);
+
     const lines = await this.db
       .select({
         line: goodsReceiptLines,
         productName: products.name,
         productSku: products.sku,
         trackSerial: products.trackSerial,
+        usageType: products.usageType,
+        currentCostPrice: products.costPrice,
+        currentSellingPrice: products.sellingPrice,
         warehouseName: warehouses.name,
+        poLineId: purchaseOrderLines.id,
+        poLineUnitPrice: purchaseOrderLines.unitPrice,
         poLineQuantity: purchaseOrderLines.quantity,
         poLineQtyReceived: purchaseOrderLines.qtyReceived,
       })
@@ -855,17 +959,37 @@ export class PurchaseOrdersService {
       ...header.receipt,
       purchaseOrderNumber: header.purchaseOrderNumber,
       vendorName: header.vendorName,
-      lines: lines.map((row) => ({
-        ...row.line,
-        productName: row.productName,
-        productSku: row.productSku,
-        trackSerial: row.trackSerial,
-        warehouseName: row.warehouseName,
-        poLineQuantity: row.poLineQuantity,
-        poLineQtyReceived: row.poLineQtyReceived,
-        qtyRemaining:
-          Number(row.poLineQuantity) - Number(row.poLineQtyReceived),
-      })),
+      currencyCode: order.currencyCode,
+      targetMarginPercent: order.targetMarginPercent,
+      lines: lines.map((row) => {
+        const landedUnitCost =
+          landedCosts.get(row.poLineId) ?? Number(row.poLineUnitPrice ?? 0);
+        const suggestedSellingPrice =
+          targetMargin > 0
+            ? suggestSellingPrice(landedUnitCost, targetMargin)
+            : null;
+
+        return {
+          ...row.line,
+          productName: row.productName,
+          productSku: row.productSku,
+          trackSerial: row.trackSerial,
+          usageType: row.usageType,
+          currentCostPrice: row.currentCostPrice,
+          currentSellingPrice: row.currentSellingPrice,
+          landedUnitCost: String(roundMoney(landedUnitCost)),
+          suggestedSellingPrice:
+            suggestedSellingPrice != null
+              ? String(suggestedSellingPrice)
+              : null,
+          poLineUnitPrice: row.poLineUnitPrice,
+          warehouseName: row.warehouseName,
+          poLineQuantity: row.poLineQuantity,
+          poLineQtyReceived: row.poLineQtyReceived,
+          qtyRemaining:
+            Number(row.poLineQuantity) - Number(row.poLineQtyReceived),
+        };
+      }),
     };
   }
 
@@ -953,6 +1077,7 @@ export class PurchaseOrdersService {
     organizationId: string,
     receiptId: string,
     userId: string | undefined,
+    input: ValidateGoodsReceiptInput = {},
   ) {
     const receipt = await this.getReceiptById(organizationId, receiptId);
 
@@ -990,6 +1115,23 @@ export class PurchaseOrdersService {
       }
     }
 
+    const landedCosts = buildPoLandedUnitCostsByLineId(
+      order.lines,
+      this.buildLandedCostCharges(order, order.additionalCharges ?? []),
+    );
+    const hasLandedCharges =
+      Number(order.freightAmount ?? 0) > 0 ||
+      Number(order.freightPercent ?? 0) > 0 ||
+      Number(order.otherChargesAmount ?? 0) > 0 ||
+      (order.additionalCharges?.length ?? 0) > 0;
+
+    const sellingPriceByProductId = new Map(
+      (input.productPricing ?? [])
+        .filter((row) => row.sellingPrice?.trim())
+        .map((row) => [row.productId, row.sellingPrice!.trim()]),
+    );
+    const updatedSellingPrices = new Set<string>();
+
     for (const line of receipt.lines) {
       const qty = Number(line.quantity);
       const poLine = order.lines.find(
@@ -1000,12 +1142,26 @@ export class PurchaseOrdersService {
         throw new BadRequestException("Purchase order line not found");
       }
 
+      const [productRow] = await this.db
+        .select({ costPrice: products.costPrice })
+        .from(products)
+        .where(eq(products.id, line.productId))
+        .limit(1);
+      const previousUnitCost = productRow?.costPrice ?? null;
+
+      const createdUnits: Array<{ id: string; serialNumber: string }> = [];
+
       if (line.trackSerial) {
         for (const serial of line.serialNumbers ?? []) {
-          await this.productUnitsService.create(organizationId, line.productId, {
-            warehouseId: line.warehouseId,
-            serialNumber: serial.trim(),
-          });
+          const unit = await this.productUnitsService.create(
+            organizationId,
+            line.productId,
+            {
+              warehouseId: line.warehouseId,
+              serialNumber: serial.trim(),
+            },
+          );
+          createdUnits.push({ id: unit.id, serialNumber: unit.serialNumber });
         }
       } else {
         await this.stockService.adjust(organizationId, {
@@ -1026,13 +1182,74 @@ export class PurchaseOrdersService {
         .where(eq(purchaseOrderLines.id, line.purchaseOrderLineId));
 
       if (poLine.unitPrice) {
+        const landedUnitCost =
+          landedCosts.get(poLine.id) ?? Number(poLine.unitPrice);
+
         await this.db
           .update(products)
           .set({
-            costPrice: poLine.unitPrice,
+            costPrice: String(landedUnitCost),
             updatedAt: new Date(),
           })
           .where(eq(products.id, line.productId));
+
+        const poReceiptBase = {
+          organizationId,
+          branchId: receipt.branchId,
+          productId: line.productId,
+          previousUnitCost,
+          landedUnitCost,
+          currencyCode: order.currencyCode,
+          purchaseOrderId: order.id,
+          purchaseOrderNumber: order.number,
+          goodsReceiptId: receipt.id,
+          goodsReceiptNumber: receipt.number,
+          vendorName: receipt.vendorName,
+          lineUnitPrice: poLine.unitPrice,
+          poLines: order.lines.map((item) => ({
+            id: item.id,
+            priceSubtotal: item.priceSubtotal,
+            quantity: item.quantity,
+          })),
+          poLineId: poLine.id,
+          freightAmount: order.freightAmount,
+          freightPercent: order.freightPercent,
+          otherChargesAmount: order.otherChargesAmount,
+          userId,
+        };
+
+        if (line.trackSerial) {
+          for (const unit of createdUnits) {
+            await this.productCostEventsService.logPoReceipt({
+              ...poReceiptBase,
+              productUnitId: unit.id,
+              serialNumber: unit.serialNumber,
+            });
+          }
+        } else {
+          await this.productCostEventsService.logPoReceipt(poReceiptBase);
+        }
+      }
+
+      const nextSellingPrice = sellingPriceByProductId.get(line.productId);
+      if (
+        nextSellingPrice &&
+        !updatedSellingPrices.has(line.productId)
+      ) {
+        await this.db
+          .update(products)
+          .set({
+            sellingPrice: nextSellingPrice,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(products.id, line.productId),
+              eq(products.organizationId, organizationId),
+              eq(products.usageType, "for_sale"),
+            ),
+          );
+        updatedSellingPrices.add(line.productId);
       }
     }
 
@@ -1052,7 +1269,9 @@ export class PurchaseOrdersService {
       receipt.purchaseOrderId,
       userId,
       "received",
-      `Goods receipt ${receipt.number} validated`,
+      hasLandedCharges
+        ? `Goods receipt ${receipt.number} validated · product costs updated to landed unit cost`
+        : `Goods receipt ${receipt.number} validated`,
     );
 
     return this.getReceiptById(organizationId, receiptId);
@@ -1117,6 +1336,16 @@ export class PurchaseOrdersService {
       exchangeRateLockedAt: Date | null;
     },
   ) {
+    const [orderRow] = await this.db
+      .select({
+        freightAmount: purchaseOrders.freightAmount,
+        freightPercent: purchaseOrders.freightPercent,
+        otherChargesAmount: purchaseOrders.otherChargesAmount,
+      })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId))
+      .limit(1);
+
     const exchangeRate = await this.getOrderExchangeRate(organizationId, order);
     const lines = await this.db
       .select()
@@ -1130,20 +1359,204 @@ export class PurchaseOrdersService {
         priceTotal: Number(line.priceTotal),
       })),
       exchangeRate,
+      orderRow?.freightAmount,
+      orderRow?.freightPercent,
+    );
+
+    const otherCharges = await this.sumPurchaseOrderChargeAmounts(orderId);
+    const amountUntaxed = roundMoney(totals.amountUntaxed + otherCharges);
+    const amountTotal = roundMoney(totals.amountTotal + otherCharges);
+    const amountUntaxedBase = roundMoney(
+      totals.amountUntaxedBase + otherCharges * exchangeRate,
+    );
+    const amountTotalBase = roundMoney(
+      totals.amountTotalBase + otherCharges * exchangeRate,
     );
 
     await this.db
       .update(purchaseOrders)
       .set({
-        amountUntaxed: String(totals.amountUntaxed),
+        amountUntaxed: String(amountUntaxed),
         amountTax: String(totals.amountTax),
-        amountTotal: String(totals.amountTotal),
-        amountUntaxedBase: String(totals.amountUntaxedBase),
+        amountTotal: String(amountTotal),
+        amountUntaxedBase: String(amountUntaxedBase),
         amountTaxBase: String(totals.amountTaxBase),
-        amountTotalBase: String(totals.amountTotalBase),
+        amountTotalBase: String(amountTotalBase),
+        otherChargesAmount: String(otherCharges),
         updatedAt: new Date(),
       })
       .where(eq(purchaseOrders.id, orderId));
+  }
+
+  private async loadPurchaseOrderCharges(purchaseOrderId: string) {
+    const rows = await this.db
+      .select()
+      .from(purchaseOrderCharges)
+      .where(eq(purchaseOrderCharges.purchaseOrderId, purchaseOrderId))
+      .orderBy(asc(purchaseOrderCharges.sortOrder), asc(purchaseOrderCharges.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      purchaseOrderId: row.purchaseOrderId,
+      purchaseOrderLineId: row.purchaseOrderLineId,
+      name: row.name,
+      amount: row.amount,
+      scope: row.scope,
+      sortOrder: row.sortOrder,
+    }));
+  }
+
+  private async sumPurchaseOrderChargeAmounts(purchaseOrderId: string) {
+    const rows = await this.loadPurchaseOrderCharges(purchaseOrderId);
+    if (rows.length === 0) {
+      const [orderRow] = await this.db
+        .select({ otherChargesAmount: purchaseOrders.otherChargesAmount })
+        .from(purchaseOrders)
+        .where(eq(purchaseOrders.id, purchaseOrderId))
+        .limit(1);
+      return Number(orderRow?.otherChargesAmount ?? 0);
+    }
+
+    return roundMoney(
+      rows.reduce((sum, row) => sum + Number(row.amount), 0),
+    );
+  }
+
+  private buildLandedCostCharges(
+    order: {
+      freightAmount: string | null;
+      freightPercent: string | null;
+      otherChargesAmount: string;
+    },
+    additionalCharges: Awaited<ReturnType<typeof this.loadPurchaseOrderCharges>>,
+  ) {
+    return {
+      freightAmount: order.freightAmount,
+      freightPercent: order.freightPercent,
+      otherChargesAmount: order.otherChargesAmount,
+      namedCharges: additionalCharges.map((charge) => ({
+        scope: charge.scope,
+        amount: charge.amount,
+        purchaseOrderLineId: charge.purchaseOrderLineId,
+      })),
+    };
+  }
+
+  private async syncPurchaseOrderCharges(
+    purchaseOrderId: string,
+    charges: PurchaseOrderNamedChargeInput[],
+  ) {
+    await this.db
+      .delete(purchaseOrderCharges)
+      .where(eq(purchaseOrderCharges.purchaseOrderId, purchaseOrderId));
+
+    const validCharges = charges
+      .map((charge, index) => {
+        const amount = Number(charge.amount);
+        const name = charge.name.trim();
+        if (!name || !Number.isFinite(amount) || amount <= 0) {
+          return null;
+        }
+
+        if (charge.scope === "line" && !charge.purchaseOrderLineId) {
+          throw new BadRequestException(
+            `Charge "${name}" is assigned to a line but no line was selected`,
+          );
+        }
+
+        return {
+          purchaseOrderId,
+          purchaseOrderLineId:
+            charge.scope === "line" ? charge.purchaseOrderLineId ?? null : null,
+          name,
+          amount: String(roundMoney(amount)),
+          scope: charge.scope,
+          sortOrder: index,
+        };
+      })
+      .filter(Boolean) as Array<{
+      purchaseOrderId: string;
+      purchaseOrderLineId: string | null;
+      name: string;
+      amount: string;
+      scope: "order" | "line";
+      sortOrder: number;
+    }>;
+
+    if (validCharges.length > 0) {
+      await this.db.insert(purchaseOrderCharges).values(validCharges);
+    }
+
+    const totalCharges = roundMoney(
+      validCharges.reduce((sum, charge) => sum + Number(charge.amount), 0),
+    );
+
+    await this.db
+      .update(purchaseOrders)
+      .set({
+        otherChargesAmount: String(totalCharges),
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, purchaseOrderId));
+  }
+
+  private resolveFreightFields(input: {
+    freightAmount?: number | null;
+    freightPercent?: number | null;
+  }) {
+    const amount =
+      input.freightAmount != null ? Number(input.freightAmount) : 0;
+    const percent =
+      input.freightPercent != null ? Number(input.freightPercent) : 0;
+    const hasAmount = Number.isFinite(amount) && amount > 0;
+    const hasPercent = Number.isFinite(percent) && percent > 0;
+
+    if (hasAmount && hasPercent) {
+      throw new BadRequestException(
+        "Set either a freight amount or percent, not both",
+      );
+    }
+
+    return {
+      freightAmount: hasAmount ? String(roundMoney(amount)) : null,
+      freightPercent: hasPercent ? String(percent) : null,
+    };
+  }
+
+  private resolveOtherChargesAmount(value?: number | null) {
+    if (value == null || value === 0) {
+      return "0";
+    }
+
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new BadRequestException("Other charges must be zero or greater");
+    }
+
+    return String(roundMoney(amount));
+  }
+
+  private applyFreightUpdates(
+    input: {
+      freightAmount?: number | null;
+      freightPercent?: number | null;
+    },
+    updates: Record<string, unknown>,
+  ) {
+    if (
+      input.freightAmount === undefined &&
+      input.freightPercent === undefined
+    ) {
+      return;
+    }
+
+    const { freightAmount, freightPercent } = this.resolveFreightFields({
+      freightAmount: input.freightAmount ?? null,
+      freightPercent: input.freightPercent ?? null,
+    });
+
+    updates.freightAmount = freightAmount;
+    updates.freightPercent = freightPercent;
   }
 
   private async getOrderExchangeRate(

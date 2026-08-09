@@ -21,6 +21,11 @@ import { useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { GoodsReceiptPrintModal } from "@/components/purchasing/goods-receipt-print-modal";
 import {
+  buildProductPricingPayload,
+  buildReceiptPricingRows,
+  ReceiptPricingPanel,
+} from "@/components/purchasing/receipt-pricing-panel";
+import {
   buildSerialSlots,
   formatReceiveQuantity,
   ReceiveSerialEntry,
@@ -94,6 +99,7 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
   const [saving, setSaving] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const [lineInputs, setLineInputs] = useState<Record<string, LineInput>>({});
+  const [sellingPrices, setSellingPrices] = useState<Record<string, string>>({});
 
   async function load() {
     setLoading(true);
@@ -118,6 +124,17 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
         };
       }
       setLineInputs(inputs);
+
+      const pricingRows = buildReceiptPricingRows(detail.lines ?? []);
+      const prices: Record<string, string> = {};
+      for (const row of pricingRows) {
+        prices[row.productId] =
+          detail.lines?.find((line) => line.productId === row.productId)
+            ?.suggestedSellingPrice ??
+          row.currentSellingPrice ??
+          "";
+      }
+      setSellingPrices(prices);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load receipt");
     } finally {
@@ -171,7 +188,12 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
         });
       }
 
-      const updated = await validateGoodsReceipt(receipt.id);
+      const productPricing = buildProductPricingPayload(
+        buildReceiptPricingRows(lines),
+        sellingPrices,
+      );
+
+      const updated = await validateGoodsReceipt(receipt.id, { productPricing });
       setReceipt(updated);
       await load();
     } catch (err) {
@@ -463,7 +485,23 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
                     );
                   })}
                 </BlockStack>
-              ) : (
+              ) : null}
+
+              {isDraft ? (
+                <ReceiptPricingPanel
+                  currencyCode={receipt.currencyCode ?? "USD"}
+                  lines={lines}
+                  sellingPrices={sellingPrices}
+                  onSellingPriceChange={(productId, value) =>
+                    setSellingPrices((current) => ({
+                      ...current,
+                      [productId]: value,
+                    }))
+                  }
+                />
+              ) : null}
+
+              {!isDraft ? (
                 <Card padding="0">
                   <BlockStack gap="400">
                     <Box padding="400" paddingBlockEnd="0">
@@ -543,7 +581,7 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
                     </IndexTable>
                   </BlockStack>
                 </Card>
-              )}
+              ) : null}
             </BlockStack>
           </Layout.Section>
 

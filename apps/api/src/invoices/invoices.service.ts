@@ -539,7 +539,13 @@ export class InvoicesService {
       if (!row.product?.isStorable || row.product.type === "service") continue;
       if (row.line.productUnitId) {
         await this.db.update(productUnits).set({ status: "in_stock", updatedAt: new Date() })
-          .where(and(eq(productUnits.id, row.line.productUnitId), eq(productUnits.organizationId, organizationId)));
+          .where(and(
+            eq(productUnits.organizationId, organizationId),
+            or(
+              eq(productUnits.id, row.line.productUnitId),
+              eq(productUnits.parentUnitId, row.line.productUnitId),
+            ),
+          ));
       } else {
         const warehouseId = row.salesLine?.warehouseId ?? defaultWarehouseId;
         if (warehouseId) await this.stockService.adjust(organizationId, {
@@ -1033,24 +1039,23 @@ export class InvoicesService {
       salesOrderId,
     );
 
-    const lineInputs: AddInvoiceLineInput[] = input.lines?.length
-      ? input.lines
-      : orderLines.map((line) => {
-          const orderedQty = Number(line.quantity);
-          const alreadyInvoiced = invoicedQtyByLine.get(line.id) ?? 0;
-          const remainingQty = orderedQty - alreadyInvoiced;
+    // Sales-order invoices always mirror remaining order lines — never accept client overrides.
+    const lineInputs: AddInvoiceLineInput[] = orderLines.map((line) => {
+      const orderedQty = Number(line.quantity);
+      const alreadyInvoiced = invoicedQtyByLine.get(line.id) ?? 0;
+      const remainingQty = orderedQty - alreadyInvoiced;
 
-          return {
-            salesOrderLineId: line.id,
-            productId: line.productId ?? undefined,
-            productUnitId: line.productUnitId ?? undefined,
-            description: line.description,
-            quantity: remainingQty,
-            unitPrice: Number(line.unitPrice),
-            discountPercent: Number(line.discountPercent),
-            taxRatePercent: Number(line.taxRatePercent),
-          };
-        });
+      return {
+        salesOrderLineId: line.id,
+        productId: line.productId ?? undefined,
+        productUnitId: line.productUnitId ?? undefined,
+        description: line.description,
+        quantity: remainingQty,
+        unitPrice: Number(line.unitPrice),
+        discountPercent: Number(line.discountPercent),
+        taxRatePercent: Number(line.taxRatePercent),
+      };
+    });
 
     const validLines = lineInputs.filter((line) => line.quantity > 0);
 
@@ -1218,7 +1223,10 @@ export class InvoicesService {
       .where(
         and(
           eq(productUnits.organizationId, organizationId),
-          inArray(productUnits.id, unitIds),
+          or(
+            inArray(productUnits.id, unitIds),
+            inArray(productUnits.parentUnitId, unitIds),
+          ),
         ),
       );
   }

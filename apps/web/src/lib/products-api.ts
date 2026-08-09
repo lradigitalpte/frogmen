@@ -36,6 +36,8 @@ export function listProducts(params: ListProductsParams = {}) {
       rootOnly: params.rootOnly ? "true" : undefined,
       forSaleOnly: params.forSaleOnly ? "true" : undefined,
       isRovEquipment: params.isRovEquipment ? "true" : undefined,
+      includeStock: params.includeStock ? "true" : undefined,
+      inStockOnly: params.inStockOnly ? "true" : undefined,
     })}`,
   );
 }

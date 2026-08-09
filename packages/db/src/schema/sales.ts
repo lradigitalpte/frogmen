@@ -25,6 +25,7 @@ import { branches } from "./security";
 export const salesOrderStateEnum = pgEnum("sales_order_state", [
   "draft",
   "sent",
+  "signed",
   "confirmed",
   "cancelled",
 ]);
@@ -53,6 +54,7 @@ export const salesActivityTypeEnum = pgEnum("sales_activity_type", [
   "updated",
   "note",
   "sent",
+  "signed",
   "confirmed",
   "cancelled",
   "invoiced",
@@ -86,6 +88,30 @@ export const paymentTerms = pgTable("payment_terms", {
     .defaultNow(),
 });
 
+// A Deal groups multiple quotations for the same negotiation together
+export const deals = pgTable(
+  "deals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    title: varchar("title", { length: 200 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("deals_org_customer_idx").on(table.organizationId, table.customerId),
+  ],
+);
+
 export const salesOrders = pgTable(
   "sales_orders",
   {
@@ -116,6 +142,9 @@ export const salesOrders = pgTable(
     internalReference: varchar("internal_reference", { length: 100 }),
     paymentReference: varchar("payment_reference", { length: 100 }),
     notes: text("notes"),
+    internalNotes: text("internal_notes"),
+    deliveryFeeAmount: numeric("delivery_fee_amount", { precision: 18, scale: 2 }),
+    deliveryFeePercent: numeric("delivery_fee_percent", { precision: 8, scale: 4 }),
     amountUntaxed: numeric("amount_untaxed", { precision: 18, scale: 2 })
       .notNull()
       .default("0"),
@@ -137,7 +166,15 @@ export const salesOrders = pgTable(
     invoiceStatus: salesInvoiceStatusEnum("invoice_status")
       .notNull()
       .default("none"),
+    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
+    accessToken: varchar("access_token", { length: 255 }),
+    signedBy: varchar("signed_by", { length: 255 }),
+    signedOn: timestamp("signed_on", { withTimezone: true }),
+    signatureImage: text("signature_image"),
+    signedIp: varchar("signed_ip", { length: 50 }),
+    signedEmail: varchar("signed_email", { length: 320 }),
+    customerPoDocumentUrl: text("customer_po_document_url"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -226,6 +263,7 @@ export const invoices = pgTable(
     customerReference: varchar("customer_reference", { length: 100 }),
     internalReference: varchar("internal_reference", { length: 100 }),
     notes: text("notes"),
+    internalNotes: text("internal_notes"),
     amountUntaxed: numeric("amount_untaxed", { precision: 18, scale: 2 })
       .notNull()
       .default("0"),
@@ -507,3 +545,4 @@ export type SalesOrder = typeof salesOrders.$inferSelect;
 export type SalesOrderLine = typeof salesOrderLines.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type PaymentTerm = typeof paymentTerms.$inferSelect;
+export type Deal = typeof deals.$inferSelect;

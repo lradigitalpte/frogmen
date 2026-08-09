@@ -17,12 +17,13 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
+import { resolveDeliveryFee } from "@/lib/line-item-utils";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
 import {
@@ -30,12 +31,17 @@ import {
   confirmQuotation,
   deleteQuotation,
   getQuotation,
+  getQuotationSigningUrl,
   markQuotationSent,
   sendQuotationEmail,
+  updateQuotationInternalNotes,
+  uploadCustomerPoDocument,
   type Quotation,
   type QuotationActivity,
 } from "@/lib/quotations-api";
 import { QuotationWorkflowPanel } from "@/components/sales/quotation-workflow-panel";
+import { QuotationCustomerApprovalCard } from "@/components/sales/quotation-customer-approval-card";
+import { DealThreadPanel } from "@/components/sales/deal-thread-panel";
 import { useToast } from "@/components/providers/toast-provider";
 
 interface QuotationViewPageProps {
@@ -52,6 +58,8 @@ function stateBadgeLabel(state: Quotation["state"]) {
       return "Draft Quotation";
     case "sent":
       return "Quotation Sent to Customer";
+    case "signed":
+      return "Digitally Signed";
     case "confirmed":
       return "Confirmed Sales Order";
     case "cancelled":
@@ -69,6 +77,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [copySigningLinkLoading, setCopySigningLinkLoading] = useState(false);
 
   // Tab State for Order Workspace
   const [selectedTab, setSelectedTab] = useState(0);
@@ -84,6 +93,58 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
 
   // Activity Log Email View Modal State
   const [selectedActivity, setSelectedActivity] = useState<QuotationActivity | null>(null);
+
+  // Internal Notes State
+  const [internalNotesModalOpen, setInternalNotesModalOpen] = useState(false);
+  const [editingInternalNotes, setEditingInternalNotes] = useState("");
+  const [savingInternalNotes, setSavingInternalNotes] = useState(false);
+  const [poUploading, setPoUploading] = useState(false);
+
+  async function handlePoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !quotation) return;
+    setPoUploading(true);
+    try {
+      const updated = await uploadCustomerPoDocument(quotation.id, file);
+      setQuotation(updated);
+      showSuccess(`Uploaded Customer PO document: ${file.name}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to upload PO document");
+    } finally {
+      setPoUploading(false);
+    }
+  }
+
+  async function handleCopySigningLink() {
+    if (!quotation) return;
+    setCopySigningLinkLoading(true);
+    try {
+      const { url } = await getQuotationSigningUrl(quotation.id);
+      await navigator.clipboard.writeText(url);
+      showSuccess("Customer signing link copied to clipboard");
+    } catch (err) {
+      showError(
+        err instanceof Error ? err.message : "Failed to copy signing link",
+      );
+    } finally {
+      setCopySigningLinkLoading(false);
+    }
+  }
+
+  async function handleSaveInternalNotes() {
+    if (!quotation) return;
+    setSavingInternalNotes(true);
+    try {
+      const updated = await updateQuotationInternalNotes(quotation.id, editingInternalNotes);
+      setQuotation(updated);
+      setInternalNotesModalOpen(false);
+      showSuccess("Internal team notes saved");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to save internal notes");
+    } finally {
+      setSavingInternalNotes(false);
+    }
+  }
 
   const orderWorkspaceTabs = [
     { id: "lines", content: "Order Lines" },
@@ -121,6 +182,22 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   const amountUntaxed = quotation?.amountUntaxed ?? "0";
   const amountTax = quotation?.amountTax ?? "0";
   const amountTotal = quotation?.amountTotal ?? "0";
+
+  const lineNetSubtotal = useMemo(
+    () =>
+      lines.reduce((sum, line) => sum + Number(line.priceSubtotal ?? 0), 0),
+    [lines],
+  );
+
+  const deliveryFee = useMemo(
+    () =>
+      resolveDeliveryFee(
+        lineNetSubtotal,
+        quotation?.deliveryFeeAmount,
+        quotation?.deliveryFeePercent,
+      ),
+    [lineNetSubtotal, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent],
+  );
 
   async function handleMarkSent() {
     if (!quotation) return;
@@ -227,7 +304,11 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   const isSent = quotation.state === "sent";
   const isCancelled = quotation.state === "cancelled";
   const isDraft = quotation.state === "draft";
+  const isSigned = quotation.state === "signed";
+  const canShareSigningLink =
+    quotation.state !== "cancelled" && quotation.state !== "confirmed";
   const docLabel = documentLabel(quotation.state);
+  const canEdit = quotation.state === "draft" || quotation.state === "sent";
 
   const primaryAction = isCancelled
     ? undefined
@@ -236,61 +317,87 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
           content: "Create Invoice",
           onAction: handleCreateInvoice,
         }
-      : isSent
+      : isSent || isSigned
         ? {
             content: "Confirm Sales Order",
             loading: actionLoading,
-            onAction: handleConfirm,
+            onAction: () => void handleConfirm(),
           }
         : {
             content: "Send to Customer",
             onAction: () => setEmailModalOpen(true),
           };
 
+  const secondaryActions = [
+    ...(canEdit
+      ? [
+          {
+            content: "Edit lines",
+            onAction: () =>
+              router.push(`/dashboard/sales/quotations/${quotation.id}/edit`),
+          },
+        ]
+      : []),
+    ...(isDraft
+      ? [
+          {
+            content: "Mark as sent",
+            loading: actionLoading,
+            onAction: () => void handleMarkSent(),
+          },
+        ]
+      : quotation.state !== "cancelled"
+        ? [
+            {
+              content: "Send by email",
+              onAction: () => setEmailModalOpen(true),
+            },
+          ]
+        : []),
+  ...(canShareSigningLink
+    ? [
+        {
+          content: "Copy signing link",
+          loading: copySigningLinkLoading,
+          onAction: () => void handleCopySigningLink(),
+        },
+      ]
+    : []),
+    {
+      content: "Preview PDF",
+      onAction: () => setPdfModalOpen(true),
+    },
+    {
+      content: "Internal notes",
+      onAction: () => {
+        setEditingInternalNotes(quotation.internalNotes || "");
+        setInternalNotesModalOpen(true);
+      },
+    },
+    ...(quotation.state !== "cancelled"
+      ? [
+          {
+            content: "Cancel order",
+            onAction: () => void handleCancel(),
+          },
+        ]
+      : []),
+    ...(isCancelled
+      ? [
+          {
+            content: "Delete",
+            destructive: true,
+            onAction: () => setDeleteModalOpen(true),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <AppPage
       backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }}
       primaryAction={primaryAction}
-      secondaryActions={[
-        ...(quotation.state === "draft" || quotation.state === "sent"
-          ? [
-              {
-                content: "Edit",
-                onAction: () =>
-                  router.push(`/dashboard/sales/quotations/${quotation.id}/edit`),
-              },
-            ]
-          : []),
-        ...(quotation.state === "draft" || quotation.state === "sent"
-          ? [
-              {
-                content: "Send by Email",
-                onAction: () => setEmailModalOpen(true),
-              },
-            ]
-          : []),
-        {
-          content: "Preview PDF",
-          onAction: () => setPdfModalOpen(true),
-        },
-        ...(quotation.state !== "cancelled"
-          ? [
-              {
-                content: "Cancel Order",
-                onAction: handleCancel,
-              },
-            ]
-          : []),
-        ...(quotation.state === "cancelled"
-          ? [
-              {
-                content: "Delete",
-                destructive: true,
-                onAction: () => setDeleteModalOpen(true),
-              },
-            ]
-          : []),
-      ]}
+      secondaryActions={secondaryActions}
       subtitle={`Customer: ${quotation.customerName ?? " "} • Date: ${quotation.quoteDate}`}
       title={`${docLabel} ${quotation.number}`}
     >
@@ -299,35 +406,6 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
           <Banner tone="success" onDismiss={() => router.replace(`/dashboard/sales/quotations/${quotation.id}`)}>
             Draft quotation saved. Send or preview it for the customer, then confirm
             when approved. Invoices can only be created after confirmation.
-          </Banner>
-        ) : null}
-
-        {isDraft ? (
-          <Banner tone="info">
-            <p>
-              Step 1 of 4: this is a <strong>draft</strong>. Use{" "}
-              <strong>Send to customer</strong> or <strong>Mark as sent</strong>, then{" "}
-              <strong>Confirm sales order</strong> when approved. Invoicing unlocks after
-              confirmation.
-            </p>
-          </Banner>
-        ) : null}
-
-        {isSent ? (
-          <Banner tone="info">
-            <p>
-              Step 2 of 4: quotation sent. Click <strong>Confirm sales order</strong> when
-              the customer accepts   that unlocks <strong>Create invoice</strong>.
-            </p>
-          </Banner>
-        ) : null}
-
-        {isConfirmed && quotation.invoiceStatus !== "invoiced" ? (
-          <Banner tone="success">
-            <p>
-              Step 3 of 4: sales order confirmed. Click <strong>Create invoice</strong> to
-              bill the customer.
-            </p>
           </Banner>
         ) : null}
 
@@ -344,34 +422,53 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
         ) : null}
 
         <Card>
-          <QuotationWorkflowPanel
-            quotation={quotation}
-            actionLoading={actionLoading}
-            onConfirm={() => void handleConfirm()}
-            onCreateInvoice={handleCreateInvoice}
-            onMarkSent={() => void handleMarkSent()}
-            onSendEmail={() => setEmailModalOpen(true)}
-          />
+          <QuotationWorkflowPanel quotation={quotation} />
         </Card>
 
+        <QuotationCustomerApprovalCard
+          currencyCode={currencyCode}
+          decimalPlaces={decimalPlaces}
+          quotation={quotation}
+          onPreviewPdf={() => setPdfModalOpen(true)}
+        />
+
+        <DealThreadPanel
+          quotation={quotation}
+          onUpdated={(updated) => setQuotation(updated)}
+        />
+
         <Card>
-          <InlineStack align="space-between" blockAlign="center">
-            <InlineStack gap="200" blockAlign="center">
-              {(quotation.state === "draft" || quotation.state === "sent") && (
-                <Button
-                  onClick={() =>
-                    router.push(`/dashboard/sales/quotations/${quotation.id}/edit`)
-                  }
-                >
-                  Edit lines
-                </Button>
-              )}
-
-              <Button onClick={() => setEmailModalOpen(true)}>Send by email</Button>
-
-              <Button onClick={() => setPdfModalOpen(true)}>Preview PDF</Button>
+          <BlockStack gap="300">
+            <InlineStack align="space-between" blockAlign="center">
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  Internal Team Notes
+                </Text>
+                <Badge tone="info">Private — Team Only</Badge>
+              </InlineStack>
+              <Button
+                size="slim"
+                onClick={() => {
+                  setEditingInternalNotes(quotation.internalNotes || "");
+                  setInternalNotesModalOpen(true);
+                }}
+              >
+                {quotation.internalNotes ? "Edit Internal Notes" : "Add Internal Notes"}
+              </Button>
             </InlineStack>
-          </InlineStack>
+
+            {quotation.internalNotes ? (
+              <Box background="bg-surface-secondary" padding="300" borderRadius="200">
+                <Text as="p" variant="bodyMd">
+                  {quotation.internalNotes}
+                </Text>
+              </Box>
+            ) : (
+              <Text as="p" tone="subdued">
+                No internal team notes recorded for this quotation yet. Click above to leave private notes for staff.
+              </Text>
+            )}
+          </BlockStack>
         </Card>
 
         {/* ── Sales Order Header Card ── */}
@@ -510,14 +607,51 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                 <InlineStack align="end">
                   <div style={{ width: "360px" }}>
                     <div className="quotation-summary-panel__rows">
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued">
-                          Untaxed Amount
-                        </Text>
-                        <Text as="span" fontWeight="semibold">
-                          {formatMoney(amountUntaxed, currencyCode, decimalPlaces)}
-                        </Text>
-                      </div>
+                      {deliveryFee > 0 ? (
+                        <>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">
+                              Line net
+                            </Text>
+                            <Text as="span" fontWeight="semibold">
+                              {formatMoney(
+                                lineNetSubtotal,
+                                currencyCode,
+                                decimalPlaces,
+                              )}
+                            </Text>
+                          </div>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">
+                              Delivery fee
+                              {quotation?.deliveryFeePercent
+                                ? ` (${quotation.deliveryFeePercent}%)`
+                                : ""}
+                            </Text>
+                            <Text as="span" fontWeight="semibold">
+                              +
+                              {formatMoney(
+                                deliveryFee,
+                                currencyCode,
+                                decimalPlaces,
+                              )}
+                            </Text>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="quotation-summary-row">
+                          <Text as="span" tone="subdued">
+                            Untaxed Amount
+                          </Text>
+                          <Text as="span" fontWeight="semibold">
+                            {formatMoney(
+                              amountUntaxed,
+                              currencyCode,
+                              decimalPlaces,
+                            )}
+                          </Text>
+                        </div>
+                      )}
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued">
                           Tax
@@ -550,8 +684,35 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                     </Text>
                     <Text as="p">
                       <Text as="span" tone="subdued">Customer reference: </Text>
-                      {quotation.customerReference || " "}
+                      {quotation.customerReference || "None"}
                     </Text>
+                    <Text as="p">
+                      <Text as="span" tone="subdued">Customer PO File: </Text>
+                      {quotation.customerPoDocumentUrl ? (
+                        <a
+                          href={`/api/v1/files/${quotation.customerPoDocumentUrl}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-600 hover:underline font-semibold text-xs inline-flex items-center gap-1"
+                        >
+                          📎 View Uploaded PO File
+                        </a>
+                      ) : (
+                        <Text as="span" tone="subdued">No PO file attached</Text>
+                      )}
+                    </Text>
+                    <div className="pt-1">
+                      <label className="inline-flex items-center px-3 py-1.5 border border-slate-300 rounded-md shadow-sm text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 cursor-pointer">
+                        {poUploading ? "Uploading..." : "Upload Customer PO Document (PDF/Image)"}
+                        <input
+                          type="file"
+                          accept="application/pdf,image/*"
+                          className="hidden"
+                          onChange={handlePoUpload}
+                          disabled={poUploading}
+                        />
+                      </label>
+                    </div>
                     <Text as="p">
                       <Text as="span" tone="subdued">Internal reference: </Text>
                       {quotation.internalReference || " "}
@@ -730,6 +891,40 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
             and document number remain recorded. Only cancelled quotations can
             be deleted.
           </Text>
+        </Modal.Section>
+      </Modal>
+
+      {/* ── Internal Notes Modal ── */}
+      <Modal
+        open={internalNotesModalOpen}
+        onClose={() => setInternalNotesModalOpen(false)}
+        title={`Internal Team Notes — ${quotation.number}`}
+        primaryAction={{
+          content: "Save Internal Notes",
+          loading: savingInternalNotes,
+          onAction: () => void handleSaveInternalNotes(),
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => setInternalNotesModalOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            <Text as="p" tone="subdued">
+              Internal team notes are visible strictly to staff and team members. They will NEVER be printed or shown to the customer.
+            </Text>
+            <TextField
+              autoComplete="off"
+              label="Internal Notes"
+              multiline={8}
+              onChange={setEditingInternalNotes}
+              placeholder="Private team notes (e.g. customer requested special delivery terms, battery warranty exception, internal approvals...)"
+              value={editingInternalNotes}
+            />
+          </BlockStack>
         </Modal.Section>
       </Modal>
     </AppPage>

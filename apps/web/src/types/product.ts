@@ -40,6 +40,8 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Sellable qty on hand when list is fetched with includeStock. null = always available (service/non-storable). */
+  availableQuantity?: number | null;
 }
 
 export interface ProductDetail extends Product {
@@ -87,6 +89,8 @@ export interface ListProductsParams {
   forSaleOnly?: boolean;
   usageType?: ProductUsageType;
   isRovEquipment?: boolean;
+  includeStock?: boolean;
+  inStockOnly?: boolean;
   search?: string;
   page?: number;
   perPage?: number;
@@ -131,6 +135,41 @@ export interface ProductUnit {
   warehouseCode?: string;
 }
 
+export interface ProductUnitSaleInfo {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceState: string;
+  paymentState: string;
+  invoiceDate: string;
+  customerId: string;
+  customerName: string;
+  currencyCode: string;
+  unitPrice: string;
+  priceSubtotal: string;
+  priceTotal: string;
+  quantity?: string;
+  invoiceAmountTotal: string;
+  unitCost?: string | null;
+  unitCostSource?: "invoice" | "catalog" | null;
+  grossProfit?: string | null;
+  profitMarginPercent?: number | null;
+  quotation?: {
+    id: string;
+    number: string;
+    quoteDate: string;
+    state: string;
+  } | null;
+  totalPaid: string;
+  payments: Array<{
+    id: string;
+    amount: string;
+    paymentDate: string;
+    method?: string | null;
+    reference?: string | null;
+    currencyCode: string;
+  }>;
+}
+
 export interface ProductUnitDetail extends ProductUnit {
   productName: string;
   productSku: string | null;
@@ -147,7 +186,65 @@ export interface ProductUnitDetail extends ProductUnit {
     productName: string;
     status: ProductUnitStatus;
     linkedAt: string | null;
+    costPrice?: string | null;
+    sellingPrice?: string | null;
+    catalogMarginPercent?: number | null;
   }>;
+  saleInfo?: ProductUnitSaleInfo | null;
+  costBreakdown?: ProductUnitCostBreakdown | null;
+  costHistory?: ProductUnitCostHistoryEvent[] | null;
+}
+
+export interface ProductUnitCostHistoryEvent {
+  id: string;
+  eventType: "po_receipt" | "manual_edit" | "invoice_post";
+  unitCost: string;
+  previousUnitCost: string | null;
+  currencyCode: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  referenceLabel: string | null;
+  message: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ProductUnitCostBreakdown {
+  currencyCode: string;
+  currentUnitCost: string | null;
+  purchase: {
+    purchaseOrderId: string;
+    purchaseOrderNumber: string;
+    vendorName: string;
+    goodsReceiptId: string;
+    goodsReceiptNumber: string;
+    receivedAt: string | null;
+    matchedBySerial: boolean;
+    lineUnitPrice: string;
+    freightAllocated: string;
+    otherChargesAllocated: string;
+    landedUnitCost: string;
+  } | null;
+  sale: {
+    invoiceId: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    unitSalePrice: string;
+    netUnitRevenue: string;
+    unitCost: string | null;
+    unitCostSource: "landed" | "invoice" | "catalog" | null;
+    invoiceUnitCost?: string | null;
+    grossProfit: string | null;
+    profitMarginPercent: number | null;
+    quotationNumber: string | null;
+  } | null;
+  estimatedMargin?: {
+    catalogListPrice: string;
+    unitCost: string;
+    grossProfit: string;
+    profitMarginPercent: number;
+  } | null;
+  notes: string[];
 }
 
 export interface PaginatedProductUnits {

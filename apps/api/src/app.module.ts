@@ -25,6 +25,7 @@ import { WarrantyModule } from "./warranty/warranty.module";
 import { RovInspectionModule } from "./rov-inspection/rov-inspection.module";
 import { BankAccountsModule } from "./bank-accounts/bank-accounts.module";
 import { ExpensesModule } from "./expenses/expenses.module";
+import { ExpenseClaimsModule } from "./expense-claims/expense-claims.module";
 import { SecurityModule } from "./security/security.module";
 import { PlatformModule } from "./platform/platform.module";
 
@@ -48,6 +49,7 @@ import { PlatformModule } from "./platform/platform.module";
     AccountingModule,
     BankAccountsModule,
     ExpensesModule,
+    ExpenseClaimsModule,
     VendorsModule,
     PurchaseOrdersModule,
     ProductTagsModule,

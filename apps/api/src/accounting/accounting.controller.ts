@@ -38,8 +38,45 @@ export class AccountingController {
   }
 
   @Get("accounts")
-  listAccounts(@Session() session: UserSession) {
-    return this.reportsService.listAccounts(this.orgId(session));
+  listAccounts(
+    @Session() session: UserSession,
+    @Query("asOf") asOf?: string,
+  ) {
+    return this.reportsService.listAccounts(this.orgId(session), asOf);
+  }
+
+  @Get("accounts/:id/ledger")
+  getAccountLedger(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Query("asOf") asOf?: string,
+    @Query("dateFrom") dateFrom?: string,
+    @Query("dateTo") dateTo?: string,
+    @Query("search") search?: string,
+    @Query("journalCode") journalCode?: string,
+    @Query("page") page?: string,
+    @Query("perPage") perPage?: string,
+  ) {
+    return this.reportsService.getAccountLedger(this.orgId(session), id, {
+      asOf,
+      dateFrom,
+      dateTo,
+      search,
+      journalCode,
+      page: page ? Number(page) : undefined,
+      perPage: perPage ? Number(perPage) : undefined,
+    });
+  }
+
+  @Get("moves/:moveId")
+  getJournalMove(
+    @Session() session: UserSession,
+    @Param("moveId") moveId: string,
+  ) {
+    return this.accountingService.getJournalMoveDetail(
+      this.orgId(session),
+      moveId,
+    );
   }
 
   @Get("reports/profit-loss")

@@ -183,6 +183,41 @@
       "when": 1785049600000,
       "tag": "0024_product_unit_serial_reuse",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785049700000,
+      "tag": "0025_quotation_delivery_fee",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785049800000,
+      "tag": "0026_expense_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785049900000,
+      "tag": "0027_purchase_order_charges",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785050000000,
+      "tag": "0028_product_cost_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785050100000,
+      "tag": "0029_purchase_order_named_charges",
+      "breakpoints": true
     }
   ]
 }

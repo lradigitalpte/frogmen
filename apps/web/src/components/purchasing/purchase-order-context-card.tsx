@@ -49,7 +49,7 @@ export function PurchaseOrderContextCard({
               Order summary
             </Text>
             <Text as="p" tone="subdued" variant="bodySm">
-              Cost × quantity only   no VAT or discounts on purchase orders.
+              Line costs plus freight and other charges.
             </Text>
           </BlockStack>
           {showTotal && orderTotal !== undefined ? (

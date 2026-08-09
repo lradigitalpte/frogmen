@@ -21,6 +21,7 @@ import {
   type CreatePurchaseOrderInput,
   type ListPurchaseOrdersQuery,
   type UpdateGoodsReceiptLineInput,
+  type ValidateGoodsReceiptInput,
   type UpdatePurchaseOrderInput,
   type UpdatePurchaseOrderLineInput,
 } from "./purchase-orders.service";
@@ -248,11 +249,16 @@ export class PurchaseOrdersController {
   }
 
   @Post("v1/goods-receipts/:id/validate")
-  validateReceipt(@Session() session: UserSession, @Param("id") id: string) {
+  validateReceipt(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: ValidateGoodsReceiptInput,
+  ) {
     return this.purchaseOrdersService.validateReceipt(
       this.orgId(session),
       id,
       this.userId(session),
+      body ?? {},
     );
   }
 }

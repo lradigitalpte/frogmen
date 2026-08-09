@@ -432,9 +432,12 @@ export function DashboardHome() {
                           return (
                             <tr
                               key={inv.id}
-                              className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/30"
+                              onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
+                              className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/30"
                             >
-                              <td className="px-6 py-3.5 font-semibold">{inv.number}</td>
+                              <td className="px-6 py-3.5 font-semibold text-primary hover:underline">
+                                {inv.number}
+                              </td>
                               <td className="px-4 py-3.5 text-muted-foreground">
                                 {inv.customerName}
                               </td>

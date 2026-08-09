@@ -66,6 +66,7 @@ export function CreateInvoicePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const quotationId = searchParams.get("quotationId");
+  const fromSalesOrder = Boolean(quotationId);
   const { settings: salesPricing } = useSalesPricing();
   const {
     baseCurrencyId,
@@ -93,6 +94,7 @@ export function CreateInvoicePage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState("");
   const [catalogTotal, setCatalogTotal] = useState(0);
 
   // Serial Selection State for serial-tracked items
@@ -121,11 +123,13 @@ export function CreateInvoicePage() {
     convertProductForDocument,
   } = useProductDocumentCurrency(documentCurrencyId, products, selectedProduct);
 
-  const pageTabs = [
-    { id: "setup", content: "1. Customer & Setup" },
-    { id: "items", content: "2. Equipment Catalog & Serial Lines" },
-    { id: "summary", content: "3. Financial Summary & Confirm" },
-  ];
+  const pageTabs = fromSalesOrder
+    ? [{ id: "review", content: "Review & post" }]
+    : [
+        { id: "setup", content: "1. Customer & Setup" },
+        { id: "items", content: "2. Equipment Catalog & Serial Lines" },
+        { id: "summary", content: "3. Financial Summary & Confirm" },
+      ];
 
   useEffect(() => {
     if (baseCurrencyId && !documentCurrencyId) {
@@ -178,6 +182,7 @@ export function CreateInvoicePage() {
   );
 
   useEffect(() => {
+    if (fromSalesOrder) return;
     setLines((current) =>
       applyPricingToLines<ConfiguredInvoiceLine>(
         current,
@@ -186,15 +191,26 @@ export function CreateInvoicePage() {
         salesPricing,
       ),
     );
-  }, [customerIsLocal, priceAdjustmentEnabled, salesPricing]);
+  }, [customerIsLocal, priceAdjustmentEnabled, salesPricing, fromSalesOrder]);
+
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedCatalogSearch(catalogSearch),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [catalogSearch]);
 
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     try {
       const result = await listProducts({
-        search: catalogSearch || undefined,
+        search: debouncedCatalogSearch || undefined,
         perPage: 50,
         forSaleOnly: true,
+        rootOnly: true,
+        includeStock: true,
+        inStockOnly: true,
       });
       setProducts(result.data);
       setCatalogTotal(result.meta.total);
@@ -204,13 +220,13 @@ export function CreateInvoicePage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [catalogSearch]);
+  }, [debouncedCatalogSearch]);
 
   useEffect(() => {
-    if (selectedTab === 1) {
+    if (!fromSalesOrder && selectedTab === 1) {
       void loadProducts();
     }
-  }, [selectedTab, loadProducts]);
+  }, [selectedTab, loadProducts, fromSalesOrder]);
 
   // Load confirmed sales order data when creating an invoice
   useEffect(() => {
@@ -231,6 +247,8 @@ export function CreateInvoicePage() {
         setQuotationNumber(q.number);
         setDocumentCurrencyId(q.currencyId);
         if (q.customerReference) setPoReference(q.customerReference);
+        if (q.notes) setNotes(q.notes);
+        if (q.quoteDate) setInvoiceDate(q.quoteDate);
         if (q.lines && q.lines.length > 0) {
           setLines(
             q.lines.map((l) => {
@@ -435,25 +453,31 @@ export function CreateInvoicePage() {
       return;
     }
     try {
-      const draft = await createInvoice({
-        salesOrderId: quotationId ?? undefined,
-        customerId: selectedCustomerId,
-        currencyId: documentCurrencyId,
-        invoiceDate,
-        dueDate,
-        customerReference: poReference || undefined,
-        notes: notes || undefined,
-        lines: lines.map((l) => ({
-          productId: l.productId,
-          productUnitId: l.productUnitId,
-          salesOrderLineId: quotationId ? l.id : undefined,
-          description: l.description,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          discountPercent: l.discountPercent,
-          taxRatePercent: l.taxRatePercent,
-        })),
-      });
+      const draft = await createInvoice(
+        fromSalesOrder
+          ? {
+              salesOrderId: quotationId!,
+              invoiceDate,
+              dueDate,
+            }
+          : {
+              customerId: selectedCustomerId,
+              currencyId: documentCurrencyId,
+              invoiceDate,
+              dueDate,
+              customerReference: poReference || undefined,
+              notes: notes || undefined,
+              lines: lines.map((l) => ({
+                productId: l.productId,
+                productUnitId: l.productUnitId,
+                description: l.description,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                discountPercent: l.discountPercent,
+                taxRatePercent: l.taxRatePercent,
+              })),
+            },
+      );
       const posted = await confirmInvoice(draft.id);
       showSuccess(`Invoice ${posted.number} created and posted.`);
       router.push(`/dashboard/invoices/${posted.id}`);
@@ -468,20 +492,28 @@ export function CreateInvoicePage() {
   return (
     <AppPage
       backAction={{ content: "Invoices Directory", url: "/dashboard/invoices" }}
-      primaryAction={{
-        content:
-          selectedTab === 0
-            ? "Next: Equipment Catalog & Lines →"
-            : selectedTab === 1
-              ? "Next: Financial Summary →"
-              : "Confirm & Post Invoice",
-        loading: saving,
-        onAction: () => {
-          if (selectedTab === 0) setSelectedTab(1);
-          else if (selectedTab === 1) setSelectedTab(2);
-          else void handleConfirmPost();
-        },
-      }}
+      primaryAction={
+        fromSalesOrder
+          ? {
+              content: "Confirm & Post Invoice",
+              loading: saving,
+              onAction: () => void handleConfirmPost(),
+            }
+          : {
+              content:
+                selectedTab === 0
+                  ? "Next: Equipment Catalog & Lines →"
+                  : selectedTab === 1
+                    ? "Next: Financial Summary →"
+                    : "Confirm & Post Invoice",
+              loading: saving,
+              onAction: () => {
+                if (selectedTab === 0) setSelectedTab(1);
+                else if (selectedTab === 1) setSelectedTab(2);
+                else void handleConfirmPost();
+              },
+            }
+      }
       secondaryActions={[
         ...(selectedTab > 0
           ? [
@@ -497,11 +529,13 @@ export function CreateInvoicePage() {
         },
       ]}
       subtitle={
-        quotationId
-          ? `Auto-populated from Sales Order #${quotationId}`
+        fromSalesOrder
+          ? `Review sales order ${quotationNumber ?? quotationId} — lines and amounts are fixed at posting`
           : "Create standalone customer invoice directly without a sales order."
       }
-      title="Create Customer Invoice Studio"
+      title={
+        fromSalesOrder ? "Post invoice from sales order" : "Create Customer Invoice Studio"
+      }
     >
       <BlockStack gap="500">
         {/* Step Navigation Bar */}
@@ -512,28 +546,33 @@ export function CreateInvoicePage() {
             onSelect={(idx) => setSelectedTab(idx)}
           />
 
-          <InlineStack gap="200">
-            {selectedTab > 0 ? (
-              <Button onClick={() => setSelectedTab((prev) => prev - 1)}>
-                ← Back to Step {String(selectedTab)}
-              </Button>
-            ) : null}
+          {!fromSalesOrder ? (
+            <InlineStack gap="200">
+              {selectedTab > 0 ? (
+                <Button onClick={() => setSelectedTab((prev) => prev - 1)}>
+                  ← Back to Step {String(selectedTab)}
+                </Button>
+              ) : null}
 
-            {selectedTab < 2 ? (
-              <Button variant="primary" onClick={() => setSelectedTab((prev) => prev + 1)}>
-                Next Step →
-              </Button>
-            ) : (
-              <Button variant="primary" loading={saving} onClick={() => void handleConfirmPost()}>
-                Confirm & Post Invoice
-              </Button>
-            )}
-          </InlineStack>
+              {selectedTab < 2 ? (
+                <Button variant="primary" onClick={() => setSelectedTab((prev) => prev + 1)}>
+                  Next Step →
+                </Button>
+              ) : (
+                <Button variant="primary" loading={saving} onClick={() => void handleConfirmPost()}>
+                  Confirm & Post Invoice
+                </Button>
+              )}
+            </InlineStack>
+          ) : null}
         </InlineStack>
 
-        {quotationId ? (
-          <Banner tone="success">
-            Auto-populated from Sales Order #{quotationId}. Review the summary, then post   the invoice is finalized immediately and the sales order is marked invoiced.
+        {fromSalesOrder ? (
+          <Banner tone="info">
+            This invoice is created from a confirmed sales order. Lines, pricing, and customer
+            details cannot be changed here. To correct amounts, cancel the sales order before
+            invoicing. After posting, cancel the invoice to issue a credit note and create a new
+            invoice if needed.
           </Banner>
         ) : (
           <Banner tone="info">
@@ -544,8 +583,187 @@ export function CreateInvoicePage() {
         {error ? <Banner tone="critical">{error}</Banner> : null}
         {exchangeRateError ? <Banner tone="warning">{exchangeRateError}</Banner> : null}
 
+        {/* ── SALES ORDER: READ-ONLY REVIEW ── */}
+        {fromSalesOrder && selectedTab === 0 ? (
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="500">
+                  <BlockStack gap="050">
+                    <Text as="h2" variant="headingMd">
+                      Sales order invoice review
+                    </Text>
+                    <Text as="p" tone="subdued">
+                      Confirm the order details below, then post. Posted invoices cannot be edited.
+                    </Text>
+                  </BlockStack>
+
+                  <Grid>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="off"
+                        label="Customer"
+                        readOnly
+                        value={customerName}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="email"
+                        label="Billing email"
+                        readOnly
+                        value={customerEmail}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="off"
+                        label="PO / customer reference"
+                        readOnly
+                        value={poReference}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="off"
+                        label="Invoice date"
+                        readOnly
+                        type="date"
+                        value={invoiceDate}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="off"
+                        label="Due date"
+                        readOnly
+                        type="date"
+                        value={dueDate}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
+                      <TextField
+                        autoComplete="off"
+                        label="Currency"
+                        readOnly
+                        value={documentCurrencyCode}
+                        onChange={() => undefined}
+                      />
+                    </Grid.Cell>
+                  </Grid>
+
+                  {notes ? (
+                    <TextField
+                      autoComplete="off"
+                      label="Notes"
+                      multiline={3}
+                      readOnly
+                      value={notes}
+                      onChange={() => undefined}
+                    />
+                  ) : null}
+
+                  <div className="frogmen-recent-table-wrapper">
+                    <table className="frogmen-recent-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: "35%" }}>Description</th>
+                          <th style={{ width: "20%" }}>Serial</th>
+                          <th style={{ width: "8%", textAlign: "right" }}>Qty</th>
+                          <th style={{ width: "15%", textAlign: "right" }}>
+                            Unit price ({documentCurrencyCode})
+                          </th>
+                          <th style={{ width: "10%", textAlign: "right" }}>Disc (%)</th>
+                          <th style={{ width: "10%", textAlign: "right" }}>VAT (%)</th>
+                          <th style={{ width: "12%", textAlign: "right" }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((line) => {
+                          const lineNet =
+                            line.quantity * line.unitPrice * (1 - line.discountPercent / 100);
+                          const lineTotal = lineNet * (1 + line.taxRatePercent / 100);
+
+                          return (
+                            <tr key={line.id}>
+                              <td className="frogmen-font-bold">{line.description}</td>
+                              <td>
+                                {line.serialNumber ? (
+                                  <Badge tone="info">{line.serialNumber}</Badge>
+                                ) : (
+                                  <Text as="span" tone="subdued">—</Text>
+                                )}
+                              </td>
+                              <td style={{ textAlign: "right" }}>{formatQuantity(line.quantity)}</td>
+                              <td style={{ textAlign: "right" }}>{fmt(line.unitPrice)}</td>
+                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">
+                                {line.discountPercent}%
+                              </td>
+                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">
+                                {line.taxRatePercent}%
+                              </td>
+                              <td style={{ textAlign: "right" }} className="frogmen-font-bold">
+                                {fmt(lineTotal)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <InlineStack align="end">
+                    <Button variant="primary" loading={saving} onClick={() => void handleConfirmPost()}>
+                      Confirm & Post Invoice
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+
+            <Layout.Section variant="oneThird">
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Totals</Text>
+
+                  <div className="quotation-summary-panel__rows">
+                    <div className="quotation-summary-row">
+                      <Text as="span" tone="subdued">Subtotal</Text>
+                      <Text as="span" fontWeight="semibold">{fmt(rawSubtotal)}</Text>
+                    </div>
+                    <div className="quotation-summary-row">
+                      <Text as="span" tone="subdued">Discount</Text>
+                      <Text as="span" tone="success">-{fmt(totalDiscount)}</Text>
+                    </div>
+                    <div className="quotation-summary-row">
+                      <Text as="span" tone="subdued">VAT</Text>
+                      <Text as="span" fontWeight="semibold">+{fmt(totalTax)}</Text>
+                    </div>
+                  </div>
+
+                  <Divider />
+
+                  <div className="quotation-summary-panel__total">
+                    <InlineStack align="space-between">
+                      <Text as="span" tone="subdued">Grand total</Text>
+                      <Text as="span" variant="headingLg" fontWeight="bold">
+                        {fmt(grandTotal)}
+                      </Text>
+                    </InlineStack>
+                  </div>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        ) : null}
+
         {/* ── TAB 0: INTERACTIVE CUSTOMER ACCOUNT SEARCH & BILLING SETUP ── */}
-        {selectedTab === 0 ? (
+        {!fromSalesOrder && selectedTab === 0 ? (
           <Layout>
             <Layout.Section>
               <BlockStack gap="500">
@@ -728,7 +946,7 @@ export function CreateInvoicePage() {
         ) : null}
 
         {/* ── TAB 1: EQUIPMENT CATALOG & SERIAL NUMBER SELECTION ── */}
-        {selectedTab === 1 ? (
+        {!fromSalesOrder && selectedTab === 1 ? (
           <Layout>
             <Layout.Section>
               <BlockStack gap="500">
@@ -759,59 +977,60 @@ export function CreateInvoicePage() {
                       value={catalogSearch}
                     />
 
-                    {productsLoading ? (
-                      <Text as="p" tone="subdued">Loading products...</Text>
-                    ) : (
-                      <>
-                        <Text as="p" tone="subdued" variant="bodySm">
-                          {catalogTotal === 0
-                            ? "No saleable products found."
-                            : `Showing ${products.length} of ${catalogTotal} saleable product${catalogTotal === 1 ? "" : "s"}.`}
-                        </Text>
-                        <ProductCatalogSearchResults>
-                          <ResourceList
-                            items={products}
-                            renderItem={(product) => (
-                            <ResourceItem
-                              id={product.id}
-                              onClick={() => void handleSelectProduct(product)}
-                              accessibilityLabel={`Select ${product.name}`}
-                            >
-                              <InlineStack align="space-between" blockAlign="center">
-                                <BlockStack gap="050">
-                                  <InlineStack gap="200" blockAlign="center">
-                                    <Text as="span" fontWeight="bold">
-                                      {product.name}
-                                    </Text>
-                                    {product.trackSerial ? (
-                                      <Badge tone="info">Serialized</Badge>
-                                    ) : null}
-                                  </InlineStack>
-                                  <Text as="span" tone="subdued" variant="bodySm">
-                                    SKU: {product.sku || "N/A"}
-                                  </Text>
-                                </BlockStack>
-                                <InlineStack gap="300" blockAlign="center">
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      {productsLoading && products.length === 0
+                        ? "Loading products..."
+                        : catalogTotal === 0
+                          ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
+                          : `Showing ${products.length} of ${catalogTotal} in-stock product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`}
+                    </Text>
+                    {products.length > 0 ? (
+                      <ProductCatalogSearchResults>
+                        <ResourceList
+                          items={products}
+                          renderItem={(product) => (
+                          <ResourceItem
+                            id={product.id}
+                            onClick={() => void handleSelectProduct(product)}
+                            accessibilityLabel={`Select ${product.name}`}
+                          >
+                            <InlineStack align="space-between" blockAlign="center">
+                              <BlockStack gap="050">
+                                <InlineStack gap="200" blockAlign="center">
                                   <Text as="span" fontWeight="bold">
-                                    {formatProductCatalogPrice(product)}
+                                    {product.name}
                                   </Text>
-                                  <div onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="slim"
-                                      variant="primary"
-                                      onClick={() => void handleSelectProduct(product)}
-                                    >
-                                      Select Item
-                                    </Button>
-                                  </div>
+                                  {product.trackSerial ? (
+                                    <Badge tone="info">Serialized</Badge>
+                                  ) : null}
                                 </InlineStack>
+                                <Text as="span" tone="subdued" variant="bodySm">
+                                  SKU: {product.sku || "N/A"}
+                                  {product.availableQuantity == null
+                                    ? ""
+                                    : ` · Qty on hand: ${product.availableQuantity}`}
+                                </Text>
+                              </BlockStack>
+                              <InlineStack gap="300" blockAlign="center">
+                                <Text as="span" fontWeight="bold">
+                                  {formatProductCatalogPrice(product)}
+                                </Text>
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  <Button
+                                    size="slim"
+                                    variant="primary"
+                                    onClick={() => void handleSelectProduct(product)}
+                                  >
+                                    Select Item
+                                  </Button>
+                                </div>
                               </InlineStack>
-                            </ResourceItem>
-                            )}
-                          />
-                        </ProductCatalogSearchResults>
-                      </>
-                    )}
+                            </InlineStack>
+                          </ResourceItem>
+                          )}
+                        />
+                      </ProductCatalogSearchResults>
+                    ) : null}
                   </BlockStack>
                 </Card>
 
@@ -1050,7 +1269,7 @@ export function CreateInvoicePage() {
         ) : null}
 
         {/* ── TAB 2: FINANCIAL SUMMARY & CONFIRM POST ── */}
-        {selectedTab === 2 ? (
+        {!fromSalesOrder && selectedTab === 2 ? (
           <Layout>
             <Layout.Section>
               <Card>

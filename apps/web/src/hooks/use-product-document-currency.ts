@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import {
   convertAmount,
@@ -26,6 +26,8 @@ export function useProductDocumentCurrency(
     loading: currencyLoading,
   } = useOrgCurrency();
   const [productQuoteRates, setProductQuoteRates] = useState<Record<string, number>>({});
+  const productQuoteRatesRef = useRef(productQuoteRates);
+  productQuoteRatesRef.current = productQuoteRates;
   const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
   const [exchangeRateError, setExchangeRateError] = useState<string | null>(null);
 
@@ -183,7 +185,7 @@ export function useProductDocumentCurrency(
       const conversion = await fetchConversionRate(
         productCurrencyId,
         documentCurrencyId,
-        productQuoteRates,
+        productQuoteRatesRef.current,
       );
 
       if (!conversion.configured) {
@@ -196,10 +198,12 @@ export function useProductDocumentCurrency(
         );
       }
 
-      setProductQuoteRates((current) => ({
-        ...current,
-        [productCurrencyId]: conversion.rate,
-      }));
+      if (productQuoteRatesRef.current[productCurrencyId] !== conversion.rate) {
+        setProductQuoteRates((current) => ({
+          ...current,
+          [productCurrencyId]: conversion.rate,
+        }));
+      }
 
       return {
         unitPrice: convertAmount(catalogUnitPrice, conversion.rate),
@@ -214,7 +218,6 @@ export function useProductDocumentCurrency(
       documentCurrency,
       documentCurrencyId,
       exchangeRateLoading,
-      productQuoteRates,
     ],
   );
 

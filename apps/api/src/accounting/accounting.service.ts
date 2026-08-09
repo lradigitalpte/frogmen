@@ -15,6 +15,7 @@ import {
   invoices,
   journals,
   organizations,
+  productUnits,
   products,
   type Database,
 } from "@frog1/db";
@@ -25,6 +26,7 @@ import {
 } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
+import { ProductCostEventsService } from "../product-cost-events/product-cost-events.service";
 import { AccountingProvisionerService } from "./accounting-provisioner.service";
 
 interface MoveLineInput {
@@ -42,6 +44,7 @@ export class AccountingService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly provisioner: AccountingProvisionerService,
     private readonly exchangeRatesService: ExchangeRatesService,
+    private readonly productCostEventsService: ProductCostEventsService,
   ) {}
 
   async postCustomerInvoice(
@@ -124,6 +127,28 @@ export class AccountingService {
           costAmountBase: String(costAmountBase),
         })
         .where(eq(invoiceLines.id, row.line.id));
+
+      if (row.line.productId) {
+        await this.productCostEventsService.logEvent({
+          organizationId,
+          branchId: invoice.branchId,
+          productId: row.line.productId,
+          productUnitId: row.line.productUnitId,
+          eventType: "invoice_post",
+          unitCost: String(roundMoney(costPrice)),
+          referenceType: "invoice",
+          referenceId: invoice.id,
+          referenceLabel: invoice.number,
+          message: `COGS recorded on invoice ${invoice.number}`,
+          metadata: {
+            invoiceLineId: row.line.id,
+            quantity: row.line.quantity,
+            costAmount: String(costAmount),
+            costAmountBase: String(costAmountBase),
+          },
+          userId: _userId ?? null,
+        });
+      }
     }
 
     const amountUntaxedBase = Number(invoice.amountUntaxedBase);
@@ -691,6 +716,117 @@ export class AccountingService {
         credit: Number(line.credit),
         lineNumber: line.lineNumber,
       })),
+    };
+  }
+
+  async getJournalMoveDetail(organizationId: string, moveId: string) {
+    const [header] = await this.db
+      .select({
+        move: accountMoves,
+        journalCode: journals.code,
+        journalName: journals.name,
+        invoiceNumber: invoices.number,
+      })
+      .from(accountMoves)
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .leftJoin(invoices, eq(invoices.id, accountMoves.invoiceId))
+      .where(
+        and(
+          eq(accountMoves.id, moveId),
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.state, "posted"),
+        ),
+      )
+      .limit(1);
+
+    if (!header) {
+      throw new NotFoundException("Journal entry not found");
+    }
+
+    const lines = await this.db
+      .select({
+        id: accountMoveLines.id,
+        label: accountMoveLines.label,
+        debit: accountMoveLines.debit,
+        credit: accountMoveLines.credit,
+        lineNumber: accountMoveLines.lineNumber,
+        accountId: glAccounts.id,
+        accountCode: glAccounts.code,
+        accountName: glAccounts.name,
+      })
+      .from(accountMoveLines)
+      .innerJoin(glAccounts, eq(glAccounts.id, accountMoveLines.accountId))
+      .where(eq(accountMoveLines.moveId, moveId))
+      .orderBy(accountMoveLines.lineNumber);
+
+    let cogsLines: Array<{
+      productName: string;
+      quantity: string;
+      unitCost: string | null;
+      costAmount: string;
+      serialNumber: string | null;
+      productUnitId: string | null;
+    }> = [];
+
+    if (header.move.invoiceId) {
+      const invoiceCostRows = await this.db
+        .select({
+          productName: products.name,
+          quantity: invoiceLines.quantity,
+          costAmount: invoiceLines.costAmount,
+          productUnitId: invoiceLines.productUnitId,
+          serialNumber: productUnits.serialNumber,
+        })
+        .from(invoiceLines)
+        .innerJoin(products, eq(products.id, invoiceLines.productId))
+        .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
+        .where(
+          and(
+            eq(invoiceLines.invoiceId, header.move.invoiceId),
+            sql`${invoiceLines.costAmount}::numeric > 0`,
+          ),
+        )
+        .orderBy(invoiceLines.lineNumber);
+
+      cogsLines = invoiceCostRows.map((row) => {
+        const qty = Number(row.quantity) || 1;
+        const costAmount = Number(row.costAmount ?? 0);
+        return {
+          productName: row.productName,
+          quantity: row.quantity,
+          unitCost:
+            costAmount > 0 ? String(roundMoney(costAmount / qty)) : null,
+          costAmount: row.costAmount ?? "0",
+          serialNumber: row.serialNumber ?? null,
+          productUnitId: row.productUnitId ?? null,
+        };
+      });
+    }
+
+    return {
+      move: {
+        id: header.move.id,
+        name: header.move.name,
+        reference: header.move.reference,
+        moveDate: header.move.moveDate,
+        journalCode: header.journalCode,
+        journalName: header.journalName,
+        invoiceId: header.move.invoiceId,
+        invoiceNumber: header.invoiceNumber,
+        paymentId: header.move.paymentId,
+        refundId: header.move.refundId,
+      },
+      lines: lines.map((line) => ({
+        id: line.id,
+        label: line.label,
+        accountId: line.accountId,
+        accountCode: line.accountCode,
+        accountName: line.accountName,
+        debit: Number(line.debit),
+        credit: Number(line.credit),
+        lineNumber: line.lineNumber,
+      })),
+      cogsLines,
     };
   }
 

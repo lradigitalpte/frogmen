@@ -49,6 +49,11 @@ export const purchaseActivityTypeEnum = pgEnum("purchase_activity_type", [
   "cancelled",
 ]);
 
+export const purchaseOrderChargeScopeEnum = pgEnum(
+  "purchase_order_charge_scope",
+  ["order", "line"],
+);
+
 export const purchaseOrders = pgTable(
   "purchase_orders",
   {
@@ -80,6 +85,18 @@ export const purchaseOrders = pgTable(
     vendorReference: varchar("vendor_reference", { length: 100 }),
     internalReference: varchar("internal_reference", { length: 100 }),
     notes: text("notes"),
+    freightAmount: numeric("freight_amount", { precision: 18, scale: 2 }),
+    freightPercent: numeric("freight_percent", { precision: 8, scale: 4 }),
+    otherChargesAmount: numeric("other_charges_amount", {
+      precision: 18,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
+    targetMarginPercent: numeric("target_margin_percent", {
+      precision: 8,
+      scale: 4,
+    }),
     amountUntaxed: numeric("amount_untaxed", { precision: 18, scale: 2 })
       .notNull()
       .default("0"),
@@ -146,6 +163,27 @@ export const purchaseOrderLines = pgTable("purchase_order_lines", {
   priceTotal: numeric("price_total", { precision: 18, scale: 2 })
     .notNull()
     .default("0"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const purchaseOrderCharges = pgTable("purchase_order_charges", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  purchaseOrderId: uuid("purchase_order_id")
+    .notNull()
+    .references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  purchaseOrderLineId: uuid("purchase_order_line_id").references(
+    () => purchaseOrderLines.id,
+    { onDelete: "cascade" },
+  ),
+  name: varchar("name", { length: 100 }).notNull(),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+  scope: purchaseOrderChargeScopeEnum("scope").notNull().default("order"),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -235,6 +273,7 @@ export const purchaseActivities = pgTable("purchase_activities", {
 export type Vendor = typeof vendors.$inferSelect;
 export type NewVendor = typeof vendors.$inferInsert;
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type PurchaseOrderCharge = typeof purchaseOrderCharges.$inferSelect;
 export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
 export type GoodsReceipt = typeof goodsReceipts.$inferSelect;
 export type GoodsReceiptLine = typeof goodsReceiptLines.$inferSelect;

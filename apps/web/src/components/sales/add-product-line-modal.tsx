@@ -213,6 +213,9 @@ export function AddProductLineModal({
           sortBy: "name",
           sortDir: "asc",
           forSaleOnly: true,
+          rootOnly: true,
+          includeStock: true,
+          inStockOnly: true,
         });
 
         if (!cancelled) {
@@ -515,6 +518,9 @@ export function AddProductLineModal({
                             </InlineStack>
                             <Text as="span" tone="subdued" variant="bodySm">
                               SKU: {product.sku || "N/A"}
+                              {product.availableQuantity == null
+                                ? ""
+                                : ` · Qty on hand: ${product.availableQuantity}`}
                             </Text>
                           </BlockStack>
                           <Text as="span" variant="bodyMd" fontWeight="bold">

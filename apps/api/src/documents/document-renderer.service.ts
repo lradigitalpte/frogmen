@@ -14,6 +14,8 @@ import {
 } from "@frog1/db";
 import {
   renderQuotationDocumentHtml,
+  resolveDeliveryFee,
+  roundMoney,
   type QuotationDocumentData,
 } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
@@ -89,6 +91,16 @@ export class DocumentRendererService {
       .from(salesOrderLines)
       .where(eq(salesOrderLines.salesOrderId, quotationId));
 
+    const lineNetSubtotal = lines.reduce(
+      (sum, line) => sum + Number(line.priceSubtotal),
+      0,
+    );
+    const deliveryFee = resolveDeliveryFee(
+      lineNetSubtotal,
+      header.order.deliveryFeeAmount,
+      header.order.deliveryFeePercent,
+    );
+
     return {
       number: header.order.number,
       quoteDate: header.order.quoteDate,
@@ -105,6 +117,9 @@ export class DocumentRendererService {
         header.customerCountry,
       ].filter((value): value is string => Boolean(value)),
       notes: header.order.notes,
+      lineNetSubtotal: String(lineNetSubtotal),
+      deliveryFee: deliveryFee > 0 ? String(deliveryFee) : null,
+      deliveryFeePercent: header.order.deliveryFeePercent,
       amountUntaxed: header.order.amountUntaxed,
       amountTax: header.order.amountTax,
       amountTotal: header.order.amountTotal,
@@ -119,6 +134,11 @@ export class DocumentRendererService {
         taxRatePercent: line.taxRatePercent,
         priceSubtotal: line.priceSubtotal,
       })),
+      accessToken: header.order.accessToken,
+      signedBy: header.order.signedBy,
+      signedOn: header.order.signedOn ? header.order.signedOn.toISOString() : null,
+      signatureImage: header.order.signatureImage,
+      signedIp: header.order.signedIp,
     };
   }
 
@@ -309,6 +329,20 @@ export class DocumentRendererService {
       .limit(1);
     if (!header) throw new NotFoundException("Purchase order not found");
     const lines = await this.db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, orderId));
+    const lineNetSubtotal = lines.reduce(
+      (sum, line) => sum + Number(line.priceSubtotal),
+      0,
+    );
+    const freight = resolveDeliveryFee(
+      lineNetSubtotal,
+      header.order.freightAmount,
+      header.order.freightPercent,
+    );
+    const amountTax = Number(header.order.amountTax);
+    // Vendor-facing PO total: product lines + freight only. Named charges are
+    // internal landed-cost inputs and are not shown on the PDF to the vendor.
+    const vendorAmountUntaxed = roundMoney(lineNetSubtotal + freight);
+    const vendorAmountTotal = roundMoney(vendorAmountUntaxed + amountTax);
     return {
       documentType: "purchase_order",
       number: header.order.number,
@@ -326,9 +360,14 @@ export class DocumentRendererService {
         header.country,
       ].filter((value): value is string => Boolean(value)),
       notes: header.order.notes,
-      amountUntaxed: header.order.amountUntaxed,
+      lineNetSubtotal: String(lineNetSubtotal),
+      deliveryFee: freight > 0 ? String(freight) : null,
+      deliveryFeePercent: header.order.freightPercent,
+      otherCharges: null,
+      additionalChargeLines: undefined,
+      amountUntaxed: String(vendorAmountUntaxed),
       amountTax: header.order.amountTax,
-      amountTotal: header.order.amountTotal,
+      amountTotal: String(vendorAmountTotal),
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,

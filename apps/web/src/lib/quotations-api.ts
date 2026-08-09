@@ -1,6 +1,6 @@
 import { apiFetch } from "./api";
 
-export type QuotationState = "draft" | "sent" | "confirmed" | "cancelled";
+export type QuotationState = "draft" | "sent" | "signed" | "confirmed" | "cancelled";
 
 export interface QuotationLine {
   id: string;
@@ -47,6 +47,16 @@ export interface Quotation {
   internalReference: string | null;
   paymentReference: string | null;
   notes: string | null;
+  internalNotes?: string | null;
+  deliveryFeeAmount?: string | null;
+  deliveryFeePercent?: string | null;
+  accessToken?: string | null;
+  signedBy?: string | null;
+  signedOn?: string | null;
+  signatureImage?: string | null;
+  signedIp?: string | null;
+  signedEmail?: string | null;
+  customerPoDocumentUrl?: string | null;
   amountUntaxed: string;
   amountTax: string;
   amountTotal: string;
@@ -54,6 +64,15 @@ export interface Quotation {
   amountTaxBase?: string;
   amountTotalBase: string;
   invoiceStatus: "none" | "to_invoice" | "partial" | "invoiced";
+  dealId?: string | null;
+  dealSiblings?: Array<{
+    id: string;
+    number: string;
+    state: QuotationState;
+    amountTotal: string;
+    currencyCode?: string | null;
+    quoteDate: string;
+  }>;
   createdAt: string;
   updatedAt: string;
   lines?: QuotationLine[];
@@ -95,6 +114,9 @@ export interface CreateQuotationInput {
   internalReference?: string;
   paymentReference?: string;
   notes?: string;
+  internalNotes?: string;
+  deliveryFeeAmount?: number | null;
+  deliveryFeePercent?: number | null;
 }
 
 export interface UpdateQuotationInput {
@@ -107,6 +129,9 @@ export interface UpdateQuotationInput {
   internalReference?: string | null;
   paymentReference?: string | null;
   notes?: string | null;
+  internalNotes?: string | null;
+  deliveryFeeAmount?: number | null;
+  deliveryFeePercent?: number | null;
   convertCurrency?: boolean;
   convertFromCurrencyId?: string;
 }
@@ -155,6 +180,10 @@ export function listQuotations(params: ListQuotationsParams = {}) {
 
 export function getQuotation(id: string) {
   return apiFetch<Quotation>(`/api/v1/quotations/${id}`);
+}
+
+export function getQuotationSigningUrl(id: string) {
+  return apiFetch<{ url: string }>(`/api/v1/quotations/${id}/signing-url`);
 }
 
 export function createQuotation(input: CreateQuotationInput) {
@@ -255,3 +284,74 @@ export function reconvertQuotation(id: string, fromCurrencyId: string) {
     body: JSON.stringify({ fromCurrencyId }),
   });
 }
+
+// ── Deal Thread API ──────────────────────────────────────────────────────────
+
+export function reviseQuotation(id: string) {
+  return apiFetch<Quotation>(`/api/v1/quotations/${id}/revise`, {
+    method: "POST",
+  });
+}
+
+export function linkQuotationToDeal(id: string, dealId: string) {
+  return apiFetch<Quotation>(`/api/v1/quotations/${id}/link-deal`, {
+    method: "POST",
+    body: JSON.stringify({ dealId }),
+  });
+}
+
+export function unlinkQuotationFromDeal(id: string) {
+  return apiFetch<Quotation>(`/api/v1/quotations/${id}/unlink-deal`, {
+    method: "DELETE",
+  });
+}
+
+export function updateQuotationInternalNotes(id: string, internalNotes: string) {
+  return apiFetch<Quotation>(`/api/v1/quotations/${id}/internal-notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ internalNotes }),
+  });
+}
+
+export interface DealQuotationSummary {
+  id: string;
+  number: string;
+  state: QuotationState;
+  amountTotal: string;
+  currencyCode?: string | null;
+  quoteDate: string;
+}
+
+export interface Deal {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  customerName?: string;
+  title?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  quotations: DealQuotationSummary[];
+}
+
+export function listDeals(customerId?: string) {
+  const qs = customerId ? `?customerId=${customerId}` : "";
+  return apiFetch<Deal[]>(`/api/v1/quotations/deals${qs}`);
+}
+
+export async function uploadCustomerPoDocument(id: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`/api/v1/quotations/${id}/upload-po`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errJson = await res.json();
+    throw new Error(errJson.message || "Failed to upload PO document");
+  }
+
+  return res.json() as Promise<Quotation>;
+}
+

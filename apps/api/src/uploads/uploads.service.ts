@@ -144,12 +144,34 @@ export class UploadsService {
     );
   }
 
+  async saveCustomerPoDocument(
+    organizationId: string,
+    quotationId: string,
+    file: Express.Multer.File,
+  ) {
+    this.validateReceiptFile(file);
+    const ext =
+      MIME_TO_EXT[file.mimetype] ?? extname(file.originalname) ?? ".pdf";
+    return this.save(
+      `quotations/${organizationId}/${quotationId}/${randomUUID()}${ext}`,
+      file,
+    );
+  }
+
   private async open(relativePath: string) {
     try {
       return await this.s3.getObjectStream(this.objectKey(relativePath));
     } catch {
       throw new NotFoundException("File not found");
     }
+  }
+
+  async getCustomerPoDocumentStream(
+    organizationId: string,
+    relativePath: string,
+  ) {
+    this.assertOrganizationPath(relativePath, "quotations", organizationId);
+    return this.open(relativePath);
   }
 
   async getProductImageStream(

@@ -1,0 +1,503 @@
+.public-quote-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, #e8eef8 0%, #f1f5f9 42%, #f8fafc 100%);
+  padding: 1.5rem 1rem 3rem;
+}
+
+.public-quote-shell {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.public-quote-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 40px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.public-quote-hero {
+  background: linear-gradient(135deg, #1d2d62 0%, #2a4578 100%);
+  color: #fff;
+  padding: 1.5rem 1.75rem;
+}
+
+.public-quote-hero__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.public-quote-brand {
+  display: flex;
+  gap: 0.875rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.public-quote-brand__logo {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.625rem;
+  background: #fff;
+  object-fit: contain;
+  padding: 0.25rem;
+  flex-shrink: 0;
+}
+
+.public-quote-brand__fallback {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.625rem;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.public-quote-brand__name {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.public-quote-brand__meta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.78);
+  margin-top: 0.15rem;
+}
+
+.public-quote-meta {
+  text-align: right;
+}
+
+.public-quote-meta__label {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.public-quote-meta__number {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 0.15rem;
+}
+
+.public-quote-meta__dates {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 0.35rem;
+}
+
+.public-quote-status {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.public-quote-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.public-quote-pill--warn {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.public-quote-pill--success {
+  background: #d1fae5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.public-quote-pill--info {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.public-quote-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.public-quote-btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.public-quote-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.public-quote-btn--primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.public-quote-btn--primary:hover {
+  background: #1d4ed8;
+}
+
+.public-quote-btn--success {
+  background: #059669;
+  color: #fff;
+}
+
+.public-quote-body {
+  padding: 1.5rem 1.75rem;
+}
+
+.public-quote-layout {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .public-quote-layout {
+    grid-template-columns: minmax(0, 1fr) 17.5rem;
+    align-items: start;
+  }
+}
+
+.public-quote-section-title {
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+}
+
+.public-quote-customer-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.public-quote-customer-email {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+
+.public-quote-table-wrap {
+  margin-top: 1.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.public-quote-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.public-quote-table thead {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.public-quote-table th,
+.public-quote-table td {
+  padding: 0.75rem 1rem;
+}
+
+.public-quote-table th:not(:first-child),
+.public-quote-table td:not(:first-child) {
+  text-align: right;
+}
+
+.public-quote-table tbody tr + tr {
+  border-top: 1px solid #f1f5f9;
+}
+
+.public-quote-table td:first-child {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.public-quote-totals {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem 1.15rem;
+}
+
+@media (min-width: 900px) {
+  .public-quote-totals {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.public-quote-totals__title {
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.75rem;
+}
+
+.public-quote-totals__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+  color: #475569;
+  padding: 0.35rem 0;
+}
+
+.public-quote-totals__row--grand {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid #e2e8f0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.public-quote-totals__grand-value {
+  color: #1d4ed8;
+  font-size: 1.15rem;
+}
+
+.public-quote-notes {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.public-quote-notes strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.public-quote-sign {
+  border-top: 1px solid #e2e8f0;
+  background: #fafbfc;
+  padding: 1.5rem 1.75rem;
+}
+
+.public-quote-sign__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.public-quote-sign__hint {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.public-quote-field {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.public-quote-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  background: #fff;
+}
+
+.public-quote-input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+  border-color: #3b82f6;
+}
+
+.public-quote-canvas-wrap {
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.5rem;
+}
+
+.public-quote-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 9rem;
+  border-radius: 0.5rem;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.public-quote-form-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .public-quote-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.public-quote-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+}
+
+.public-quote-link {
+  font-size: 0.8125rem;
+  color: #475569;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.public-quote-link:hover {
+  color: #0f172a;
+}
+
+.public-quote-signature-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.public-quote-signature-tab {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.public-quote-signature-tab--active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.public-quote-signature-preview {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fff;
+  min-height: 5.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.public-quote-signature-preview img {
+  max-height: 4.5rem;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.public-quote-approved-banner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 0.75rem;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.public-quote-approved-banner__title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #065f46;
+}
+
+.public-quote-approved-banner__meta {
+  font-size: 0.8125rem;
+  color: #047857;
+  margin-top: 0.25rem;
+}
+
+.public-quote-approved-record {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: #fff;
+}
+
+.public-quote-approved-record__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+
+.public-quote-approved-record__signature {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.public-quote-approved-record__signature-img {
+  margin-top: 0.5rem;
+  max-height: 5rem;
+  max-width: 100%;
+  object-fit: contain;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  background: #f8fafc;
+}

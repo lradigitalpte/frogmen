@@ -67,6 +67,7 @@ import type {
 import { DATABASE } from "../database/database.constants";
 
 import { UploadsService } from "../uploads/uploads.service";
+import { ProductCostEventsService } from "../product-cost-events/product-cost-events.service";
 import {
   assertUniqueProductSku,
   generateUniqueProductSku,
@@ -84,6 +85,8 @@ export class ProductsService {
     @Inject(DATABASE) private readonly db: Database,
 
     private readonly uploadsService: UploadsService,
+
+    private readonly productCostEventsService: ProductCostEventsService,
 
   ) {}
 
@@ -350,50 +353,128 @@ export class ProductsService {
 
 
 
-    const [rows, totalResult] = await Promise.all([
+    const needsStock = Boolean(query.includeStock || query.inStockOnly);
 
-      this.db
+    if (!needsStock) {
+      const [rows, totalResult] = await Promise.all([
+        this.db
+          .select()
+          .from(products)
+          .where(whereClause)
+          .orderBy(orderBy)
+          .limit(perPage)
+          .offset(offset),
+        this.db.select({ total: count() }).from(products).where(whereClause),
+      ]);
 
-        .select()
+      const total = Number(totalResult[0]?.total ?? 0);
 
-        .from(products)
+      return {
+        data: rows,
+        meta: {
+          page,
+          perPage,
+          total,
+          totalPages: Math.ceil(total / perPage) || 1,
+        },
+      };
+    }
 
-        .where(whereClause)
+    const allRows = await this.db
+      .select()
+      .from(products)
+      .where(whereClause)
+      .orderBy(orderBy);
 
-        .orderBy(orderBy)
+    const { serialQuantities, bulkQuantities } =
+      await this.loadAvailableQuantities(
+        organizationId,
+        allRows.map((row) => row.id),
+      );
 
-        .limit(perPage)
+    let enriched = allRows.map((row) => {
+      const alwaysAvailable = row.type === "service" || !row.isStorable;
+      const availableQuantity = alwaysAvailable
+        ? null
+        : row.trackSerial
+          ? (serialQuantities.get(row.id) ?? 0)
+          : (bulkQuantities.get(row.id) ?? 0);
+      return {
+        ...row,
+        availableQuantity,
+      };
+    });
 
-        .offset(offset),
+    if (query.inStockOnly) {
+      enriched = enriched.filter(
+        (row) =>
+          row.availableQuantity === null ||
+          Number(row.availableQuantity) > 0,
+      );
+    }
 
-      this.db.select({ total: count() }).from(products).where(whereClause),
-
-    ]);
-
-
-
-    const total = Number(totalResult[0]?.total ?? 0);
-
-
+    const total = enriched.length;
+    const data = enriched.slice(offset, offset + perPage);
 
     return {
-
-      data: rows,
-
+      data,
       meta: {
-
         page,
-
         perPage,
-
         total,
-
         totalPages: Math.ceil(total / perPage) || 1,
-
       },
-
     };
+  }
 
+  private async loadAvailableQuantities(
+    organizationId: string,
+    productIds: string[],
+  ) {
+    const serialQuantities = new Map<string, number>();
+    const bulkQuantities = new Map<string, number>();
+    if (productIds.length === 0) {
+      return { serialQuantities, bulkQuantities };
+    }
+
+    const [serialRows, quantityRows] = await Promise.all([
+      this.db
+        .select({
+          productId: productUnits.productId,
+          quantity: count(productUnits.id),
+        })
+        .from(productUnits)
+        .where(
+          and(
+            eq(productUnits.organizationId, organizationId),
+            inArray(productUnits.productId, productIds),
+            eq(productUnits.status, "in_stock"),
+          ),
+        )
+        .groupBy(productUnits.productId),
+      this.db
+        .select({
+          productId: stockLevels.productId,
+          quantity: sql`coalesce(sum(${stockLevels.quantity}::numeric), 0)`,
+        })
+        .from(stockLevels)
+        .where(
+          and(
+            eq(stockLevels.organizationId, organizationId),
+            inArray(stockLevels.productId, productIds),
+          ),
+        )
+        .groupBy(stockLevels.productId),
+    ]);
+
+    for (const row of serialRows) {
+      serialQuantities.set(row.productId, Number(row.quantity ?? 0));
+    }
+    for (const row of quantityRows) {
+      bulkQuantities.set(row.productId, Number(row.quantity ?? 0));
+    }
+
+    return { serialQuantities, bulkQuantities };
   }
 
 
@@ -907,7 +988,12 @@ export class ProductsService {
 
 
 
-  async update(organizationId: string, id: string, dto: UpdateProductDto) {
+  async update(
+    organizationId: string,
+    id: string,
+    dto: UpdateProductDto,
+    userId?: string,
+  ) {
 
     const existing = await this.getById(organizationId, id);
 
@@ -1137,6 +1223,25 @@ export class ProductsService {
       .returning();
 
 
+
+    if (
+      product &&
+      dto.costPrice !== undefined &&
+      (existing.costPrice ?? null) !== (product.costPrice ?? null)
+    ) {
+      await this.productCostEventsService.logEvent({
+        organizationId,
+        productId: id,
+        eventType: "manual_edit",
+        unitCost: product.costPrice ?? "0",
+        previousUnitCost: existing.costPrice ?? null,
+        referenceType: "product",
+        referenceId: id,
+        referenceLabel: product.name,
+        message: `Catalog cost updated to ${product.costPrice ?? "0"}`,
+        userId: userId ?? null,
+      });
+    }
 
     return product;
 

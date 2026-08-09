@@ -47,6 +47,10 @@ export interface ListProductsQuery {
   forSaleOnly?: boolean;
   usageType?: ProductUsageType;
   isRovEquipment?: boolean;
+  /** Attach availableQuantity (sellable on-hand) to each product. */
+  includeStock?: boolean;
+  /** Only return products with sellable stock (services/non-storable always included). */
+  inStockOnly?: boolean;
   search?: string;
   page?: number;
   perPage?: number;

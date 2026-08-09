@@ -6136,3 +6136,201 @@ html.dark .audit-pagination { border-color: #344353; }
   .auth-shell__mobile-brand { display: block; margin-bottom: 42px; text-align: center; }
 .auth-shell__mobile-brand img { width: 112px; height: 118px; object-fit: contain; }
 }
+
+/* Purchase order form — navy / teal palette aligned with PO PDF */
+.purchase-order-form-shell {
+  --po-navy: #17275b;
+  --po-blue: #3568a9;
+  --po-sky: #3c72b8;
+  --po-teal: #159a8c;
+  --po-soft: #eef4fb;
+  --po-border: #c8d6ea;
+  --po-muted: #5c6b82;
+}
+
+.purchase-order-form-shell .po-step-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--po-border);
+  background: linear-gradient(135deg, #f8fbff 0%, #eef4fb 100%);
+}
+
+.purchase-order-form-shell .po-step-banner__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--po-blue), var(--po-navy));
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.purchase-order-form-shell .po-section-card {
+  border: 1px solid var(--po-border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(23, 39, 91, 0.04);
+}
+
+.purchase-order-form-shell .po-section-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--po-border);
+  background: linear-gradient(180deg, #f7faff 0%, #fff 100%);
+}
+
+.purchase-order-form-shell .po-section-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.purchase-order-form-shell .po-section-card__icon--vendor {
+  background: rgba(53, 104, 169, 0.12);
+  color: var(--po-blue);
+}
+
+.purchase-order-form-shell .po-section-card__icon--terms {
+  background: rgba(21, 154, 140, 0.12);
+  color: var(--po-teal);
+}
+
+.purchase-order-form-shell .po-section-card__icon--charges {
+  background: rgba(23, 39, 91, 0.1);
+  color: var(--po-navy);
+}
+
+.purchase-order-form-shell .po-section-card__icon--margin {
+  background: rgba(60, 114, 184, 0.12);
+  color: var(--po-sky);
+}
+
+.purchase-order-form-shell .po-section-card__body {
+  padding: 18px;
+}
+
+.purchase-order-form-shell .po-charge-row {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--po-border);
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+}
+
+.purchase-order-form-shell .po-charge-row__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.purchase-order-form-shell .po-charge-row__badge--order {
+  background: rgba(53, 104, 169, 0.12);
+  color: var(--po-blue);
+}
+
+.purchase-order-form-shell .po-charge-row__badge--line {
+  background: rgba(21, 154, 140, 0.12);
+  color: #0f766e;
+}
+
+.purchase-order-form-shell .po-empty-charges {
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px dashed var(--po-border);
+  background: var(--po-soft);
+  text-align: center;
+}
+
+.purchase-order-form-shell .po-sidebar-total {
+  border: 1px solid var(--po-border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.purchase-order-form-shell .po-sidebar-total__hero {
+  padding: 18px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--po-navy) 0%, var(--po-blue) 55%, var(--po-sky) 100%);
+}
+
+.purchase-order-form-shell .po-sidebar-total__body {
+  padding: 16px 18px 18px;
+}
+
+.purchase-order-form-shell .po-margin-table-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--po-border);
+  background: linear-gradient(180deg, #f7faff 0%, #fff 100%);
+}
+
+.purchase-order-form-shell .po-suggested-price {
+  color: var(--po-teal);
+  font-weight: 650;
+}
+
+.purchase-order-form-shell .po-landed-price {
+  color: var(--po-navy);
+  font-weight: 650;
+}
+
+.purchase-order-view-charges {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.purchase-order-view-charge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7faff;
+  font-size: 0.875rem;
+}
+
+.purchase-order-view-charge-row span:last-child {
+  font-weight: 650;
+  color: #17275b;
+}
+
+[data-theme="dark"] .purchase-order-form-shell .po-section-card,
+[data-theme="dark"] .purchase-order-form-shell .po-sidebar-total {
+  background: #18232e;
+  border-color: #344353;
+}
+
+[data-theme="dark"] .purchase-order-form-shell .po-section-card__header,
+[data-theme="dark"] .purchase-order-form-shell .po-margin-table-head {
+  background: linear-gradient(180deg, #1e2a38 0%, #18232e 100%);
+  border-color: #344353;
+}
+
+[data-theme="dark"] .purchase-order-form-shell .po-charge-row,
+[data-theme="dark"] .purchase-order-view-charge-row {
+  background: #1e2a38;
+  border-color: #344353;
+}
+
+[data-theme="dark"] .purchase-order-form-shell .po-step-banner,
+[data-theme="dark"] .purchase-order-form-shell .po-empty-charges {
+  background: #1e2a38;
+  border-color: #344353;
+}

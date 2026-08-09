@@ -1,5 +1,10 @@
 export { CurrencyConversionError } from "./errors";
 export { requireRate } from "./require-rate";
-export { roundMoney, convertAmount, sumDocumentAmounts } from "./money";
+export { roundMoney, convertAmount, sumDocumentAmounts, resolveDeliveryFee, computeLandedUnitCost, buildPoLandedUnitCostsByLineId, sumPurchaseOrderAdditionalCharges, suggestSellingPrice } from "./money";
+export type {
+  PurchaseOrderLineForLandedCost,
+  PurchaseOrderChargesForLandedCost,
+  PurchaseOrderNamedChargeForLandedCost,
+} from "./money";
 export { computeOutstandingInBase } from "./outstanding";
 export { convertPaymentToInvoiceAmount } from "./payments";

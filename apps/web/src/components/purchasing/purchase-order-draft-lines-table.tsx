@@ -20,6 +20,7 @@ export interface PurchaseOrderDraftLine {
   unitPrice: number;
   productName: string;
   productSku?: string | null;
+  sellingPrice?: number | null;
   warehouseName: string;
 }
 

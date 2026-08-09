@@ -222,9 +222,14 @@ export function ViewCustomerPage({ id, customerId }: ViewCustomerPageProps) {
                   Latest documents and receipts connected to {customer.name}
                 </Text>
               </BlockStack>
-              <Button variant="primary" onClick={() => router.push("/dashboard/sales/quotations/new")}>
-                + New Quotation
-              </Button>
+              <InlineStack gap="200">
+                <Button onClick={() => router.push(`/dashboard/customers/${activeId}/transactions`)}>
+                  View all transactions
+                </Button>
+                <Button variant="primary" onClick={() => router.push("/dashboard/sales/quotations/new")}>
+                  + New Quotation
+                </Button>
+              </InlineStack>
             </InlineStack>
 
             <Grid>

@@ -9,7 +9,10 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import {
   RequireActiveOrg,
@@ -54,6 +57,14 @@ export class QuotationsController {
     });
   }
 
+  @Get("deals")
+  listDeals(
+    @Session() session: UserSession,
+    @Query("customerId") customerId?: string,
+  ) {
+    return this.quotationsService.listDeals(this.orgId(session), customerId);
+  }
+
   @Get("options/currencies")
   listCurrencies(): Promise<CurrencyRow[]> {
     return this.quotationsService.listCurrencies();
@@ -96,6 +107,11 @@ export class QuotationsController {
     res.send(pdf);
   }
 
+  @Get(":id/signing-url")
+  getSigningUrl(@Session() session: UserSession, @Param("id") id: string) {
+    return this.quotationsService.getSigningUrl(this.orgId(session), id);
+  }
+
   @Get(":id")
   get(@Session() session: UserSession, @Param("id") id: string) {
     return this.quotationsService.getById(this.orgId(session), id);
@@ -121,6 +137,20 @@ export class QuotationsController {
       id,
       session.user.id,
       body,
+    );
+  }
+
+  @Patch(":id/internal-notes")
+  updateInternalNotes(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { internalNotes: string },
+  ) {
+    return this.quotationsService.updateInternalNotes(
+      this.orgId(session),
+      id,
+      session.user.id,
+      body.internalNotes ?? "",
     );
   }
 
@@ -235,4 +265,52 @@ export class QuotationsController {
       body.message,
     );
   }
+
+  @Post(":id/revise")
+  revise(@Session() session: UserSession, @Param("id") id: string) {
+    return this.quotationsService.revise(
+      this.orgId(session),
+      id,
+      session.user.id,
+    );
+  }
+
+  @Post(":id/link-deal")
+  linkDeal(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { dealId: string },
+  ) {
+    return this.quotationsService.linkToDeal(
+      this.orgId(session),
+      id,
+      body.dealId,
+      session.user.id,
+    );
+  }
+
+  @Delete(":id/unlink-deal")
+  unlinkDeal(@Session() session: UserSession, @Param("id") id: string) {
+    return this.quotationsService.unlinkFromDeal(
+      this.orgId(session),
+      id,
+      session.user.id,
+    );
+  }
+
+  @Post(":id/upload-po")
+  @UseInterceptors(FileInterceptor("file"))
+  uploadPo(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.quotationsService.uploadCustomerPoDocument(
+      this.orgId(session),
+      id,
+      session.user.id,
+      file,
+    );
+  }
 }
+

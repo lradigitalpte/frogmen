@@ -10,6 +10,7 @@ import { PurchaseOrdersService } from "./purchase-orders.service";
 import { DocumentsModule } from "../documents/documents.module";
 import { MailModule } from "../mail/mail.module";
 import { SettingsModule } from "../settings/settings.module";
+import { ProductCostEventsModule } from "../product-cost-events/product-cost-events.module";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SettingsModule } from "../settings/settings.module";
     WarehousesModule,
     StockModule,
     ProductUnitsModule,
+    ProductCostEventsModule,
     DocumentsModule,
     MailModule,
     SettingsModule,

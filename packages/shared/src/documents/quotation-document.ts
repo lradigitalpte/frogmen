@@ -19,6 +19,12 @@ export interface QuotationDocumentLine {
   priceSubtotal: string;
 }
 
+export interface QuotationDocumentChargeLine {
+  name: string;
+  amount: string;
+  scopeLabel?: string | null;
+}
+
 export interface QuotationDocumentData {
   documentType?: "quotation" | "invoice" | "purchase_order" | "credit_note";
   number: string;
@@ -31,6 +37,11 @@ export interface QuotationDocumentData {
   customerTaxId: string | null;
   customerAddress: string[];
   notes: string | null;
+  lineNetSubtotal?: string | null;
+  deliveryFee?: string | null;
+  deliveryFeePercent?: string | null;
+  otherCharges?: string | null;
+  additionalChargeLines?: QuotationDocumentChargeLine[];
   amountUntaxed: string;
   amountTax: string;
   amountTotal: string;
@@ -38,6 +49,11 @@ export interface QuotationDocumentData {
   currencySymbol: string;
   decimalPlaces: number;
   lines: QuotationDocumentLine[];
+  accessToken?: string | null;
+  signedBy?: string | null;
+  signedOn?: string | null;
+  signatureImage?: string | null;
+  signedIp?: string | null;
 }
 
 export interface OrganizationBranding {
@@ -80,7 +96,7 @@ export function renderQuotationDocumentHtml(
   const isPurchaseOrder = quotation.documentType === "purchase_order";
   const isCreditNote = quotation.documentType === "credit_note";
   const title = isCreditNote ? "Credit Note" : isInvoice ? templates.invoiceTitle : isPurchaseOrder ? "Purchase Order" : templates.quotationTitle;
-  const showPaymentDetails = !isPurchaseOrder && !isCreditNote;
+  const showPaymentDetails = isInvoice;
   const addressLine = [profile.address, profile.city, profile.country]
     .filter(Boolean)
     .join(", ");
@@ -137,6 +153,25 @@ export function renderQuotationDocumentHtml(
     const customerLines = quotation.customerAddress.length
       ? quotation.customerAddress
       : ["No billing address provided"];
+    const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
+    const deliveryFeeLabel = quotation.deliveryFeePercent
+      ? `${isPurchaseOrder ? "Freight" : "Delivery fee"} (${quotation.deliveryFeePercent}%)`
+      : isPurchaseOrder
+        ? "Freight"
+        : "Delivery fee";
+    const deliveryFeeRow = quotation.deliveryFee
+      ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
+      : "";
+    const otherChargesRow =
+      !isPurchaseOrder && quotation.additionalChargeLines?.length
+        ? quotation.additionalChargeLines
+            .map(
+              (charge) => `<div class="row"><span>${escapeHtml(charge.name)}${charge.scopeLabel ? ` <span class="charge-scope">(${escapeHtml(charge.scopeLabel)})</span>` : ""}</span><span>${money(charge.amount)}</span></div>`,
+            )
+            .join("")
+        : !isPurchaseOrder && quotation.otherCharges
+          ? `<div class="row"><span>Other charges</span><span>${money(quotation.otherCharges)}</span></div>`
+          : "";
     const paymentDetailsHtml = showPaymentDetails
       ? renderDocumentPaymentDetailsHtml({
           companyName: branding.name,
@@ -156,7 +191,7 @@ export function renderQuotationDocumentHtml(
 .addresses{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:20px 0}.address-title{font-weight:700;margin:0 0 7px}.address-box{min-height:92px;padding:10px;border:1px solid #b9c5d8}.address-box p{margin:3px 0}
 table{width:100%;border-collapse:collapse;margin:22px 0 12px}th{padding:10px;color:#fff;background:#3c72b8;text-align:left}td{padding:10px;border:1px solid #d3dbe7}.num{text-align:right}
 .lower{display:grid;grid-template-columns:1.15fr 1fr;gap:18px}.notes{min-height:105px;padding:10px;border:1px solid #b9c5d8;white-space:pre-wrap}.notes strong{display:block;color:#17275b;margin-bottom:8px}
-.totals{width:100%}.row{display:flex;justify-content:space-between;padding:7px 10px}.grand{margin-top:3px;border:1px solid #b9c5d8;font-size:14px;font-weight:800}.footer{margin-top:28px;color:#687386;font-size:10px}
+.totals{width:100%}.row{display:flex;justify-content:space-between;padding:7px 10px;gap:12px}.row span:first-child{flex:1}.charge-scope{color:#687386;font-size:11px;font-weight:400}.grand{margin-top:3px;border:1px solid #b9c5d8;font-size:14px;font-weight:800}.footer{margin-top:28px;color:#687386;font-size:10px}
 @media print{body{padding:30px 38px}} 
 </style></head><body>
 <div class="top"><div>${branding.logoUrl ? `<img class="brand-logo" src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.name)}" />` : logoHtml}</div>
@@ -170,8 +205,10 @@ table{width:100%;border-collapse:collapse;margin:22px 0 12px}th{padding:10px;col
 <div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? "Tax Invoice To:" : isPurchaseOrder ? "Purchase Order To:" : "Quotation To:"}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
 <div><p class="address-title">Billing Address</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div></div></div>
 <table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead><tbody>${officialRows}</tbody></table>
-<div class="lower"><div class="notes"><strong>Notes</strong>${escapeHtml(notes)}</div><div class="totals">
-<div class="row"><span>Sub Total</span><span>${money(quotation.amountUntaxed)}</span></div>
+<div class="lower"><div class="notes"><strong>${isPurchaseOrder ? "Vendor terms" : "Notes"}</strong>${escapeHtml(notes)}</div><div class="totals">
+<div class="row"><span>Sub Total</span><span>${money(subTotalValue)}</span></div>
+${deliveryFeeRow}
+${otherChargesRow}
 <div class="row"><span>VAT</span><span>${money(quotation.amountTax)}</span></div>
 <div class="row grand"><span>Total Amount<br />(Including VAT)</span><span>${money(quotation.amountTotal)}</span></div>
 </div></div>
@@ -187,6 +224,31 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
         className: "terms",
       })
     : "";
+
+  const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
+  const deliveryFeeLabel = quotation.deliveryFeePercent
+    ? `${isPurchaseOrder ? "Freight" : "Delivery fee"} (${quotation.deliveryFeePercent}%)`
+    : isPurchaseOrder
+      ? "Freight"
+      : "Delivery fee";
+  const deliveryFeeRow = quotation.deliveryFee
+    ? `<div class="totals-row"><span class="muted">${escapeHtml(deliveryFeeLabel)}</span><span>+${formatDocumentMoney(quotation.deliveryFee, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
+    : "";
+  const additionalChargeRows =
+    !isPurchaseOrder && quotation.additionalChargeLines?.length
+      ? quotation.additionalChargeLines
+          .map(
+            (charge) =>
+              `<div class="totals-row"><span class="muted">${escapeHtml(charge.name)}${charge.scopeLabel ? ` <span class="charge-scope">(${escapeHtml(charge.scopeLabel)})</span>` : ""}</span><span>+${formatDocumentMoney(charge.amount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`,
+          )
+          .join("")
+      : "";
+  const otherChargesRow =
+    !isPurchaseOrder &&
+    !quotation.additionalChargeLines?.length &&
+    quotation.otherCharges
+      ? `<div class="totals-row"><span class="muted">Other charges</span><span>+${formatDocumentMoney(quotation.otherCharges, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -217,7 +279,9 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     .style-clean_minimal th { color: #111827; border-top: 1px solid #111827; border-bottom: 1px solid #111827; background: #fff; }
     .num { text-align: right; }
     .totals { margin-left: auto; width: 280px; }
-    .totals-row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .totals-row { display: flex; justify-content: space-between; padding: 4px 0; gap: 12px; }
+    .totals-row span:first-child { flex: 1; }
+    .charge-scope { color: #9ca3af; font-size: 11px; font-weight: 400; }
     .total-strong { font-size: 16px; font-weight: 800; color: var(--accent); }
     .terms { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; white-space: pre-wrap; }
     .footer { margin-top: 16px; color: #6b7280; font-size: 12px; }
@@ -273,7 +337,9 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   </table>
 
   <div class="totals">
-    <div class="totals-row"><span class="muted">Untaxed amount</span><span>${formatDocumentMoney(quotation.amountUntaxed, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
+    <div class="totals-row"><span class="muted">${quotation.deliveryFee ? "Subtotal" : "Untaxed amount"}</span><span>${formatDocumentMoney(subTotalValue, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
+    ${deliveryFeeRow}
+${additionalChargeRows}${otherChargesRow}
     <div class="totals-row"><span class="muted">Tax</span><span>+${formatDocumentMoney(quotation.amountTax, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
     <div class="totals-row"><span><strong>Total</strong></span><span class="total-strong">${formatDocumentMoney(quotation.amountTotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
   </div>
@@ -284,6 +350,20 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   ${!quotation.notes && templates.defaultWarrantyNotes ? `<div class="terms"><strong>Warranty</strong>\n${escapeHtml(templates.defaultWarrantyNotes)}</div>` : ""}
   ${templates.termsAndConditions ? `<div class="terms"><strong>Terms &amp; conditions</strong>\n${escapeHtml(templates.termsAndConditions)}</div>` : ""}
   ${paymentDetailsHtml}
+  ${quotation.signedBy || quotation.signatureImage ? `
+    <div style="margin-top:24px; padding:16px; border:1px solid #10b981; border-radius:6px; background:#f0fdf4;">
+      <h4 style="margin:0 0 8px; color:#065f46; font-size:14px; font-weight:700;">Customer Digital Signature &amp; Authorization</h4>
+      ${quotation.signatureImage ? `<div style="margin-bottom:8px;"><img src="${escapeHtml(quotation.signatureImage)}" alt="Signature" style="max-height:60px; max-width:250px;" /></div>` : ""}
+      <p style="margin:2px 0;"><strong>Signed by:</strong> ${escapeHtml(quotation.signedBy || "Customer")}</p>
+      ${quotation.signedOn ? `<p style="margin:2px 0; color:#4b5563; font-size:11px;"><strong>Signed Date:</strong> ${escapeHtml(quotation.signedOn)}</p>` : ""}
+      ${quotation.signedIp ? `<p style="margin:2px 0; color:#4b5563; font-size:11px;"><strong>Signer IP:</strong> ${escapeHtml(quotation.signedIp)}</p>` : ""}
+    </div>
+  ` : quotation.customerReference ? `
+    <div style="margin-top:24px; padding:12px; border:1px solid #3b82f6; border-radius:6px; background:#eff6ff;">
+      <h4 style="margin:0 0 4px; color:#1e40af; font-size:13px; font-weight:700;">Customer Purchase Order (PO) Authorized</h4>
+      <p style="margin:0; font-size:12px;"><strong>PO Number:</strong> ${escapeHtml(quotation.customerReference)}</p>
+    </div>
+  ` : ""}
   ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}
 </body>
 </html>`;

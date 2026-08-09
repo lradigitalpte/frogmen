@@ -114,6 +114,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         internalReference: quotationResult.internalReference ?? "",
         paymentReference: quotationResult.paymentReference ?? "",
         notes: quotationResult.notes ?? "",
+        internalNotes: quotationResult.internalNotes ?? "",
       });
       setCurrencies(currencyRows);
       setHeaderDirty(false);

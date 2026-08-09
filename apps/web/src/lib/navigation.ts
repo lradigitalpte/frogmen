@@ -78,6 +78,10 @@ export const mainNavItems: NavItem[] = [
         url: "/dashboard/accounting/expenses",
       },
       {
+        label: "Expense reimbursements",
+        url: "/dashboard/accounting/expense-reimbursements",
+      },
+      {
         label: "Chart of Accounts",
         url: "/dashboard/accounting/chart-of-accounts",
       },

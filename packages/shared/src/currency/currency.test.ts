@@ -28,6 +28,8 @@ describe("sumDocumentAmounts", () => {
     ]);
 
     expect(totals).toEqual({
+      lineNet: 150,
+      deliveryFee: 0,
       amountUntaxed: 150,
       amountTax: 7.5,
       amountTotal: 157.5,
@@ -35,6 +37,34 @@ describe("sumDocumentAmounts", () => {
       amountTaxBase: 7.5,
       amountTotalBase: 157.5,
     });
+  });
+
+  it("adds fixed delivery fee to untaxed total without taxing it", () => {
+    const totals = sumDocumentAmounts(
+      [{ priceSubtotal: 100, priceTax: 5, priceTotal: 105 }],
+      1,
+      25,
+      null,
+    );
+
+    expect(totals.lineNet).toBe(100);
+    expect(totals.deliveryFee).toBe(25);
+    expect(totals.amountUntaxed).toBe(125);
+    expect(totals.amountTax).toBe(5);
+    expect(totals.amountTotal).toBe(130);
+  });
+
+  it("adds percent delivery fee based on line net", () => {
+    const totals = sumDocumentAmounts(
+      [{ priceSubtotal: 200, priceTax: 10, priceTotal: 210 }],
+      1,
+      null,
+      10,
+    );
+
+    expect(totals.deliveryFee).toBe(20);
+    expect(totals.amountUntaxed).toBe(220);
+    expect(totals.amountTotal).toBe(230);
   });
 
   it("computes base amounts using exchange rate", () => {

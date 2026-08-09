@@ -24,11 +24,22 @@ import {
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { useSalesPricing } from "@/hooks/use-sales-pricing";
 
+export type DeliveryFeeMode = "none" | "amount" | "percent";
+
+interface DeliveryFeeConfig {
+  mode: DeliveryFeeMode;
+  value: string;
+  pricePrefix?: string;
+  onModeChange: (mode: DeliveryFeeMode) => void;
+  onValueChange: (value: string) => void;
+}
+
 interface EditConfiguredLineModalProps {
   open: boolean;
   line: ConfiguredLineItem | null;
   allLines: ConfiguredLineItem[];
   documentCurrencyId: string;
+  deliveryFee?: DeliveryFeeConfig;
   onClose: () => void;
   onSave: (line: ConfiguredLineItem) => void;
 }
@@ -38,6 +49,7 @@ export function EditConfiguredLineModal({
   line,
   allLines,
   documentCurrencyId,
+  deliveryFee,
   onClose,
   onSave,
 }: EditConfiguredLineModalProps) {
@@ -241,7 +253,7 @@ export function EditConfiguredLineModal({
               value={String(draft.unitCost)}
               onChange={() => undefined}
             />
-            <InlineGrid columns={2} gap="400">
+            <InlineGrid columns={deliveryFee ? 3 : 2} gap="400">
               <TextField
                 autoComplete="off"
                 label="Discount (%)"
@@ -263,7 +275,41 @@ export function EditConfiguredLineModal({
                   updateField("taxRatePercent", Number(value) || 0)
                 }
               />
+              {deliveryFee ? (
+                <Select
+                  label="Delivery"
+                  options={[
+                    { label: "None", value: "none" },
+                    { label: "Fixed amount", value: "amount" },
+                    { label: "Percent of net", value: "percent" },
+                  ]}
+                  value={deliveryFee.mode}
+                  onChange={(value) =>
+                    deliveryFee.onModeChange(value as DeliveryFeeMode)
+                  }
+                />
+              ) : null}
             </InlineGrid>
+            {deliveryFee && deliveryFee.mode !== "none" ? (
+              <TextField
+                autoComplete="off"
+                helpText="Applies to the whole quotation, not this line only."
+                label={
+                  deliveryFee.mode === "amount"
+                    ? "Delivery amount"
+                    : "Delivery percent"
+                }
+                prefix={
+                  deliveryFee.mode === "amount"
+                    ? deliveryFee.pricePrefix
+                    : undefined
+                }
+                suffix={deliveryFee.mode === "percent" ? "%" : undefined}
+                type="number"
+                value={deliveryFee.value}
+                onChange={deliveryFee.onValueChange}
+              />
+            ) : null}
           </FormLayout>
 
           <Divider />

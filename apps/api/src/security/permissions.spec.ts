@@ -47,4 +47,11 @@ describe("fixed RBAC permission matrix", () => {
     expect(hasPermission("accountant", "inventory.adjust")).toBe(false);
     expect(hasPermission("accountant", "purchasing.approve")).toBe(false);
   });
+
+  it("grants cost.read to manager and accountant but not staff or viewer", () => {
+    expect(hasPermission("manager", "cost.read")).toBe(true);
+    expect(hasPermission("accountant", "cost.read")).toBe(true);
+    expect(hasPermission("staff", "cost.read")).toBe(false);
+    expect(hasPermission("viewer", "cost.read")).toBe(false);
+  });
 });

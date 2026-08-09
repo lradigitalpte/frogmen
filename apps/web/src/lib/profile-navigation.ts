@@ -26,6 +26,10 @@ export const profileNavGroups: ProfileNavGroup[] = [
         label: "Assigned tasks",
         href: "/dashboard/profile/tasks",
       },
+      {
+        label: "My expense claims",
+        href: "/dashboard/profile/expense-claims",
+      },
     ],
   },
   {

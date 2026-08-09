@@ -131,11 +131,37 @@ export interface LineFinancialSummary {
   lineSubtotal: number;
   totalDiscount: number;
   netSubtotal: number;
+  deliveryFee: number;
   totalVat: number;
   grandTotal: number;
   totalCost: number;
   grossProfit: number;
   profitMarginPercent: number | null;
+}
+
+export function resolveDeliveryFee(
+  lineNet: number,
+  deliveryFeeAmount?: number | string | null,
+  deliveryFeePercent?: number | string | null,
+): number {
+  const amount =
+    deliveryFeeAmount != null && deliveryFeeAmount !== ""
+      ? Number(deliveryFeeAmount)
+      : 0;
+  const percent =
+    deliveryFeePercent != null && deliveryFeePercent !== ""
+      ? Number(deliveryFeePercent)
+      : 0;
+
+  if (Number.isFinite(amount) && amount > 0) {
+    return Math.round(amount * 100) / 100;
+  }
+
+  if (Number.isFinite(percent) && percent > 0) {
+    return Math.round(lineNet * (percent / 100) * 100) / 100;
+  }
+
+  return 0;
 }
 
 export function computeLineNetRevenue<
@@ -186,12 +212,15 @@ export function computeLineMarginPercent<
   return (computeLineProfit(line) / revenue) * 100;
 }
 
-export function formatMarginPercent(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return " ";
+export function formatMarginPercent(
+  value: number | string | null | undefined,
+): string {
+  const numeric = value == null ? null : Number(value);
+  if (numeric === null || !Number.isFinite(numeric)) {
+    return "—";
   }
 
-  return `${value.toFixed(1)}%`;
+  return `${numeric.toFixed(1)}%`;
 }
 
 export function computeLineFinancialSummary<
@@ -203,7 +232,13 @@ export function computeLineFinancialSummary<
     taxRatePercent: number;
     unitCost?: number;
   },
->(lines: T[]): LineFinancialSummary {
+>(
+  lines: T[],
+  options?: {
+    deliveryFeeAmount?: number | string | null;
+    deliveryFeePercent?: number | string | null;
+  },
+): LineFinancialSummary {
   const catalogSubtotal = lines.reduce(
     (sum, item) => sum + item.quantity * item.baseUnitPrice,
     0,
@@ -231,6 +266,11 @@ export function computeLineFinancialSummary<
   }, 0);
 
   const totalCost = lines.reduce((sum, item) => sum + computeLineCost(item), 0);
+  const deliveryFee = resolveDeliveryFee(
+    netSubtotal,
+    options?.deliveryFeeAmount,
+    options?.deliveryFeePercent,
+  );
   const grossProfit = netSubtotal - totalCost;
   const profitMarginPercent =
     netSubtotal > 0 ? (grossProfit / netSubtotal) * 100 : null;
@@ -241,8 +281,9 @@ export function computeLineFinancialSummary<
     lineSubtotal,
     totalDiscount,
     netSubtotal,
+    deliveryFee,
     totalVat,
-    grandTotal: netSubtotal + totalVat,
+    grandTotal: netSubtotal + deliveryFee + totalVat,
     totalCost,
     grossProfit,
     profitMarginPercent,

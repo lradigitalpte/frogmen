@@ -105,6 +105,25 @@ export class FilesController {
     this.pipeFile(res, stream, contentType);
   }
 
+  @Get("quotations/:organizationId/:quotationId/:fileName")
+  async serveCustomerPoDocument(
+    @Session() session: UserSession,
+    @Param("organizationId") organizationId: string,
+    @Param("quotationId") quotationId: string,
+    @Param("fileName") fileName: string,
+    @Res() res: Response,
+  ) {
+    if (organizationId !== this.orgId(session)) {
+      throw new NotFoundException("File not found");
+    }
+
+    const relativePath = `quotations/${organizationId}/${quotationId}/${fileName}`;
+    const { stream, contentType } =
+      await this.uploadsService.getCustomerPoDocumentStream(organizationId, relativePath);
+
+    this.pipeFile(res, stream, contentType);
+  }
+
   @Get("rov/*splat")
   async serveRovFile(
     @Session() session: UserSession,

@@ -9,7 +9,7 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "@/components/sales/format-money";
 import { AppSearchSelect } from "@/components/ui/app-search-select";
 import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
@@ -24,6 +24,7 @@ export interface AddPurchaseOrderLineInput {
   unitPrice: number;
   productName: string;
   productSku?: string | null;
+  sellingPrice?: number | null;
   warehouseName: string;
 }
 
@@ -59,6 +60,7 @@ export function AddPurchaseOrderLineModal({
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("0");
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const wasOpenRef = useRef(false);
 
   const product = useMemo(
     () => products.find((item) => item.id === productId),
@@ -68,6 +70,10 @@ export function AddPurchaseOrderLineModal({
     () => warehouses.find((item) => item.id === warehouseId),
     [warehouseId, warehouses],
   );
+  const productsForCurrency = useMemo(
+    () => (product ? [product] : []),
+    [product],
+  );
 
   const {
     convertProductForDocument,
@@ -76,15 +82,21 @@ export function AddPurchaseOrderLineModal({
     exchangeRateLoading,
     formatProductCatalogCost,
     pricePrefix,
-  } = useProductDocumentCurrency(documentCurrencyId, products, product);
+  } = useProductDocumentCurrency(
+    documentCurrencyId,
+    productsForCurrency,
+    product,
+  );
 
   useEffect(() => {
-    if (!open) return;
-    setProductId(initialProductId ?? products[0]?.id ?? "");
-    setWarehouseId(initialWarehouseId ?? warehouses[0]?.id ?? "");
-    setQuantity("1");
-    setUnitPrice("0");
-    setPricingError(null);
+    if (open && !wasOpenRef.current) {
+      setProductId(initialProductId ?? products[0]?.id ?? "");
+      setWarehouseId(initialWarehouseId ?? warehouses[0]?.id ?? "");
+      setQuantity("1");
+      setUnitPrice("0");
+      setPricingError(null);
+    }
+    wasOpenRef.current = open;
   }, [open, initialProductId, initialWarehouseId, products, warehouses]);
 
   useEffect(() => {
@@ -112,7 +124,7 @@ export function AddPurchaseOrderLineModal({
     return () => {
       cancelled = true;
     };
-  }, [convertProductForDocument, documentCurrencyId, open, product]);
+  }, [convertProductForDocument, documentCurrencyId, open, product?.id]);
 
   const lineTotal = (Number(quantity) || 0) * (Number(unitPrice) || 0);
   const displayCurrencyCode = currencyCode ?? documentCurrencyCode;
@@ -143,6 +155,8 @@ export function AddPurchaseOrderLineModal({
       unitPrice: price,
       productName: product.name,
       productSku: product.sku,
+      sellingPrice:
+        product.sellingPrice != null ? Number(product.sellingPrice) : null,
       warehouseName: warehouse.name,
     });
     onClose();

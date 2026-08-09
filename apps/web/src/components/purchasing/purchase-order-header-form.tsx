@@ -6,7 +6,6 @@ import type { Vendor } from "@/types/vendor";
 import { CurrencyPicker } from "@/components/sales/currency-picker";
 import { QuotationFormSection } from "@/components/sales/quotation-form-section";
 import { VendorPicker } from "@/components/purchasing/vendor-picker";
-import { DocumentNotesField } from "@/components/documents/document-notes-field";
 
 export interface PurchaseOrderHeaderValues {
   vendor: Vendor | null;
@@ -15,7 +14,6 @@ export interface PurchaseOrderHeaderValues {
   expectedDate: string;
   vendorReference: string;
   internalReference: string;
-  notes: string;
 }
 
 interface PurchaseOrderHeaderFormProps {
@@ -122,24 +120,6 @@ export function PurchaseOrderHeaderForm({
                 />
               </FormLayout.Group>
             </FormLayout>
-          </QuotationFormSection>
-        </Layout.Section>
-
-        <Layout.Section>
-          <QuotationFormSection
-            description="Delivery instructions or terms for the vendor."
-            title="Notes"
-          >
-            <DocumentNotesField
-              autoComplete="off"
-              disabled={disabled}
-              label="Notes"
-              labelHidden
-              multiline={5}
-              onChange={(notes) => patch({ notes })}
-              placeholder="Add any notes for this purchase order…"
-              value={values.notes}
-            />
           </QuotationFormSection>
         </Layout.Section>
       </Layout>

@@ -1,26 +1,33 @@
 "use client";
 
 import {
+  Badge,
   BlockStack,
   Box,
   Button,
   Card,
+  Divider,
   IndexTable,
   InlineStack,
   Link,
   SkeletonBodyText,
   Text,
 } from "@shopify/polaris";
-import { ArrowRight, Cpu } from "lucide-react";
+import { ArrowRight, Cpu, ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { ProductUnitCostBreakdownCard } from "@/components/units/product-unit-cost-breakdown";
+import { ProductUnitCostHistoryCard } from "@/components/units/product-unit-cost-history";
 import {
   productUnitStatusLabel,
   productUnitStatusVariant,
   StatusBadge,
 } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { formatMarginPercent } from "@/lib/line-item-utils";
+import { formatMoney } from "@/components/sales/format-money";
+import { useCanViewCost } from "@/hooks/use-can-view-cost";
 import {
   getProduct,
   getProductUnit,
@@ -45,6 +52,7 @@ interface ParentCandidate {
 
 export function ViewUnitPage({ unitId }: ViewUnitPageProps) {
   const router = useRouter();
+  const { canViewCost } = useCanViewCost();
   const [unit, setUnit] = useState<ProductUnitDetail | null>(null);
   const [parentCandidates, setParentCandidates] = useState<ParentCandidate[]>(
     [],
@@ -132,6 +140,18 @@ export function ViewUnitPage({ unitId }: ViewUnitPageProps) {
     );
   }
 
+  const saleCurrency = unit.saleInfo?.currencyCode ?? "AED";
+
+  function formatSaleAmount(value: string | number | null | undefined) {
+    if (value == null || value === "") return "—";
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "—";
+    return `${saleCurrency} ${amount.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
   return (
     <AppPage
       backAction={{
@@ -186,6 +206,172 @@ export function ViewUnitPage({ unitId }: ViewUnitPageProps) {
           </BlockStack>
         </Card>
 
+        {/* Sales & Customer Tracking Card */}
+        {unit.saleInfo ? (
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <InlineStack gap="200" blockAlign="center">
+                  <ShoppingBag className="text-emerald-600" size={20} />
+                  <Text as="h2" variant="headingMd">
+                    Sale & Customer Record
+                  </Text>
+                </InlineStack>
+                <Badge tone={unit.saleInfo.paymentState === "paid" ? "success" : "attention"}>
+                  {unit.saleInfo.paymentState === "paid" ? "Paid in full" : unit.saleInfo.paymentState}
+                </Badge>
+              </InlineStack>
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 rounded-xl border bg-muted/20 p-4">
+                <div>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Customer Account
+                  </Text>
+                  <Link url={`/dashboard/customers/${unit.saleInfo.customerId}`}>
+                    <Text as="p" fontWeight="bold">
+                      {unit.saleInfo.customerName}
+                    </Text>
+                  </Link>
+                </div>
+
+                <div>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Invoice
+                  </Text>
+                  <Link url={`/dashboard/invoices/${unit.saleInfo.invoiceId}`}>
+                    <Text as="p" fontWeight="bold">
+                      {unit.saleInfo.invoiceNumber}
+                    </Text>
+                  </Link>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Date: {unit.saleInfo.invoiceDate}
+                  </Text>
+                </div>
+
+                {unit.saleInfo.quotation ? (
+                  <div>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Quotation / Sales Order
+                    </Text>
+                    <Link url={`/dashboard/sales/quotations/${unit.saleInfo.quotation.id}`}>
+                      <Text as="p" fontWeight="bold">
+                        {unit.saleInfo.quotation.number}
+                      </Text>
+                    </Link>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Date: {unit.saleInfo.quotation.quoteDate}
+                    </Text>
+                  </div>
+                ) : null}
+
+                <div>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Unit Sale Price
+                  </Text>
+                  <Text as="p" fontWeight="bold">
+                    {formatSaleAmount(unit.saleInfo.unitPrice)}
+                  </Text>
+                </div>
+
+                {unit.saleInfo.unitCost ? (
+                  <div>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Unit cost
+                      {unit.saleInfo.unitCostSource === "invoice"
+                        ? " (at invoice)"
+                        : unit.saleInfo.unitCostSource === "catalog"
+                          ? " (catalog)"
+                          : ""}
+                    </Text>
+                    <Text as="p" fontWeight="bold">
+                      {formatSaleAmount(unit.saleInfo.unitCost)}
+                    </Text>
+                  </div>
+                ) : null}
+
+                {unit.saleInfo.grossProfit != null ? (
+                  <div>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Gross profit (per unit)
+                    </Text>
+                    <Text
+                      as="p"
+                      fontWeight="bold"
+                      tone={
+                        Number(unit.saleInfo.grossProfit) >= 0
+                          ? "success"
+                          : "critical"
+                      }
+                    >
+                      {formatSaleAmount(unit.saleInfo.grossProfit)}
+                    </Text>
+                  </div>
+                ) : null}
+
+                {unit.saleInfo.profitMarginPercent != null ? (
+                  <div>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Profit margin
+                    </Text>
+                    <Text as="p" fontWeight="bold" variant="headingMd">
+                      {formatMarginPercent(unit.saleInfo.profitMarginPercent)}
+                    </Text>
+                  </div>
+                ) : null}
+
+                <div>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Invoice Total Amount
+                  </Text>
+                  <Text as="p" fontWeight="bold">
+                    {formatSaleAmount(unit.saleInfo.invoiceAmountTotal)}
+                  </Text>
+                </div>
+
+                <div>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Total Amount Paid
+                  </Text>
+                  <Text as="p" fontWeight="bold" tone={unit.saleInfo.paymentState === "paid" ? "success" : undefined}>
+                    {formatSaleAmount(unit.saleInfo.totalPaid)}
+                  </Text>
+                </div>
+              </div>
+
+              {unit.saleInfo.unitCostSource === "catalog" ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Cost is from the product catalog — invoice COGS was not recorded
+                  yet. Margin is estimated.
+                </Text>
+              ) : null}
+
+              {!unit.saleInfo.unitCost ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  No unit cost on file — set product cost price or post the invoice
+                  to record COGS and margin.
+                </Text>
+              ) : null}
+
+              {unit.parentUnit && (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  * Note: This component is linked to main equipment unit <strong>{unit.parentUnit.serialNumber}</strong> ({unit.parentUnit.productName}) which was included in this sale.
+                </Text>
+              )}
+            </BlockStack>
+          </Card>
+        ) : null}
+
+        {unit.costBreakdown ? (
+          <ProductUnitCostBreakdownCard breakdown={unit.costBreakdown} />
+        ) : null}
+
+        {unit.costHistory && unit.costHistory.length > 0 ? (
+          <ProductUnitCostHistoryCard
+            currencyCode={unit.costBreakdown?.currencyCode}
+            events={unit.costHistory}
+          />
+        ) : null}
+
         {unit.parentUnit ? (
           <Card>
             <BlockStack gap="300">
@@ -231,15 +417,29 @@ export function ViewUnitPage({ unitId }: ViewUnitPageProps) {
         {unit.childUnits.length > 0 ? (
           <Card padding="0">
             <Box padding="400">
-              <Text as="h2" variant="headingMd">
-                Attached parts
-              </Text>
+              <BlockStack gap="100">
+                <Text as="h2" variant="headingMd">
+                  Attached parts
+                </Text>
+                {canViewCost ? (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Catalog cost vs sell price — parts sold with the main unit share
+                    its invoice line; margin below is per-part catalog reference.
+                  </Text>
+                ) : null}
+              </BlockStack>
             </Box>
             <IndexTable
               headings={[
                 { title: "Part" },
                 { title: "Serial" },
                 { title: "Status" },
+                ...(canViewCost
+                  ? [
+                      { title: "Unit cost", alignment: "end" as const },
+                      { title: "Catalog margin", alignment: "end" as const },
+                    ]
+                  : []),
                 { title: "" },
               ]}
               itemCount={unit.childUnits.length}
@@ -258,6 +458,22 @@ export function ViewUnitPage({ unitId }: ViewUnitPageProps) {
                       {productUnitStatusLabel(child.status)}
                     </StatusBadge>
                   </IndexTable.Cell>
+                  {canViewCost ? (
+                    <>
+                      <IndexTable.Cell>
+                        <Text as="span" alignment="end" numeric>
+                          {child.costPrice
+                            ? formatMoney(child.costPrice, saleCurrency)
+                            : "—"}
+                        </Text>
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <Text as="span" alignment="end" numeric>
+                          {formatMarginPercent(child.catalogMarginPercent ?? null)}
+                        </Text>
+                      </IndexTable.Cell>
+                    </>
+                  ) : null}
                   <IndexTable.Cell>
                     <Button
                       url={`/dashboard/inventory/units/${child.id}`}

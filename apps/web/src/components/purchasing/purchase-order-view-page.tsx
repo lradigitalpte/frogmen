@@ -28,6 +28,7 @@ import { PurchaseOrderWorkflowPanel } from "@/components/purchasing/purchase-ord
 import { ReceiveGoodsModal } from "@/components/purchasing/receive-goods-modal";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
+import { buildPoLandedUnitCostsByLineId, resolveDeliveryFee } from "@frog1/shared";
 import {
   purchaseOrderStateLabel,
   purchaseOrderStateVariant,
@@ -168,6 +169,79 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
     return { ordered, received, remaining, percent };
   }, [order?.lines]);
 
+  const lineNet = useMemo(() => {
+    if (!order?.lines?.length) return 0;
+    return order.lines.reduce(
+      (sum, line) => sum + Number(line.priceSubtotal),
+      0,
+    );
+  }, [order?.lines]);
+
+  const freight = useMemo(
+    () =>
+      resolveDeliveryFee(
+        lineNet,
+        order?.freightAmount,
+        order?.freightPercent,
+      ),
+    [lineNet, order?.freightAmount, order?.freightPercent],
+  );
+
+  const otherCharges = Number(order?.otherChargesAmount ?? 0);
+  const hasLandedCharges =
+    freight + otherCharges > 0 || (order?.additionalCharges?.length ?? 0) > 0;
+
+  const chargeBreakdown = useMemo(() => {
+    if (!order?.additionalCharges?.length) {
+      return [];
+    }
+
+    const lineLabelById = new Map(
+      (order.lines ?? []).map((line) => [line.id, line.productName ?? line.description]),
+    );
+
+    return order.additionalCharges.map((charge) => ({
+      name: charge.name,
+      amount: Number(charge.amount),
+      scopeLabel:
+        charge.scope === "line" && charge.purchaseOrderLineId
+          ? lineLabelById.get(charge.purchaseOrderLineId) ?? "Product line"
+          : "Whole order",
+    }));
+  }, [order?.additionalCharges, order?.lines]);
+
+  const internalChargesTotal = chargeBreakdown.reduce(
+    (sum, charge) => sum + charge.amount,
+    0,
+  );
+  const vendorAmountUntaxed = lineNet + freight;
+  const vendorAmountTotal =
+    vendorAmountUntaxed + Number(order?.amountTax ?? 0);
+
+  const landedByLineId = useMemo(() => {
+    if (!order?.lines?.length || !hasLandedCharges) {
+      return new Map<string, number>();
+    }
+
+    return buildPoLandedUnitCostsByLineId(order.lines, {
+      freightAmount: order.freightAmount,
+      freightPercent: order.freightPercent,
+      otherChargesAmount: order.otherChargesAmount,
+      namedCharges: order.additionalCharges?.map((charge) => ({
+        scope: charge.scope,
+        amount: charge.amount,
+        purchaseOrderLineId: charge.purchaseOrderLineId,
+      })),
+    });
+  }, [
+    hasLandedCharges,
+    order?.additionalCharges,
+    order?.freightAmount,
+    order?.freightPercent,
+    order?.lines,
+    order?.otherChargesAmount,
+  ]);
+
   if (loading && !order) {
     return (
       <AppPage
@@ -234,6 +308,14 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
           content: "Preview PDF",
           onAction: () => setPreviewOpen(true),
         },
+        ...(order.state === "draft"
+          ? [
+              {
+                content: "Edit",
+                url: `/dashboard/purchasing/orders/${order.id}/edit`,
+              },
+            ]
+          : []),
         ...(order.state !== "cancelled"
           ? [
               {
@@ -415,12 +497,17 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           {lines.length} line{lines.length === 1 ? "" : "s"} ·{" "}
                           {warehouseCount} warehouse
                           {warehouseCount === 1 ? "" : "s"}
+                          {hasLandedCharges
+                            ? " · landed unit costs include freight & charges"
+                            : ""}
                         </Text>
                       </BlockStack>
                       <InlineStack gap="200" blockAlign="center">
                         <Package aria-hidden size={18} />
                         <Text as="span" tone="subdued" variant="bodySm">
-                          Cost × quantity only
+                          {hasLandedCharges
+                            ? "Unit + allocated freight/charges"
+                            : "Unit cost × quantity"}
                         </Text>
                       </InlineStack>
                     </InlineStack>
@@ -435,6 +522,9 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                         { title: "Received", alignment: "end" },
                         { title: "Remaining", alignment: "end" },
                         { title: "Unit cost", alignment: "end" },
+                        ...(hasLandedCharges
+                          ? [{ title: "Est. landed", alignment: "end" as const }]
+                          : []),
                         { title: "Line total", alignment: "end" },
                       ]}
                       itemCount={lines.length}
@@ -444,6 +534,7 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                         const remaining =
                           line.qtyRemaining ??
                           Number(line.quantity) - Number(line.qtyReceived);
+                        const landedUnitCost = landedByLineId.get(line.id);
 
                         return (
                           <IndexTable.Row
@@ -495,6 +586,23 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                                 {formatMoney(line.unitPrice, currencyCode)}
                               </Text>
                             </IndexTable.Cell>
+                            {hasLandedCharges ? (
+                              <IndexTable.Cell>
+                                <Text
+                                  as="span"
+                                  alignment="end"
+                                  fontWeight="semibold"
+                                  numeric
+                                >
+                                  {landedUnitCost != null
+                                    ? formatMoney(
+                                        String(landedUnitCost),
+                                        currencyCode,
+                                      )
+                                    : "—"}
+                                </Text>
+                              </IndexTable.Cell>
+                            ) : null}
                             <IndexTable.Cell>
                               <Text
                                 as="span"
@@ -561,12 +669,12 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                 <Card>
                   <BlockStack gap="300">
                     <Text as="h2" variant="headingMd">
-                      Notes
+                      Vendor terms
                     </Text>
                     {order.notes ? (
                       <BlockStack gap="100">
                         <Text as="span" tone="subdued" variant="bodySm">
-                          PO notes (from creation)
+                          Printed on PO for vendor
                         </Text>
                         <Text as="p">{order.notes}</Text>
                       </BlockStack>
@@ -646,15 +754,107 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                       Order total
                     </Text>
                     <Text as="p" tone="subdued" variant="bodySm">
-                      Purchase cost only   no VAT on PO lines.
+                      Vendor total is what appears on the PO sent to the supplier.
+                      Internal charges are for your landed cost only.
                     </Text>
                   </BlockStack>
 
-                  <Text as="p" fontWeight="bold" variant="heading2xl">
-                    {formatMoney(order.amountTotal, currencyCode)}
-                  </Text>
+                  <BlockStack gap="100">
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Vendor total (on PO PDF)
+                    </Text>
+                    <Text as="p" fontWeight="bold" variant="heading2xl">
+                      {formatMoney(String(vendorAmountTotal), currencyCode)}
+                    </Text>
+                  </BlockStack>
 
                   <div className="quotation-summary-panel__rows">
+                    <div className="quotation-summary-row">
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        Line subtotal
+                      </Text>
+                      <Text as="span">
+                        {formatMoney(String(lineNet), currencyCode)}
+                      </Text>
+                    </div>
+                    {freight > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Freight
+                          {order.freightPercent
+                            ? ` (${order.freightPercent}%)`
+                            : ""}
+                        </Text>
+                        <Text as="span">
+                          +{formatMoney(String(freight), currencyCode)}
+                        </Text>
+                      </div>
+                    ) : null}
+                    {Number(order.amountTax) > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Tax
+                        </Text>
+                        <Text as="span">
+                          +{formatMoney(order.amountTax, currencyCode)}
+                        </Text>
+                      </div>
+                    ) : null}
+                    {(internalChargesTotal > 0 || otherCharges > 0) ? (
+                      <>
+                        <div className="quotation-summary-row">
+                          <Text as="span" tone="subdued" variant="bodySm">
+                            Internal landed cost
+                          </Text>
+                          <Text as="span">
+                            +{formatMoney(
+                              String(internalChargesTotal + otherCharges),
+                              currencyCode,
+                            )}
+                          </Text>
+                        </div>
+                        {chargeBreakdown.length > 0 ? (
+                          <div className="purchase-order-view-charges">
+                            {chargeBreakdown.map((charge) => (
+                              <div
+                                key={`${charge.name}-${charge.scopeLabel}`}
+                                className="purchase-order-view-charge-row"
+                              >
+                                <Text as="span" tone="subdued" variant="bodySm">
+                                  {charge.name}
+                                  <Text as="span" tone="subdued" variant="bodySm">
+                                    {" "}
+                                    ({charge.scopeLabel})
+                                  </Text>
+                                </Text>
+                                <span>
+                                  +{formatMoney(String(charge.amount), currencyCode)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : otherCharges > 0 ? (
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued" variant="bodySm">
+                              Additional charges
+                            </Text>
+                            <Text as="span">
+                              +{formatMoney(String(otherCharges), currencyCode)}
+                            </Text>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {internalChargesTotal > 0 || otherCharges > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Full landed total
+                        </Text>
+                        <Text as="span" fontWeight="semibold">
+                          {formatMoney(order.amountTotal, currencyCode)}
+                        </Text>
+                      </div>
+                    ) : null}
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
                         Currency
@@ -736,6 +936,7 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
 
       <ReceiveGoodsModal
         open={receiveOpen}
+        order={order}
         orderId={order.id}
         onClose={() => setReceiveOpen(false)}
         onSuccess={() => {

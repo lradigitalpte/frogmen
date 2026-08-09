@@ -13,6 +13,8 @@ import {
   Session,
   type UserSession,
 } from "@thallesp/nestjs-better-auth";
+import { hasPermission } from "../security/permissions";
+import { SecurityContextService } from "../security/security-context.service";
 import { ProductUnitsService } from "./product-units.service";
 import { StockService } from "../stock/stock.service";
 import type {
@@ -30,6 +32,7 @@ export class ProductUnitsController {
   constructor(
     private readonly productUnitsService: ProductUnitsService,
     private readonly stockService: StockService,
+    private readonly securityContext: SecurityContextService,
   ) {}
 
   private orgId(session: UserSession) {
@@ -96,8 +99,26 @@ export class ProductUnitsController {
   }
 
   @Get("v1/units/:id")
-  get(@Session() session: UserSession, @Param("id") id: string) {
-    return this.productUnitsService.getById(this.orgId(session), id);
+  async get(@Session() session: UserSession, @Param("id") id: string) {
+    const context = await this.securityContext.resolve({
+      sessionId: session.session.id,
+      userId: session.user.id,
+      organizationId: this.orgId(session),
+      activeBranchId: (
+        session.session as typeof session.session & {
+          activeBranchId?: string | null;
+        }
+      ).activeBranchId,
+      branchScope: (
+        session.session as typeof session.session & {
+          branchScope?: string | null;
+        }
+      ).branchScope,
+    });
+
+    return this.productUnitsService.getById(this.orgId(session), id, {
+      canViewCost: hasPermission(context.role, "cost.read"),
+    });
   }
 
   @Patch("v1/units/:id")

@@ -1,6 +1,7 @@
 "use client";
 
-import { FormLayout, Layout, TextField } from "@shopify/polaris";
+import { BlockStack, Button, FormLayout, InlineStack, Layout, Modal, Text, TextField } from "@shopify/polaris";
+import { useState } from "react";
 import type { Customer } from "@/types/customer";
 import type { Currency } from "@/lib/currencies-api";
 import { CustomerPicker } from "./customer-picker";
@@ -23,6 +24,7 @@ export interface QuotationHeaderValues {
   internalReference: string;
   paymentReference: string;
   notes: string;
+  internalNotes: string;
 }
 
 interface QuotationHeaderFormProps {
@@ -44,6 +46,9 @@ export function QuotationHeaderForm({
   disabled,
   errors,
 }: QuotationHeaderFormProps) {
+  const [internalNotesOpen, setInternalNotesOpen] = useState(false);
+  const [tempInternalNotes, setTempInternalNotes] = useState(values.internalNotes || "");
+
   function patch(partial: Partial<QuotationHeaderValues>) {
     const next = { ...values, ...partial };
 
@@ -155,19 +160,86 @@ export function QuotationHeaderForm({
       <Layout.Section>
         <QuotationFormSection
           description="Terms, scope, or a message for the customer."
-          title="Notes"
+          title="Customer Notes & Terms"
         >
           <DocumentNotesField
             autoComplete="off"
             disabled={disabled}
             label="Notes"
             labelHidden
-            multiline={5}
+            multiline={4}
             onChange={(notes) => patch({ notes })}
-            placeholder="Add any notes visible on the quotation…"
+            placeholder="Add any notes visible to the customer on the quotation…"
             value={values.notes}
           />
         </QuotationFormSection>
+      </Layout.Section>
+
+      <Layout.Section>
+        <QuotationFormSection
+          description="Private notes for team members (never shown to customers)."
+          title="Internal Team Notes"
+        >
+          <InlineStack align="space-between" blockAlign="center">
+            <BlockStack gap="050">
+              <Text as="p" fontWeight="semibold">
+                {values.internalNotes ? "Internal notes recorded" : "No internal notes recorded"}
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                {values.internalNotes
+                  ? values.internalNotes.length > 60
+                    ? `${values.internalNotes.slice(0, 60)}…`
+                    : values.internalNotes
+                  : "Click the button to add private team notes for this quote."}
+              </Text>
+            </BlockStack>
+            <Button
+              onClick={() => {
+                setTempInternalNotes(values.internalNotes || "");
+                setInternalNotesOpen(true);
+              }}
+            >
+              {values.internalNotes ? "Edit Internal Notes" : "Add Internal Notes"}
+            </Button>
+          </InlineStack>
+        </QuotationFormSection>
+
+        {/* Internal Notes Modal */}
+        <Modal
+          open={internalNotesOpen}
+          onClose={() => setInternalNotesOpen(false)}
+          title="Internal Team Notes"
+          primaryAction={{
+            content: "Save internal notes",
+            onAction: () => {
+              patch({ internalNotes: tempInternalNotes });
+              setInternalNotesOpen(false);
+            },
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setInternalNotesOpen(false),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <FormLayout>
+              <Text as="p" tone="subdued">
+                Internal team notes are preserved across quotes and converted invoices. They are visible only to your staff and will never appear on customer prints or PDFs.
+              </Text>
+              <TextField
+                autoComplete="off"
+                label="Internal Notes"
+                labelHidden
+                multiline={8}
+                onChange={setTempInternalNotes}
+                placeholder="Enter internal details, special pricing approvals, or delivery instructions for team members..."
+                value={tempInternalNotes}
+              />
+            </FormLayout>
+          </Modal.Section>
+        </Modal>
       </Layout.Section>
     </Layout>
     </div>

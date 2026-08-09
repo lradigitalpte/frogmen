@@ -3,6 +3,7 @@
 import {
   Badge,
   BlockStack,
+  Box,
   Button,
   EmptyState,
   IndexFilters,
@@ -14,7 +15,7 @@ import {
   useSetIndexFiltersMode,
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   archiveProduct,
   listProducts,
@@ -38,6 +39,13 @@ const tabs: { id: ProductTab; content: string }[] = [
   { id: "service", content: "Services" },
   { id: "archived", content: "Archived" },
 ];
+
+const REDUNDANT_TABLE_TAGS = new Set(["goods", "for sale"]);
+
+function getTableDisplayTags(product: Product): string[] {
+  const allTags = getProductDisplayTags(product);
+  return allTags.filter((t) => !REDUNDANT_TABLE_TAGS.has(t.trim().toLowerCase()));
+}
 
 export function ProductsListPage() {
   const router = useRouter();
@@ -84,7 +92,7 @@ export function ProductsListPage() {
       const [result, stockResult] = await Promise.all([
         listProducts({
           page,
-          perPage: 16,
+          perPage: 100,
           search: debouncedQuery || undefined,
           archived: activeTab === "archived",
           type:
@@ -149,97 +157,254 @@ export function ProductsListPage() {
     await loadProducts();
   }
 
-  const rowMarkup = products.map((product, index) => (
-    <IndexTable.Row id={product.id} key={product.id} position={index}>
-      <IndexTable.Cell>
-        <InlineStack gap="300" blockAlign="center">
-          <ProductListThumbnail
-            alt={product.name}
-            imagePath={product.images[0]}
-          />
-          <BlockStack gap="100">
-            <Link
-              dataPrimaryLink
-              url={`/dashboard/inventory/products/${product.id}`}
-            >
-              <Text as="span" fontWeight="semibold">
-                {product.name}
-              </Text>
-            </Link>
-            <InlineStack gap="200">
-              {getProductDisplayTags(product).map((tag) => (
-                <Badge
-                  key={`${product.id}-${tag}`}
-                  tone={getProductBadgeTone(tag)}
-                >
-                  {tag}
-                </Badge>
-              ))}
-            </InlineStack>
-          </BlockStack>
-        </InlineStack>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        {(() => {
-          const serials = serialsByProduct.get(product.id) ?? [];
-          const serialLabel =
-            product.trackSerial && serials.length > 0
-              ? [...new Set(serials)].join(", ")
-              : null;
+  // Collapsed parent products state (map of parentId -> boolean)
+  const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
-          return product.sku || serialLabel || " ";
-        })()}
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        {product.type === "service" || !product.isStorable ? (
-          <Text as="span" tone="subdued">
-            {" "}
-          </Text>
-        ) : (
-          (() => {
-            const qty = stockByProduct.get(product.id) ?? 0;
-            if (qty === 0) {
-              return <Badge tone="critical">0 on hand</Badge>;
-            }
-            return (
-              <Badge tone={qty <= 2 ? "attention" : "success"}>
-                {`${qty} on hand`}
-              </Badge>
-            );
-          })()
-        )}
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        {formatProductPrice(product)}
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <InlineStack gap="200">
-          <Button
-            size="slim"
-            url={`/dashboard/inventory/products/${product.id}`}
-            variant="plain"
-          >
-            View
-          </Button>
-          <Button
-            size="slim"
-            url={`/dashboard/inventory/products/${product.id}/edit`}
-            variant="plain"
-          >
-            Edit
-          </Button>
-          <Button
-            size="slim"
-            tone={activeTab === "archived" ? "success" : "critical"}
-            variant="plain"
-            onClick={() => handleArchive(product.id)}
-          >
-            {activeTab === "archived" ? "Restore" : "Archive"}
-          </Button>
-        </InlineStack>
-      </IndexTable.Cell>
-    </IndexTable.Row>
-  ));
+  const toggleParentCollapse = (parentId: string) => {
+    setCollapsedParents((prev) => ({
+      ...prev,
+      [parentId]: !prev[parentId],
+    }));
+  };
+
+  // Group products into parent-child hierarchy
+  const groupedProducts = useMemo(() => {
+    const parentMap = new Map<string, Product[]>();
+    const rootProducts: Product[] = [];
+    const childProductIds = new Set<string>();
+
+    // First pass: identify children and map by parentId
+    products.forEach((p) => {
+      if (p.parentId) {
+        childProductIds.add(p.id);
+        if (!parentMap.has(p.parentId)) {
+          parentMap.set(p.parentId, []);
+        }
+        parentMap.get(p.parentId)!.push(p);
+      }
+    });
+
+    // Second pass: root products and orphaned child products
+    products.forEach((p) => {
+      if (!p.parentId) {
+        rootProducts.push(p);
+      } else if (!products.some((parent) => parent.id === p.parentId)) {
+        // Parent is not in current list, treat as root for display
+        rootProducts.push(p);
+      }
+    });
+
+    return { rootProducts, parentMap };
+  }, [products]);
+
+  let rowIndexCounter = 0;
+
+  const renderSingleProductRow = (
+    product: Product,
+    isChild: boolean = false,
+  ) => {
+    const serials = serialsByProduct.get(product.id) ?? [];
+    const serialLabel =
+      product.trackSerial && serials.length > 0
+        ? [...new Set(serials)].join(", ")
+        : null;
+
+    const qty = stockByProduct.get(product.id) ?? 0;
+
+    return (
+      <IndexTable.Row id={product.id} key={product.id} position={rowIndexCounter++}>
+        <IndexTable.Cell>
+          <div style={{ paddingLeft: isChild ? 24 : 0, display: "flex", alignItems: "center", gap: 8 }}>
+            {isChild && (
+              <span style={{ color: "var(--p-color-text-subdued)", fontSize: 14 }}>└──</span>
+            )}
+            <InlineStack gap="300" blockAlign="center">
+              <ProductListThumbnail
+                alt={product.name}
+                imagePath={product.images[0]}
+              />
+              <BlockStack gap="100">
+                <Link
+                  dataPrimaryLink
+                  url={`/dashboard/inventory/products/${product.id}`}
+                >
+                  <Text as="span" fontWeight="semibold">
+                    {product.name}
+                  </Text>
+                </Link>
+                <InlineStack gap="150">
+                  {getTableDisplayTags(product).map((tag) => (
+                    <Badge key={`${product.id}-${tag}`}>
+                      {tag}
+                    </Badge>
+                  ))}
+                </InlineStack>
+              </BlockStack>
+            </InlineStack>
+          </div>
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          {product.sku || serialLabel || " "}
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          {product.type === "service" || !product.isStorable ? (
+            <Text as="span" tone="subdued">
+              {" "}
+            </Text>
+          ) : qty === 0 ? (
+            <Badge tone="critical">0 on hand</Badge>
+          ) : (
+            <Badge tone={qty <= 2 ? "attention" : "success"}>
+              {`${qty} on hand`}
+            </Badge>
+          )}
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          {formatProductPrice(product)}
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <InlineStack gap="200">
+            <Button
+              size="slim"
+              url={`/dashboard/inventory/products/${product.id}`}
+              variant="plain"
+            >
+              View
+            </Button>
+            <Button
+              size="slim"
+              url={`/dashboard/inventory/products/${product.id}/edit`}
+              variant="plain"
+            >
+              Edit
+            </Button>
+            <Button
+              size="slim"
+              tone={activeTab === "archived" ? "success" : "critical"}
+              variant="plain"
+              onClick={() => handleArchive(product.id)}
+            >
+              {activeTab === "archived" ? "Restore" : "Archive"}
+            </Button>
+          </InlineStack>
+        </IndexTable.Cell>
+      </IndexTable.Row>
+    );
+  };
+
+  const rowMarkup = groupedProducts.rootProducts.map((rootProduct) => {
+    const children = groupedProducts.parentMap.get(rootProduct.id) ?? [];
+    const hasChildren = children.length > 0;
+    const isCollapsed = collapsedParents[rootProduct.id] ?? true;
+
+    if (!hasChildren) {
+      return renderSingleProductRow(rootProduct, false);
+    }
+
+    return (
+      <React.Fragment key={`group-${rootProduct.id}`}>
+        {/* Parent Header Row with Expand/Collapse */}
+        <IndexTable.Row id={`parent-${rootProduct.id}`} position={rowIndexCounter++}>
+          <IndexTable.Cell>
+            <InlineStack gap="200" blockAlign="center">
+              <Button
+                size="slim"
+                variant="plain"
+                accessibilityLabel={isCollapsed ? "Expand linked components" : "Collapse linked components"}
+                onClick={(e?: React.MouseEvent) => {
+                  e?.stopPropagation?.();
+                  toggleParentCollapse(rootProduct.id);
+                }}
+              >
+                {isCollapsed ? "▶" : "▼"}
+              </Button>
+              <ProductListThumbnail
+                alt={rootProduct.name}
+                imagePath={rootProduct.images[0]}
+              />
+              <BlockStack gap="100">
+                <InlineStack gap="200" blockAlign="center">
+                  <Link
+                    dataPrimaryLink
+                    url={`/dashboard/inventory/products/${rootProduct.id}`}
+                  >
+                    <Text as="span" fontWeight="bold">
+                      {rootProduct.name}
+                    </Text>
+                  </Link>
+                  <Badge tone="info">{`${children.length} Linked Component${children.length > 1 ? "s" : ""}`}</Badge>
+                </InlineStack>
+                <InlineStack gap="150">
+                  {getTableDisplayTags(rootProduct).map((tag) => (
+                    <Badge key={`${rootProduct.id}-${tag}`}>
+                      {tag}
+                    </Badge>
+                  ))}
+                </InlineStack>
+              </BlockStack>
+            </InlineStack>
+          </IndexTable.Cell>
+          <IndexTable.Cell>
+            {(() => {
+              const serials = serialsByProduct.get(rootProduct.id) ?? [];
+              const serialLabel =
+                rootProduct.trackSerial && serials.length > 0
+                  ? [...new Set(serials)].join(", ")
+                  : null;
+              return rootProduct.sku || serialLabel || " ";
+            })()}
+          </IndexTable.Cell>
+          <IndexTable.Cell>
+            {rootProduct.type === "service" || !rootProduct.isStorable ? (
+              <Text as="span" tone="subdued"> </Text>
+            ) : (() => {
+              const qty = stockByProduct.get(rootProduct.id) ?? 0;
+              return qty === 0 ? (
+                <Badge tone="critical">0 on hand</Badge>
+              ) : (
+                <Badge tone={qty <= 2 ? "attention" : "success"}>
+                  {`${qty} on hand`}
+                </Badge>
+              );
+            })()}
+          </IndexTable.Cell>
+          <IndexTable.Cell>
+            {formatProductPrice(rootProduct)}
+          </IndexTable.Cell>
+          <IndexTable.Cell>
+            <InlineStack gap="200">
+              <Button
+                size="slim"
+                url={`/dashboard/inventory/products/${rootProduct.id}`}
+                variant="plain"
+              >
+                View
+              </Button>
+              <Button
+                size="slim"
+                url={`/dashboard/inventory/products/${rootProduct.id}/edit`}
+                variant="plain"
+              >
+                Edit
+              </Button>
+              <Button
+                size="slim"
+                tone={activeTab === "archived" ? "success" : "critical"}
+                variant="plain"
+                onClick={() => handleArchive(rootProduct.id)}
+              >
+                {activeTab === "archived" ? "Restore" : "Archive"}
+              </Button>
+            </InlineStack>
+          </IndexTable.Cell>
+        </IndexTable.Row>
+
+        {/* Linked Child Rows (when expanded) */}
+        {!isCollapsed &&
+          children.map((child) => renderSingleProductRow(child, true))}
+      </React.Fragment>
+    );
+  });
 
   const emptyState = useMemo(
     () => (

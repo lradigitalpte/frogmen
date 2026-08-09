@@ -1,13 +1,17 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   accountMoveLines,
   accountMoves,
   bankAccounts,
   glAccounts,
+  invoiceLines,
+  invoicePayments,
   invoices,
   journals,
   currencies,
+  productUnits,
+  products,
   type Database,
 } from "@frog1/db";
 import { roundMoney } from "@frog1/shared";
@@ -667,10 +671,24 @@ export class AccountingReportsService {
     };
   }
 
-  async listAccounts(organizationId: string) {
+  private normalizeAccountBalance(accountType: string, rawDebitMinusCredit: number) {
+    const creditNormal = (
+      [
+        ...LIABILITY_TYPES,
+        ...EQUITY_TYPES,
+        ...INCOME_TYPES,
+      ] as readonly string[]
+    ).includes(accountType);
+
+    return roundMoney(creditNormal ? -rawDebitMinusCredit : rawDebitMinusCredit);
+  }
+
+  async listAccounts(organizationId: string, asOf?: string) {
     await this.provisioner.ensureProvisioned(organizationId);
 
-    return this.db
+    const asOfDate = asOf ?? new Date().toISOString().slice(0, 10);
+
+    const accounts = await this.db
       .select({
         id: glAccounts.id,
         code: glAccounts.code,
@@ -681,6 +699,288 @@ export class AccountingReportsService {
       .from(glAccounts)
       .where(eq(glAccounts.organizationId, organizationId))
       .orderBy(glAccounts.code);
+
+    const balanceRows = await this.db
+      .select({
+        accountId: glAccounts.id,
+        rawBalance: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric - ${accountMoveLines.credit}::numeric), 0)`,
+      })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .innerJoin(glAccounts, eq(glAccounts.id, accountMoveLines.accountId))
+      .where(
+        and(
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.state, "posted"),
+          lte(accountMoves.moveDate, asOfDate),
+        ),
+      )
+      .groupBy(glAccounts.id);
+
+    const balanceByAccountId = new Map(
+      balanceRows.map((row) => [row.accountId, Number(row.rawBalance)]),
+    );
+
+    return accounts.map((account) => {
+      const raw = balanceByAccountId.get(account.id) ?? 0;
+      return {
+        ...account,
+        asOf: asOfDate,
+        balance: this.normalizeAccountBalance(account.accountType, raw),
+        hasActivity: raw !== 0,
+      };
+    });
+  }
+
+  private normalizeLineAmount(
+    accountType: string,
+    debit: number,
+    credit: number,
+  ) {
+    const raw = debit - credit;
+    return this.normalizeAccountBalance(accountType, raw);
+  }
+
+  async getAccountLedger(
+    organizationId: string,
+    accountId: string,
+    query: {
+      asOf?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      search?: string;
+      journalCode?: string;
+      page?: number;
+      perPage?: number;
+    } = {},
+  ) {
+    await this.provisioner.ensureProvisioned(organizationId);
+
+    const asOfDate = query.asOf ?? new Date().toISOString().slice(0, 10);
+    const page = Math.max(query.page ?? 1, 1);
+    const perPage = Math.min(Math.max(query.perPage ?? 25, 1), 100);
+    const offset = (page - 1) * perPage;
+
+    const [account] = await this.db
+      .select({
+        id: glAccounts.id,
+        code: glAccounts.code,
+        name: glAccounts.name,
+        accountType: glAccounts.accountType,
+      })
+      .from(glAccounts)
+      .where(
+        and(
+          eq(glAccounts.organizationId, organizationId),
+          eq(glAccounts.id, accountId),
+        ),
+      )
+      .limit(1);
+
+    if (!account) {
+      throw new NotFoundException("Account not found");
+    }
+
+    const balanceAsOfRows = await this.db
+      .select({
+        rawBalance: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric - ${accountMoveLines.credit}::numeric), 0)`,
+      })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .where(
+        and(
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.state, "posted"),
+          eq(accountMoveLines.accountId, accountId),
+          lte(accountMoves.moveDate, asOfDate),
+        ),
+      );
+
+    const rawBalanceAsOf = Number(balanceAsOfRows[0]?.rawBalance ?? 0);
+    const balanceAsOf = this.normalizeAccountBalance(
+      account.accountType,
+      rawBalanceAsOf,
+    );
+
+    const listFilters = [
+      eq(accountMoves.organizationId, organizationId),
+      eq(accountMoves.state, "posted"),
+      eq(accountMoveLines.accountId, accountId),
+      lte(accountMoves.moveDate, asOfDate),
+    ];
+
+    if (query.dateFrom) {
+      listFilters.push(gte(accountMoves.moveDate, query.dateFrom));
+    }
+    if (query.dateTo) {
+      listFilters.push(lte(accountMoves.moveDate, query.dateTo));
+    }
+    if (query.journalCode?.trim()) {
+      listFilters.push(eq(journals.code, query.journalCode.trim()));
+    }
+    if (query.search?.trim()) {
+      const term = `%${query.search.trim()}%`;
+      listFilters.push(
+        or(
+          ilike(accountMoveLines.label, term),
+          ilike(accountMoves.name, term),
+          ilike(accountMoves.reference, term),
+          ilike(invoices.number, term),
+        )!,
+      );
+    }
+
+    const whereClause = and(...listFilters);
+
+    const journalCodeRows = await this.db
+      .selectDistinct({ code: journals.code })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .where(
+        and(
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.state, "posted"),
+          eq(accountMoveLines.accountId, accountId),
+          lte(accountMoves.moveDate, asOfDate),
+        ),
+      )
+      .orderBy(journals.code);
+
+    const periodTotalsRow = await this.db
+      .select({
+        debit: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric), 0)`,
+        credit: sql<string>`coalesce(sum(${accountMoveLines.credit}::numeric), 0)`,
+      })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .leftJoin(invoices, eq(invoices.id, accountMoves.invoiceId))
+      .where(whereClause);
+
+    const [totalResult] = await this.db
+      .select({ total: count() })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .leftJoin(invoices, eq(invoices.id, accountMoves.invoiceId))
+      .where(whereClause);
+
+    const total = Number(totalResult?.total ?? 0);
+
+    const rows = await this.db
+      .select({
+        lineId: accountMoveLines.id,
+        label: accountMoveLines.label,
+        debit: accountMoveLines.debit,
+        credit: accountMoveLines.credit,
+        lineNumber: accountMoveLines.lineNumber,
+        moveId: accountMoves.id,
+        moveDate: accountMoves.moveDate,
+        moveName: accountMoves.name,
+        reference: accountMoves.reference,
+        invoiceId: accountMoves.invoiceId,
+        paymentId: accountMoves.paymentId,
+        refundId: accountMoves.refundId,
+        journalCode: journals.code,
+        invoiceNumber: invoices.number,
+        paymentInvoiceId: invoicePayments.invoiceId,
+      })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .leftJoin(invoices, eq(invoices.id, accountMoves.invoiceId))
+      .leftJoin(invoicePayments, eq(invoicePayments.id, accountMoves.paymentId))
+      .where(whereClause)
+      .orderBy(
+        desc(accountMoves.moveDate),
+        desc(accountMoves.createdAt),
+        accountMoveLines.lineNumber,
+      )
+      .limit(perPage)
+      .offset(offset);
+
+    const mapEntry = (row: (typeof rows)[number]) => {
+      const debit = Number(row.debit);
+      const credit = Number(row.credit);
+
+      let sourceType: "invoice" | "payment" | "refund" | "expense" | "journal" =
+        "journal";
+      let sourceId: string | null = row.moveId;
+      let sourceLabel = row.moveName;
+      let sourceInvoiceId: string | null = row.invoiceId;
+
+      if (row.invoiceId) {
+        sourceType = "invoice";
+        sourceId = row.invoiceId;
+        sourceLabel = row.invoiceNumber ?? row.moveName;
+        sourceInvoiceId = row.invoiceId;
+      } else if (row.paymentId) {
+        sourceType = "payment";
+        sourceId = row.paymentId;
+        sourceLabel = row.invoiceNumber ?? row.reference ?? row.moveName;
+        sourceInvoiceId = row.paymentInvoiceId;
+      } else if (row.refundId) {
+        sourceType = "refund";
+        sourceId = row.refundId;
+        sourceLabel = row.reference ?? row.moveName;
+      } else if (account.code === "600000" && debit > 0) {
+        sourceType = "expense";
+        sourceId = row.moveId;
+        sourceLabel = row.moveName;
+      }
+
+      return {
+        id: row.lineId,
+        moveId: row.moveId,
+        moveDate: row.moveDate,
+        moveName: row.moveName,
+        reference: row.reference,
+        label: row.label,
+        journalCode: row.journalCode,
+        debit: roundMoney(debit),
+        credit: roundMoney(credit),
+        amount: this.normalizeLineAmount(account.accountType, debit, credit),
+        source: {
+          type: sourceType,
+          id: sourceId,
+          label: sourceLabel,
+          invoiceId: sourceInvoiceId,
+        },
+      };
+    };
+
+    const periodDebit = Number(periodTotalsRow[0]?.debit ?? 0);
+    const periodCredit = Number(periodTotalsRow[0]?.credit ?? 0);
+
+    return {
+      account: {
+        ...account,
+        asOf: asOfDate,
+        balance: balanceAsOf,
+      },
+      entries: rows.map(mapEntry),
+      journalCodes: journalCodeRows.map((row) => row.code),
+      periodTotals: {
+        debit: roundMoney(periodDebit),
+        credit: roundMoney(periodCredit),
+        net: this.normalizeAccountBalance(
+          account.accountType,
+          periodDebit - periodCredit,
+        ),
+      },
+      totals: {
+        debit: roundMoney(periodDebit),
+        credit: roundMoney(periodCredit),
+        balance: balanceAsOf,
+      },
+      meta: {
+        page,
+        perPage,
+        total,
+        totalPages: Math.max(Math.ceil(total / perPage), 1),
+      },
+    };
   }
 
   async getProfitLoss(

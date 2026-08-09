@@ -13,4 +13,6 @@ export { applyCreditNotesIfNeeded } from "./apply-credit-notes";
 export { applyUserAuthFlagsIfNeeded } from "./apply-user-auth-flags";
 export { applyBankAccountsIfNeeded } from "./apply-bank-accounts";
 export { applyExpensesIfNeeded } from "./apply-expenses";
+export { applyDealsIfNeeded } from "./apply-deals";
 export * from "./schema";
+

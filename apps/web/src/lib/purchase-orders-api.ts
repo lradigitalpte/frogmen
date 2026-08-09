@@ -70,6 +70,10 @@ export interface PurchaseOrder {
   vendorReference: string | null;
   internalReference: string | null;
   notes: string | null;
+  freightAmount: string | null;
+  freightPercent: string | null;
+  otherChargesAmount: string;
+  targetMarginPercent?: string | null;
   amountUntaxed: string;
   amountTax: string;
   amountTotal: string;
@@ -80,8 +84,19 @@ export interface PurchaseOrder {
   createdAt: string;
   updatedAt: string;
   lines?: PurchaseOrderLine[];
+  additionalCharges?: PurchaseOrderNamedCharge[];
   receipts?: GoodsReceiptSummary[];
   activities?: PurchaseActivity[];
+}
+
+export interface PurchaseOrderNamedCharge {
+  id: string;
+  purchaseOrderId: string;
+  purchaseOrderLineId?: string | null;
+  name: string;
+  amount: string;
+  scope: "order" | "line";
+  sortOrder: number;
 }
 
 export interface GoodsReceiptLine {
@@ -96,6 +111,12 @@ export interface GoodsReceiptLine {
   productName?: string;
   productSku?: string | null;
   trackSerial?: boolean;
+  usageType?: "for_sale" | "operations";
+  currentCostPrice?: string | null;
+  currentSellingPrice?: string | null;
+  suggestedSellingPrice?: string | null;
+  landedUnitCost?: string;
+  poLineUnitPrice?: string | null;
   warehouseName?: string;
   poLineQuantity?: string;
   poLineQtyReceived?: string;
@@ -108,6 +129,8 @@ export interface GoodsReceipt {
   purchaseOrderId: string;
   purchaseOrderNumber?: string;
   vendorName?: string;
+  currencyCode?: string;
+  targetMarginPercent?: string | null;
   number: string;
   state: GoodsReceiptState;
   receiptDate: string;
@@ -183,6 +206,16 @@ export function createPurchaseOrder(input: {
   vendorReference?: string;
   internalReference?: string;
   notes?: string;
+  freightAmount?: number | null;
+  freightPercent?: number | null;
+  otherChargesAmount?: number | null;
+  targetMarginPercent?: number | null;
+  additionalCharges?: Array<{
+    name: string;
+    amount: number;
+    scope: "order" | "line";
+    purchaseOrderLineId?: string | null;
+  }>;
 }) {
   return apiFetch<PurchaseOrder>("/api/v1/purchase-orders", {
     method: "POST",
@@ -200,6 +233,16 @@ export function updatePurchaseOrder(
     vendorReference: string | null;
     internalReference: string | null;
     notes: string | null;
+    freightAmount?: number | null;
+    freightPercent?: number | null;
+    otherChargesAmount?: number | null;
+    targetMarginPercent?: number | null;
+    additionalCharges?: Array<{
+      name: string;
+      amount: number;
+      scope: "order" | "line";
+      purchaseOrderLineId?: string | null;
+    }>;
   }>,
 ) {
   return apiFetch<PurchaseOrder>(`/api/v1/purchase-orders/${id}`, {
@@ -314,8 +357,17 @@ export function updateGoodsReceiptLine(
   );
 }
 
-export function validateGoodsReceipt(id: string) {
+export function validateGoodsReceipt(
+  id: string,
+  input: {
+    productPricing?: Array<{
+      productId: string;
+      sellingPrice?: string | null;
+    }>;
+  } = {},
+) {
   return apiFetch<GoodsReceipt>(`/api/v1/goods-receipts/${id}/validate`, {
     method: "POST",
+    body: JSON.stringify(input),
   });
 }

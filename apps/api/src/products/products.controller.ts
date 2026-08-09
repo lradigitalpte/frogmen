@@ -60,6 +60,10 @@ export class ProductsController {
       sortDir: query.sortDir,
       archived:
         String(query.archived) === "true" || query.archived === true,
+      includeStock:
+        String(query.includeStock) === "true" || query.includeStock === true,
+      inStockOnly:
+        String(query.inStockOnly) === "true" || query.inStockOnly === true,
       page: query.page ? Number(query.page) : undefined,
       perPage: query.perPage ? Number(query.perPage) : undefined,
     });
@@ -104,7 +108,12 @@ export class ProductsController {
     @Param("id") id: string,
     @Body() body: UpdateProductDto,
   ) {
-    return this.productsService.update(this.orgId(session), id, body);
+    return this.productsService.update(
+      this.orgId(session),
+      id,
+      body,
+      session.user.id,
+    );
   }
 
   @Delete(":id")

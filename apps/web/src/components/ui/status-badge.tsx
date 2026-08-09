@@ -57,6 +57,7 @@ export function alertStatusVariant(status: string): StatusBadgeVariant {
 /** Quotation workflow states */
 export function quotationStateVariant(state: string): StatusBadgeVariant {
   if (state === "confirmed") return "success";
+  if (state === "signed") return "success";
   if (state === "sent") return "info";
   if (state === "cancelled") return "destructive";
   return "neutral";
@@ -68,6 +69,8 @@ export function quotationStateLabel(state: string): string {
       return "Draft";
     case "sent":
       return "Sent to Customer";
+    case "signed":
+      return "Signed by Customer";
     case "confirmed":
       return "Confirmed Order";
     case "cancelled":
