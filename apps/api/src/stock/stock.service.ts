@@ -17,6 +17,7 @@ import { WarehousesService } from "../warehouses/warehouses.service";
 import { DATABASE } from "../database/database.constants";
 
 const AVAILABLE_UNIT_STATUSES = ["in_stock"] as const;
+const ASSIGNED_UNIT_STATUSES = ["assigned"] as const;
 
 @Injectable()
 export class StockService {
@@ -143,6 +144,79 @@ export class StockService {
         warehouses.code,
       );
 
+    const assignedFilters: SQL[] = [
+      eq(productUnits.organizationId, organizationId),
+      eq(products.trackSerial, true),
+      inArray(productUnits.status, [...ASSIGNED_UNIT_STATUSES]),
+      isNull(products.deletedAt),
+      isNull(warehouses.deletedAt),
+    ];
+
+    if (query.productId) {
+      assignedFilters.push(eq(productUnits.productId, query.productId));
+    }
+
+    if (query.warehouseId) {
+      assignedFilters.push(eq(productUnits.warehouseId, query.warehouseId));
+    }
+
+    if (query.search?.trim()) {
+      const term = `%${query.search.trim()}%`;
+      assignedFilters.push(
+        or(
+          ilike(products.name, term),
+          ilike(products.sku, term),
+          ilike(productUnits.serialNumber, term),
+        )!,
+      );
+    }
+
+    const assignedRows = await this.db
+      .select({
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku,
+        productType: products.type,
+        productImages: products.images,
+        sellingPrice: products.sellingPrice,
+        priceCurrencyId: products.priceCurrencyId,
+        trackSerial: products.trackSerial,
+        warehouseId: warehouses.id,
+        warehouseName: warehouses.name,
+        warehouseCode: warehouses.code,
+        quantity: count(productUnits.id),
+        serialSummary: sql<string>`string_agg(${productUnits.serialNumber}, ', ' order by ${productUnits.serialNumber})`,
+        kind: sql<string>`'serialized'`.as("kind"),
+        updatedAt: sql<Date>`max(${productUnits.updatedAt})`.as("updated_at"),
+      })
+      .from(productUnits)
+      .innerJoin(products, eq(productUnits.productId, products.id))
+      .innerJoin(warehouses, eq(productUnits.warehouseId, warehouses.id))
+      .where(and(...assignedFilters))
+      .groupBy(
+        products.id,
+        products.name,
+        products.sku,
+        products.type,
+        products.images,
+        products.sellingPrice,
+        products.priceCurrencyId,
+        products.trackSerial,
+        warehouses.id,
+        warehouses.name,
+        warehouses.code,
+      );
+
+    const assignedByKey = new Map(
+      assignedRows.map((row) => [
+        `${row.productId}:${row.warehouseId}`,
+        Number(row.quantity),
+      ]),
+    );
+    const inStockKeys = new Set(
+      serializedRows.map((row) => `${row.productId}:${row.warehouseId}`),
+    );
+
     const firstProductImage = (images: string[] | null | undefined) =>
       Array.isArray(images) && images.length > 0 ? images[0] : null;
 
@@ -164,25 +238,54 @@ export class StockService {
         kind: row.kind,
         updatedAt: row.updatedAt,
         serialSummary: null as string | null,
+        assignedQuantity: null as string | null,
       })),
-      ...serializedRows.map((row) => ({
-        id: null,
-        productId: row.productId,
-        productName: row.productName,
-        productSku: row.productSku,
-        productType: row.productType,
-        productImage: firstProductImage(row.productImages),
-        sellingPrice: row.sellingPrice,
-        priceCurrencyId: row.priceCurrencyId,
-        trackSerial: row.trackSerial,
-        warehouseId: row.warehouseId,
-        warehouseName: row.warehouseName,
-        warehouseCode: row.warehouseCode,
-        quantity: String(row.quantity),
-        serialSummary: row.serialSummary || null,
-        kind: row.kind,
-        updatedAt: row.updatedAt,
-      })),
+      ...serializedRows.map((row) => {
+        const assignedQuantity =
+          assignedByKey.get(`${row.productId}:${row.warehouseId}`) ?? 0;
+
+        return {
+          id: null,
+          productId: row.productId,
+          productName: row.productName,
+          productSku: row.productSku,
+          productType: row.productType,
+          productImage: firstProductImage(row.productImages),
+          sellingPrice: row.sellingPrice,
+          priceCurrencyId: row.priceCurrencyId,
+          trackSerial: row.trackSerial,
+          warehouseId: row.warehouseId,
+          warehouseName: row.warehouseName,
+          warehouseCode: row.warehouseCode,
+          quantity: String(row.quantity),
+          serialSummary: row.serialSummary || null,
+          kind: row.kind,
+          updatedAt: row.updatedAt,
+          assignedQuantity:
+            assignedQuantity > 0 ? String(assignedQuantity) : null,
+        };
+      }),
+      ...assignedRows
+        .filter((row) => !inStockKeys.has(`${row.productId}:${row.warehouseId}`))
+        .map((row) => ({
+          id: null,
+          productId: row.productId,
+          productName: row.productName,
+          productSku: row.productSku,
+          productType: row.productType,
+          productImage: firstProductImage(row.productImages),
+          sellingPrice: row.sellingPrice,
+          priceCurrencyId: row.priceCurrencyId,
+          trackSerial: row.trackSerial,
+          warehouseId: row.warehouseId,
+          warehouseName: row.warehouseName,
+          warehouseCode: row.warehouseCode,
+          quantity: "0",
+          serialSummary: row.serialSummary || null,
+          kind: row.kind,
+          updatedAt: row.updatedAt,
+          assignedQuantity: String(row.quantity),
+        })),
     ].sort((a, b) => a.productName.localeCompare(b.productName));
 
     const total = combined.length;

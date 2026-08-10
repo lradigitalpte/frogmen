@@ -47,6 +47,47 @@ function getTableDisplayTags(product: Product): string[] {
   return allTags.filter((t) => !REDUNDANT_TABLE_TAGS.has(t.trim().toLowerCase()));
 }
 
+function renderOnHandBadge(
+  product: Product,
+  qty: number,
+  assignedQty: number,
+  isLinkedComponent: boolean,
+) {
+  if (product.type === "service" || !product.isStorable) {
+    return (
+      <Text as="span" tone="subdued">
+        {" "}
+      </Text>
+    );
+  }
+
+  if (isLinkedComponent && assignedQty > 0 && qty === 0) {
+    return (
+      <Badge tone="info">
+        {assignedQty === 1 ? "Assigned" : `${assignedQty} assigned`}
+      </Badge>
+    );
+  }
+
+  if (qty === 0) {
+    return <Badge tone="critical">0 on hand</Badge>;
+  }
+
+  if (isLinkedComponent && assignedQty > 0) {
+    return (
+      <Badge tone={qty <= 2 ? "attention" : "success"}>
+        {`${qty} spare · ${assignedQty} assigned`}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge tone={qty <= 2 ? "attention" : "success"}>
+      {`${qty} on hand`}
+    </Badge>
+  );
+}
+
 export function ProductsListPage() {
   const router = useRouter();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
@@ -69,6 +110,9 @@ export function ProductsListPage() {
   const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(
     new Map(),
   );
+  const [assignedByProduct, setAssignedByProduct] = useState<
+    Map<string, number>
+  >(new Map());
   const [serialsByProduct, setSerialsByProduct] = useState<Map<string, string[]>>(
     new Map(),
   );
@@ -111,12 +155,21 @@ export function ProductsListPage() {
       ]);
 
       const stockMap = new Map<string, number>();
+      const assignedMap = new Map<string, number>();
       const serialMap = new Map<string, string[]>();
       for (const row of stockResult.data) {
         stockMap.set(
           row.productId,
           (stockMap.get(row.productId) ?? 0) + (Number(row.quantity) || 0),
         );
+
+        if (row.assignedQuantity) {
+          assignedMap.set(
+            row.productId,
+            (assignedMap.get(row.productId) ?? 0) +
+              (Number(row.assignedQuantity) || 0),
+          );
+        }
 
         if (row.serialSummary) {
           const existing = serialMap.get(row.productId) ?? [];
@@ -129,6 +182,7 @@ export function ProductsListPage() {
       }
 
       setStockByProduct(stockMap);
+      setAssignedByProduct(assignedMap);
       setSerialsByProduct(serialMap);
       setProducts(result.data);
       setTotal(result.meta.total);
@@ -210,6 +264,8 @@ export function ProductsListPage() {
         : null;
 
     const qty = stockByProduct.get(product.id) ?? 0;
+    const assignedQty = assignedByProduct.get(product.id) ?? 0;
+    const isLinkedComponent = Boolean(product.parentId);
 
     return (
       <IndexTable.Row id={product.id} key={product.id} position={rowIndexCounter++}>
@@ -247,17 +303,7 @@ export function ProductsListPage() {
           {product.sku || serialLabel || " "}
         </IndexTable.Cell>
         <IndexTable.Cell>
-          {product.type === "service" || !product.isStorable ? (
-            <Text as="span" tone="subdued">
-              {" "}
-            </Text>
-          ) : qty === 0 ? (
-            <Badge tone="critical">0 on hand</Badge>
-          ) : (
-            <Badge tone={qty <= 2 ? "attention" : "success"}>
-              {`${qty} on hand`}
-            </Badge>
-          )}
+          {renderOnHandBadge(product, qty, assignedQty, isLinkedComponent)}
         </IndexTable.Cell>
         <IndexTable.Cell>
           {formatProductPrice(product)}
@@ -355,18 +401,12 @@ export function ProductsListPage() {
             })()}
           </IndexTable.Cell>
           <IndexTable.Cell>
-            {rootProduct.type === "service" || !rootProduct.isStorable ? (
-              <Text as="span" tone="subdued"> </Text>
-            ) : (() => {
-              const qty = stockByProduct.get(rootProduct.id) ?? 0;
-              return qty === 0 ? (
-                <Badge tone="critical">0 on hand</Badge>
-              ) : (
-                <Badge tone={qty <= 2 ? "attention" : "success"}>
-                  {`${qty} on hand`}
-                </Badge>
-              );
-            })()}
+            {renderOnHandBadge(
+              rootProduct,
+              stockByProduct.get(rootProduct.id) ?? 0,
+              assignedByProduct.get(rootProduct.id) ?? 0,
+              false,
+            )}
           </IndexTable.Cell>
           <IndexTable.Cell>
             {formatProductPrice(rootProduct)}

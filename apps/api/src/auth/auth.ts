@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { createAccessControl, organization } from "better-auth/plugins";
 import { defaultStatements } from "better-auth/plugins/organization/access";
@@ -8,6 +9,7 @@ import { sendPasswordResetEmail } from "./auth-email";
 import {
   acceptPendingInvitationsForUser,
   assignInvitationBranches,
+  findPendingInvitationsForEmail,
 } from "./invite-acceptance";
 import { provisionOrgInventory } from "../inventory/org-inventory-seed";
 
@@ -85,7 +87,7 @@ export function createAuth(databaseUrl: string) {
     },
     plugins: [
       organization({
-        allowUserToCreateOrganization: true,
+        allowUserToCreateOrganization: false,
         organizationLimit: 10,
         ac: organizationAccess,
         roles: {
@@ -117,6 +119,25 @@ export function createAuth(databaseUrl: string) {
     databaseHooks: {
       user: {
         create: {
+          before: async (user) => {
+            const email = user.email?.trim();
+            if (!email) {
+              throw new APIError("BAD_REQUEST", {
+                message: "Public signup is disabled. Contact your administrator.",
+              });
+            }
+
+            const pendingInvitations = await findPendingInvitationsForEmail(
+              db,
+              email,
+            );
+            if (pendingInvitations.length === 0) {
+              throw new APIError("BAD_REQUEST", {
+                message:
+                  "Public signup is disabled. Ask an administrator to invite you or create your account.",
+              });
+            }
+          },
           after: async (user) => {
             if (user.email) {
               const invitedOrganizationId =

@@ -307,6 +307,7 @@ export interface StockOverviewRow {
   quantity: string;
   kind: "bulk" | "serialized";
   serialSummary?: string | null;
+  assignedQuantity?: string | null;
   updatedAt: string;
 }
 
