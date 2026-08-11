@@ -5,6 +5,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "FrogmenDash",
   description: "ERP for Frogmen",
+  icons: {
+    icon: "/brand/frogmen-mark.svg",
+  },
 };
 
 export default function RootLayout({

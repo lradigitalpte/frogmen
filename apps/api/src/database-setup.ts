@@ -5,6 +5,7 @@ import {
   applyCustomerIsLocalIfNeeded,
   applyCustomersIfNeeded,
   applyDealsIfNeeded,
+  applyQuotationSignatureFieldsIfNeeded,
   applyInventoryIfNeeded,
   applyPaymentRemindersIfNeeded,
   applyPurchasingIfNeeded,
@@ -31,6 +32,7 @@ export async function runDatabaseSetup(databaseUrl: string) {
   await applyBankAccountsIfNeeded(databaseUrl);
   await applyExpensesIfNeeded(databaseUrl);
   await applyDealsIfNeeded(databaseUrl);
+  await applyQuotationSignatureFieldsIfNeeded(databaseUrl);
   await ensureCurrencies(databaseUrl);
 }
 

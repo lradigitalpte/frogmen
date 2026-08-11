@@ -14,5 +14,6 @@ export { applyUserAuthFlagsIfNeeded } from "./apply-user-auth-flags";
 export { applyBankAccountsIfNeeded } from "./apply-bank-accounts";
 export { applyExpensesIfNeeded } from "./apply-expenses";
 export { applyDealsIfNeeded } from "./apply-deals";
+export { applyQuotationSignatureFieldsIfNeeded } from "./apply-quotation-signature-fields";
 export * from "./schema";
 
