@@ -43,6 +43,7 @@ import { SettingsService } from "../settings/settings.service";
 import { UploadsService } from "../uploads/uploads.service";
 import { applyTemplatePlaceholders, parseOrgCompanyProfile } from "@frog1/shared";
 import { nextDocumentNumber } from "./document-sequences";
+import { publicQuotationSigningUrl } from "../lib/public-app-url";
 import {
   calculateLineAmounts,
   roundMoney,
@@ -979,13 +980,8 @@ export class QuotationsService {
         );
     }
 
-    const publicUrl =
-      process.env.PUBLIC_APP_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000";
-
     return {
-      url: `${publicUrl}/quotations/public/${token}`,
+      url: publicQuotationSigningUrl(token),
     };
   }
 
@@ -1039,8 +1035,7 @@ export class QuotationsService {
         .where(eq(salesOrders.id, orderId));
     }
 
-    const publicUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const publicSignUrl = `${publicUrl}/quotations/public/${token}`;
+    const publicSignUrl = publicQuotationSigningUrl(token);
 
     const subject =
       input.subject?.trim() ||
