@@ -43,6 +43,7 @@ const tabs: { id: QuotationState | "all"; content: string }[] = [
   { id: "all", content: "All Quotations" },
   { id: "draft", content: "Draft" },
   { id: "sent", content: "Sent" },
+  { id: "signed", content: "Signed" },
   { id: "confirmed", content: "Confirmed Orders" },
   { id: "cancelled", content: "Cancelled" },
 ];
@@ -383,7 +384,7 @@ export function QuotationsListPage() {
                       </Button>
                     ) : null}
 
-                    {quotation.state === "sent" ? (
+                    {quotation.state === "sent" || quotation.state === "signed" ? (
                       <Button
                         size="slim"
                         tone="success"
@@ -478,7 +479,7 @@ export function QuotationsListPage() {
               </Button>
             ) : null}
 
-            {quotation.state === "sent" ? (
+            {quotation.state === "sent" || quotation.state === "signed" ? (
               <Button
                 size="slim"
                 tone="success"

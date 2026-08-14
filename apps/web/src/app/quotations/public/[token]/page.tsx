@@ -40,6 +40,13 @@ interface PublicQuotationData {
   currencyCode: string;
   customerName: string;
   customerEmail: string | null;
+  customerTaxId: string | null;
+  customerStreet1: string | null;
+  customerStreet2: string | null;
+  customerCity: string | null;
+  customerState: string | null;
+  customerZip: string | null;
+  customerCountry: string | null;
   signedBy: string | null;
   signedOn: string | null;
   signedEmail: string | null;
@@ -52,6 +59,10 @@ interface PublicQuotationData {
     phone?: string;
     email?: string;
     website?: string;
+    address?: string;
+    city?: string;
+    country?: string;
+    taxId?: string;
   };
 }
 
@@ -71,6 +82,7 @@ export default function PublicQuotationPage({
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
   const [isSigning, setIsSigning] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(false);
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw");
   const [typedSignature, setTypedSignature] = useState("");
   const [uploadedSignature, setUploadedSignature] = useState<string | null>(null);
@@ -272,6 +284,7 @@ export default function PublicQuotationPage({
 
       const updatedData = await res.json();
       setData(updatedData);
+      setShowThankYou(true);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Error submitting signature");
     } finally {
@@ -321,6 +334,18 @@ export default function PublicQuotationPage({
   );
   const fmt = (amount: number | string) =>
     formatMoney(amount, currencyCode, decimalPlaces);
+  const customerAddress = [
+    data.customerStreet1,
+    data.customerStreet2,
+    [data.customerCity, data.customerState, data.customerZip]
+      .filter(Boolean)
+      .join(", "),
+    data.customerCountry,
+  ].filter((value): value is string => Boolean(value));
+  const companyAddress = [
+    data.branding.address,
+    [data.branding.city, data.branding.country].filter(Boolean).join(", "),
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <div className="public-quote-page">
@@ -390,16 +415,45 @@ export default function PublicQuotationPage({
           </header>
 
           <div className="public-quote-body">
-            <div className="public-quote-layout">
-              <div>
-                <div className="public-quote-section-title">Prepared for</div>
-                <div className="public-quote-customer-name">{data.customerName}</div>
-                {data.customerEmail ? (
-                  <div className="public-quote-customer-email">
-                    {data.customerEmail}
+            <div className="public-quote-parties">
+              <section className="public-quote-party">
+                <div className="public-quote-section-title">From</div>
+                <div className="public-quote-party__name">
+                  {data.branding.companyName}
+                </div>
+                {companyAddress.map((line, index) => (
+                  <div key={`${index}-${line}`}>{line}</div>
+                ))}
+                {data.branding.taxId ? <div>TRN: {data.branding.taxId}</div> : null}
+                {data.branding.phone ? <div>Phone: {data.branding.phone}</div> : null}
+                {data.branding.email ? <div>Email: {data.branding.email}</div> : null}
+                {data.branding.website ? (
+                  <div>
+                    Website:{" "}
+                    <a href={data.branding.website} target="_blank" rel="noreferrer">
+                      {data.branding.website}
+                    </a>
                   </div>
                 ) : null}
+              </section>
 
+              <section className="public-quote-party">
+                <div className="public-quote-section-title">Quotation to</div>
+                <div className="public-quote-party__name">{data.customerName}</div>
+                {customerAddress.length ? (
+                  customerAddress.map((line, index) => (
+                    <div key={`${index}-${line}`}>{line}</div>
+                  ))
+                ) : (
+                  <div>No billing address provided</div>
+                )}
+                {data.customerTaxId ? <div>Tax ID: {data.customerTaxId}</div> : null}
+                {data.customerEmail ? <div>Email: {data.customerEmail}</div> : null}
+              </section>
+            </div>
+
+            <div className="public-quote-layout">
+              <div>
                 <div className="public-quote-table-wrap">
                   <table className="public-quote-table">
                     <thead>
@@ -413,10 +467,10 @@ export default function PublicQuotationPage({
                     <tbody>
                       {data.lines.map((line) => (
                         <tr key={line.id}>
-                          <td>{line.description}</td>
-                          <td>{formatQuantity(line.quantity)}</td>
-                          <td>{fmt(line.unitPrice)}</td>
-                          <td>{fmt(line.priceSubtotal)}</td>
+                          <td data-label="Description">{line.description}</td>
+                          <td data-label="Quantity">{formatQuantity(line.quantity)}</td>
+                          <td data-label="Unit price">{fmt(line.unitPrice)}</td>
+                          <td data-label="Subtotal">{fmt(line.priceSubtotal)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -531,13 +585,6 @@ export default function PublicQuotationPage({
                     onClick={() => window.open(pdfUrl, "_blank", "noopener,noreferrer")}
                   >
                     Download approved PDF
-                  </button>
-                  <button
-                    type="button"
-                    className="public-quote-btn public-quote-btn--primary px-5 py-2.5 text-sm"
-                    onClick={() => window.location.reload()}
-                  >
-                    View approval record
                   </button>
                 </div>
               </div>
@@ -716,6 +763,46 @@ export default function PublicQuotationPage({
           </section>
         </div>
       </div>
+      {showThankYou ? (
+        <div className="public-quote-modal-backdrop" role="presentation">
+          <div
+            aria-labelledby="approval-thank-you-title"
+            aria-modal="true"
+            className="public-quote-modal"
+            role="dialog"
+          >
+            <div className="public-quote-modal__check" aria-hidden="true">✓</div>
+            <h2 id="approval-thank-you-title">
+              Thank you, {data.signedBy ?? signerName}
+            </h2>
+            <p>
+              Your signed response for quotation <strong>{data.number}</strong> has
+              been received by {data.branding.companyName}. No further action is
+              required right now.
+            </p>
+            <p className="public-quote-modal__hint">
+              You can keep this page as your approval record or download a signed
+              PDF for your files.
+            </p>
+            <div className="public-quote-modal__actions">
+              <button
+                type="button"
+                className="public-quote-btn public-quote-btn--success px-5 py-2.5 text-sm"
+                onClick={() => window.open(pdfUrl, "_blank", "noopener,noreferrer")}
+              >
+                Download signed PDF
+              </button>
+              <button
+                type="button"
+                className="public-quote-btn public-quote-btn--ghost px-5 py-2.5 text-sm"
+                onClick={() => setShowThankYou(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

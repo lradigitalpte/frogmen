@@ -6,6 +6,7 @@ import type Mail from 'nodemailer/lib/mailer';
 
 export interface SendMailInput {
   to: string;
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -25,6 +26,9 @@ export interface MailDeliveryResult {
 
 export interface SendBrandedMailInput {
   to: string;
+  replyTo?: string;
+  brandName?: string;
+  logoUrl?: string | null;
   subject: string;
   title: string;
   bodyText: string;
@@ -72,6 +76,8 @@ export class MailService {
 
   async sendBrandedMail(input: SendBrandedMailInput): Promise<MailDeliveryResult> {
     const branded = renderBrandedEmail({
+      brandName: input.brandName,
+      logoUrl: input.logoUrl,
       title: input.title,
       bodyText: input.bodyText,
       bodyHtml: input.bodyHtml,
@@ -83,6 +89,7 @@ export class MailService {
 
     return this.sendMail({
       to: input.to,
+      replyTo: input.replyTo,
       subject: input.subject,
       text: branded.text,
       html: branded.html,
@@ -94,6 +101,7 @@ export class MailService {
     const payload: Mail.Options = {
       from: this.fromAddress(),
       to: input.to,
+      replyTo: input.replyTo,
       subject: input.subject,
       text: input.text,
       html: input.html ?? input.text.replace(/\n/g, '<br />'),
@@ -119,6 +127,7 @@ export class MailService {
           body: JSON.stringify({
             from: payload.from,
             to: [input.to],
+            reply_to: input.replyTo,
             subject: input.subject,
             text: input.text,
             html: input.html ?? input.text.replace(/\n/g, '<br />'),

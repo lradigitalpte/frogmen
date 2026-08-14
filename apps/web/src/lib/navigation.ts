@@ -51,6 +51,10 @@ export const mainNavItems: NavItem[] = [
         url: "/dashboard/sales/quotations",
       },
       {
+        label: "Quotation Follow-ups",
+        url: "/dashboard/sales/quotation-followups",
+      },
+      {
         label: "Sales Orders",
         url: "/dashboard/sales/orders",
       },

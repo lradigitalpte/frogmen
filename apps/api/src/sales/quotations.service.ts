@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -43,7 +44,11 @@ import { SettingsService } from "../settings/settings.service";
 import { UploadsService } from "../uploads/uploads.service";
 import { applyTemplatePlaceholders, parseOrgCompanyProfile } from "@frog1/shared";
 import { nextDocumentNumber } from "./document-sequences";
-import { publicQuotationSigningUrl } from "../lib/public-app-url";
+import {
+  publicQuotationSigningUrl,
+  resolvePublicAppUrl,
+} from "../lib/public-app-url";
+import { hasCustomerAuthorization } from "./quotation-authorization";
 import {
   calculateLineAmounts,
   roundMoney,
@@ -51,7 +56,7 @@ import {
 } from "./sales-calculations";
 
 export interface ListQuotationsQuery {
-  state?: "draft" | "sent" | "confirmed" | "cancelled";
+  state?: "draft" | "sent" | "signed" | "confirmed" | "cancelled";
   invoiceStatus?: "none" | "to_invoice" | "invoiced";
   customerId?: string;
   search?: string;
@@ -124,6 +129,8 @@ export interface CurrencyRow {
 
 @Injectable()
 export class QuotationsService {
+  private readonly logger = new Logger(QuotationsService.name);
+
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(RAW_DATABASE) private readonly rawDb: Database,
@@ -261,7 +268,7 @@ export class QuotationsService {
           and(
             eq(salesOrders.organizationId, organizationId),
             isNull(salesOrders.deletedAt),
-            inArray(salesOrders.state, ["draft", "sent"]),
+            inArray(salesOrders.state, ["draft", "sent", "signed"]),
           ),
         ),
       query.state === "confirmed"
@@ -818,9 +825,15 @@ export class QuotationsService {
   ) {
     const order = await this.getEditableOrder(organizationId, orderId);
 
-    if (order.state !== "sent") {
+    if (order.state !== "sent" && order.state !== "signed") {
       throw new BadRequestException(
         "Send the quotation to the customer before confirming it as a sales order",
+      );
+    }
+
+    if (!hasCustomerAuthorization(order)) {
+      throw new BadRequestException(
+        "Customer authorization is required. Add a customer PO reference or ask the customer to digitally sign the quotation before confirming it",
       );
     }
 
@@ -1871,6 +1884,7 @@ export class QuotationsService {
       .select({
         id: salesOrders.id,
         organizationId: salesOrders.organizationId,
+        branchId: salesOrders.branchId,
         number: salesOrders.number,
         state: salesOrders.state,
         quoteDate: salesOrders.quoteDate,
@@ -1890,6 +1904,13 @@ export class QuotationsService {
         signedEmail: salesOrders.signedEmail,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerTaxId: customers.taxId,
+        customerStreet1: customers.street1,
+        customerStreet2: customers.street2,
+        customerCity: customers.city,
+        customerState: customers.stateCode,
+        customerZip: customers.zip,
+        customerCountry: customers.countryCode,
         currencyCode: currencies.code,
         currencySymbol: currencies.symbol,
       })
@@ -1942,6 +1963,10 @@ export class QuotationsService {
         phone: companyProfile?.phone,
         email: companyProfile?.email,
         website: companyProfile?.website,
+        address: companyProfile?.address,
+        city: companyProfile?.city,
+        country: companyProfile?.country,
+        taxId: companyProfile?.taxId,
       },
     };
   }
@@ -1965,28 +1990,124 @@ export class QuotationsService {
       throw new BadRequestException("Signature image is too large");
     }
 
-    const signedOn = new Date();
-    await this.rawDb
-      .update(salesOrders)
-      .set({
-        state: "signed",
-        signedBy: input.signedBy.trim(),
-        signedOn,
-        signatureImage: input.signatureImage,
-        signedIp: clientIp,
-        signedEmail: input.signedEmail?.trim() ?? publicData.customerEmail,
-        updatedAt: signedOn,
-      })
-      .where(eq(salesOrders.id, publicData.id));
+    const signer = input.signedBy.trim();
+    const alreadySigned = publicData.state === "signed" && Boolean(publicData.signedOn);
 
-    await this.rawDb.insert(salesActivities).values({
-      organizationId: publicData.organizationId,
-      entityType: "sales_order",
-      entityId: publicData.id,
-      userId: null,
-      activityType: "signed",
-      message: `Quotation ${publicData.number} digitally signed by ${input.signedBy.trim()}`,
-    });
+    if (alreadySigned) {
+      const [existingActivity] = await this.rawDb
+        .select({ id: salesActivities.id })
+        .from(salesActivities)
+        .where(
+          and(
+            eq(salesActivities.organizationId, publicData.organizationId),
+            eq(salesActivities.entityType, "sales_order"),
+            eq(salesActivities.entityId, publicData.id),
+            eq(salesActivities.activityType, "signed"),
+          ),
+        )
+        .limit(1);
+
+      if (existingActivity) {
+        return publicData;
+      }
+
+      await this.rawDb.insert(salesActivities).values({
+        organizationId: publicData.organizationId,
+        branchId: publicData.branchId,
+        entityType: "sales_order",
+        entityId: publicData.id,
+        userId: null,
+        activityType: "signed",
+        message: `Quotation ${publicData.number} digitally signed by ${publicData.signedBy ?? signer}`,
+      });
+    } else {
+      const signedOn = new Date();
+      await this.rawDb.transaction(async (transaction) => {
+        await transaction
+          .update(salesOrders)
+          .set({
+            state: "signed",
+            signedBy: signer,
+            signedOn,
+            signatureImage: input.signatureImage,
+            signedIp: clientIp,
+            signedEmail: input.signedEmail?.trim() ?? publicData.customerEmail,
+            updatedAt: signedOn,
+          })
+          .where(eq(salesOrders.id, publicData.id));
+
+        await transaction.insert(salesActivities).values({
+          organizationId: publicData.organizationId,
+          branchId: publicData.branchId,
+          entityType: "sales_order",
+          entityId: publicData.id,
+          userId: null,
+          activityType: "signed",
+          message: `Quotation ${publicData.number} digitally signed by ${signer}`,
+        });
+      });
+    }
+
+    const [organizationSettings] = await this.rawDb
+      .select({
+        name: organizations.name,
+        logo: organizations.logo,
+        metadata: organizations.metadata,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, publicData.organizationId))
+      .limit(1);
+    const notificationProfile = parseOrgCompanyProfile(
+      organizationSettings?.metadata,
+    );
+    const notificationLogo = organizationSettings?.logo
+      ? await this.uploadsService.readStoredFileAsDataUri(organizationSettings.logo)
+      : null;
+    const alertEmails = [
+      ...new Set(
+        notificationProfile.alertEmails ?? [],
+      ),
+    ];
+    if (alertEmails.length > 0) {
+      const quotationUrl = `${resolvePublicAppUrl()}/dashboard/sales/quotations/${publicData.id}`;
+      const signer = input.signedBy.trim();
+      const notificationResults = await Promise.allSettled(
+        alertEmails.map((recipient) =>
+          this.mail.sendBrandedMail({
+            to: recipient,
+            replyTo:
+              notificationProfile.replyToEmail || notificationProfile.email || undefined,
+            brandName: organizationSettings?.name,
+            logoUrl: notificationLogo,
+            subject: `Quotation ${publicData.number} signed by ${signer}`,
+            title: "Customer approval received",
+            bodyText: `${signer} digitally signed quotation ${publicData.number}. The quotation is ready to be confirmed as a sales order.`,
+            ctaLabel: "Review quotation",
+            ctaUrl: quotationUrl,
+          }),
+        ),
+      );
+
+      notificationResults.forEach((result, index) => {
+        const recipient = alertEmails[index];
+        if (result.status === "rejected") {
+          const message =
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason);
+          this.logger.error(
+            `Could not send quotation ${publicData.number} signature alert to ${recipient}: ${message}`,
+          );
+          return;
+        }
+
+        if (!result.value.delivered) {
+          this.logger.warn(
+            `Quotation ${publicData.number} signature alert to ${recipient} was not delivered (mail mode: ${result.value.mode}). Configure RESEND_API_KEY and MAIL_FROM_ADDRESS, or SMTP settings.`,
+          );
+        }
+      });
+    }
 
     return this.getPublicByToken(token);
   }

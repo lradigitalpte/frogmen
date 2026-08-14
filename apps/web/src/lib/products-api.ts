@@ -42,6 +42,58 @@ export function listProducts(params: ListProductsParams = {}) {
   );
 }
 
+export type ProductTransferField =
+  | "description" | "barcode" | "sellingPrice" | "costPrice"
+  | "category" | "tags" | "dimensions" | "images";
+
+export async function exportProductCatalog(input: {
+  productIds?: string[];
+  fields: ProductTransferField[];
+}) {
+  const response = await fetch("/api/v1/products/transfer/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? "Export failed");
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? "frog1-product-catalog.zip";
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = filename; link.click();
+  URL.revokeObjectURL(url);
+}
+
+export interface ProductTransferPreview {
+  exportedAt: string;
+  fields: ProductTransferField[];
+  rows: Array<{ sku: string; name: string; action: "create" | "update" | "conflict"; existingId: string | null; conflicts: string[] }>;
+  summary: { create: number; update: number; conflict: number };
+}
+
+export async function previewProductCatalog(file: File) {
+  const data = new FormData(); data.append("file", file);
+  const response = await fetch("/api/v1/products/transfer/preview", { method: "POST", credentials: "include", body: data });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? "Preview failed");
+  return response.json() as Promise<ProductTransferPreview>;
+}
+
+export async function importProductCatalog(
+  file: File,
+  options: { existingStrategy: "skip" | "update"; createCategories: boolean; includeCost: boolean },
+) {
+  const data = new FormData();
+  data.append("file", file);
+  data.append("existingStrategy", options.existingStrategy);
+  data.append("createCategories", String(options.createCategories));
+  data.append("includeCost", String(options.includeCost));
+  const response = await fetch("/api/v1/products/transfer/apply", { method: "POST", credentials: "include", body: data });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? "Import failed");
+  return response.json() as Promise<{ success: boolean; created: number; updated: number; skipped: number }>;
+}
+
 export function getProduct(id: string) {
   return apiFetch<ProductDetail>(`/api/v1/products/${id}`);
 }

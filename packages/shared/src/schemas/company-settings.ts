@@ -17,8 +17,13 @@ export const companyProfileSchema = z.object({
   country: optionalText(120),
   phone: optionalText(50),
   email: optionalText(255),
+  replyToEmail: z.string().trim().email("Enter a valid reply-to email").max(320).optional().or(z.literal("")),
   website: optionalText(255),
   taxId: optionalText(100),
+  alertEmails: z
+    .array(z.string().trim().email("Enter a valid alert email address").max(320))
+    .max(20, "Add no more than 20 alert email addresses")
+    .optional(),
 });
 
 export const updateCompanySettingsSchema = z.object({
@@ -52,8 +57,10 @@ export const DEFAULT_COMPANY_PROFILE: Required<CompanyProfileSettings> = {
   country: "",
   phone: "",
   email: "",
+  replyToEmail: "",
   website: "",
   taxId: "",
+  alertEmails: [],
 };
 
 export function parseOrgCompanyProfile(
@@ -124,7 +131,9 @@ export function resolveCompanyProfile(
     country: settings.country ?? DEFAULT_COMPANY_PROFILE.country,
     phone: settings.phone ?? DEFAULT_COMPANY_PROFILE.phone,
     email: settings.email ?? DEFAULT_COMPANY_PROFILE.email,
+    replyToEmail: settings.replyToEmail ?? DEFAULT_COMPANY_PROFILE.replyToEmail,
     website: settings.website ?? DEFAULT_COMPANY_PROFILE.website,
     taxId: settings.taxId ?? DEFAULT_COMPANY_PROFILE.taxId,
+    alertEmails: settings.alertEmails ?? DEFAULT_COMPANY_PROFILE.alertEmails,
   };
 }

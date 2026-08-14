@@ -11,11 +11,13 @@ import { QuotationsService } from './quotations.service';
 import { AlertsController } from './alerts.controller';
 import { AlertsService } from './alerts.service';
 import { ReminderJobsService } from './reminder-jobs.service';
+import { QuotationFollowupsController } from './quotation-followups.controller';
+import { QuotationFollowupsService } from './quotation-followups.service';
 
 @Module({
   imports: [DatabaseModule, MailModule, DocumentsModule, SettingsModule, CurrenciesModule, UploadsModule],
-  controllers: [QuotationsController, PublicQuotationsController, AlertsController],
-  providers: [QuotationsService, AlertsService, ReminderJobsService],
+  controllers: [QuotationsController, PublicQuotationsController, AlertsController, QuotationFollowupsController],
+  providers: [QuotationsService, AlertsService, ReminderJobsService, QuotationFollowupsService],
   exports: [AlertsService, ReminderJobsService],
 })
 export class SalesModule {}

@@ -5,12 +5,15 @@ import {
   BlockStack,
   Box,
   Button,
+  Checkbox,
+  DropZone,
   EmptyState,
   IndexFilters,
   IndexFiltersMode,
   IndexTable,
   InlineStack,
   Link,
+  Modal,
   Text,
   useSetIndexFiltersMode,
 } from "@shopify/polaris";
@@ -18,9 +21,14 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   archiveProduct,
+  exportProductCatalog,
+  importProductCatalog,
   listProducts,
   listStock,
   restoreProduct,
+  previewProductCatalog,
+  type ProductTransferField,
+  type ProductTransferPreview,
 } from "@/lib/products-api";
 import type { Product, ProductTab } from "@/types/product";
 import { getProductDisplayTags } from "@/lib/product-tags";
@@ -29,6 +37,7 @@ import { AppPage, IndexSurface } from "@/components/layout/page";
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
+import { useToast } from "@/components/providers/toast-provider";
 
 const tabs: { id: ProductTab; content: string }[] = [
   { id: "all", content: "All" },
@@ -41,6 +50,7 @@ const tabs: { id: ProductTab; content: string }[] = [
 ];
 
 const REDUNDANT_TABLE_TAGS = new Set(["goods", "for sale"]);
+const PRODUCTS_PER_PAGE = 16;
 
 function getTableDisplayTags(product: Product): string[] {
   const allTags = getProductDisplayTags(product);
@@ -90,6 +100,7 @@ function renderOnHandBadge(
 
 export function ProductsListPage() {
   const router = useRouter();
+  const { showSuccess } = useToast();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
 
   function formatProductPrice(product: Product) {
@@ -119,6 +130,17 @@ export function ProductsListPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferFile, setTransferFile] = useState<File | null>(null);
+  const [transferPreview, setTransferPreview] = useState<ProductTransferPreview | null>(null);
+  const [existingStrategy, setExistingStrategy] = useState<"skip" | "update">("skip");
+  const [createCategories, setCreateCategories] = useState(true);
+  const [includeCost, setIncludeCost] = useState(false);
+  const [exportFields, setExportFields] = useState<ProductTransferField[]>([
+    "description", "barcode", "sellingPrice", "category", "tags", "dimensions", "images",
+  ]);
   const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
 
   const activeTab = tabs[selectedTab]?.id ?? "all";
@@ -136,7 +158,7 @@ export function ProductsListPage() {
       const [result, stockResult] = await Promise.all([
         listProducts({
           page,
-          perPage: 100,
+          perPage: PRODUCTS_PER_PAGE,
           search: debouncedQuery || undefined,
           archived: activeTab === "archived",
           type:
@@ -209,6 +231,43 @@ export function ProductsListPage() {
     }
 
     await loadProducts();
+  }
+
+  function toggleExportField(field: ProductTransferField, checked: boolean) {
+    setExportFields((current) =>
+      checked ? [...new Set([...current, field])] : current.filter((item) => item !== field),
+    );
+  }
+
+  async function handleExport() {
+    setTransferBusy(true);
+    try {
+      await exportProductCatalog({ fields: exportFields });
+      setExportOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally { setTransferBusy(false); }
+  }
+
+  async function handleTransferFile(file: File | undefined) {
+    if (!file) return;
+    setTransferBusy(true); setTransferFile(file); setTransferPreview(null);
+    try { setTransferPreview(await previewProductCatalog(file)); }
+    catch (err) { setError(err instanceof Error ? err.message : "Preview failed"); }
+    finally { setTransferBusy(false); }
+  }
+
+  async function handleImport() {
+    if (!transferFile || !transferPreview || transferPreview.summary.conflict) return;
+    setTransferBusy(true);
+    try {
+      const result = await importProductCatalog(transferFile, { existingStrategy, createCategories, includeCost });
+      setImportOpen(false); setTransferFile(null); setTransferPreview(null);
+      setError(null);
+      await loadProducts();
+      showSuccess(`Import complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`);
+    } catch (err) { setError(err instanceof Error ? err.message : "Import failed"); }
+    finally { setTransferBusy(false); }
   }
 
   // Collapsed parent products state (map of parentId -> boolean)
@@ -470,6 +529,10 @@ export function ProductsListPage() {
         content: "Create product",
         onAction: () => router.push("/dashboard/inventory/products/new"),
       }}
+      secondaryActions={[
+        { content: "Export catalog", onAction: () => setExportOpen(true) },
+        { content: "Import catalog", onAction: () => setImportOpen(true) },
+      ]}
       subtitle="Goods, services, and sub-products."
       title="Products"
     >
@@ -513,7 +576,7 @@ export function ProductsListPage() {
             itemCount={total}
             loading={loading}
             pagination={{
-              hasNext: page * 16 < total,
+              hasNext: page * PRODUCTS_PER_PAGE < total,
               hasPrevious: page > 1,
               onNext: () => setPage((current) => current + 1),
               onPrevious: () => setPage((current) => Math.max(1, current - 1)),
@@ -524,6 +587,70 @@ export function ProductsListPage() {
           </IndexTable>
         </IndexSurface>
       </BlockStack>
+
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export product catalog"
+        primaryAction={{ content: "Download ZIP", loading: transferBusy, disabled: exportFields.length === 0, onAction: () => void handleExport() }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setExportOpen(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            <Text as="p">Exports all products matching the current organization catalog. Product IDs, live stock, warehouses, assigned units, and serial numbers are never copied.</Text>
+            {([
+              ["description", "Descriptions"], ["barcode", "Barcodes"],
+              ["sellingPrice", "Selling prices and currency codes"], ["costPrice", "Cost prices (sensitive)"],
+              ["category", "Categories"], ["tags", "Tags"],
+              ["dimensions", "Weight and volume"], ["images", "Product images"],
+            ] as Array<[ProductTransferField, string]>).map(([field, label]) => (
+              <Checkbox key={field} label={label} checked={exportFields.includes(field)} onChange={(checked) => toggleExportField(field, checked)} />
+            ))}
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      <Modal
+        open={importOpen}
+        onClose={() => { setImportOpen(false); setTransferFile(null); setTransferPreview(null); }}
+        title="Import product catalog"
+        primaryAction={{
+          content: "Apply import", loading: transferBusy,
+          disabled: !transferPreview || transferPreview.summary.conflict > 0,
+          onAction: () => void handleImport(),
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setImportOpen(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <DropZone accept=".zip,application/zip" allowMultiple={false} onDrop={(_files, accepted) => void handleTransferFile(accepted[0])}>
+              <DropZone.FileUpload actionTitle={transferFile ? "Choose another transfer package" : "Choose transfer ZIP"} />
+            </DropZone>
+            {transferPreview ? (
+              <>
+                <InlineStack gap="300">
+                  <Badge tone="success">{`${transferPreview.summary.create} create`}</Badge>
+                  <Badge tone="info">{`${transferPreview.summary.update} existing`}</Badge>
+                  <Badge tone={transferPreview.summary.conflict ? "critical" : "success"}>{`${transferPreview.summary.conflict} conflicts`}</Badge>
+                </InlineStack>
+                <Checkbox label="Update products whose SKU already exists" checked={existingStrategy === "update"} onChange={(checked) => setExistingStrategy(checked ? "update" : "skip")} />
+                <Checkbox label="Create missing categories by name" checked={createCategories} onChange={setCreateCategories} />
+                <Checkbox label="Import cost prices when included" checked={includeCost} onChange={setIncludeCost} />
+                <div style={{ maxHeight: 280, overflow: "auto" }}>
+                  <BlockStack gap="200">
+                    {transferPreview.rows.map((row) => (
+                      <InlineStack key={row.sku} align="space-between" blockAlign="center">
+                        <BlockStack gap="050"><Text as="span" fontWeight="semibold">{row.name}</Text><Text as="span" tone="subdued" variant="bodySm">{row.sku}{row.conflicts.length ? ` · ${row.conflicts.join(", ")}` : ""}</Text></BlockStack>
+                        <Badge tone={row.action === "conflict" ? "critical" : row.action === "create" ? "success" : "info"}>{row.action}</Badge>
+                      </InlineStack>
+                    ))}
+                  </BlockStack>
+                </div>
+              </>
+            ) : null}
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

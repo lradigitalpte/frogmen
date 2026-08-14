@@ -110,3 +110,5 @@ cd packages/db && pnpm build   # Rebuild DB types after schema changes
 - Do not commit unless asked
 - Rebuild `@frog1/db` after schema changes before typechecking API
 - Reference frog Filament resources for field labels and section names when porting ROV UX
+
+

@@ -182,6 +182,38 @@
   padding: 1.5rem 1.75rem;
 }
 
+.public-quote-parties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.public-quote-party {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.public-quote-party__name {
+  margin-bottom: 0.3rem;
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.public-quote-party a {
+  color: #1d4ed8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .public-quote-layout {
   display: grid;
   gap: 1.5rem;
@@ -500,4 +532,270 @@
   border-radius: 0.5rem;
   padding: 0.5rem;
   background: #f8fafc;
+}
+
+.public-quote-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.public-quote-modal {
+  width: min(100%, 30rem);
+  padding: 2rem;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  text-align: center;
+}
+
+.public-quote-modal__check {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #d1fae5;
+  color: #047857;
+  font-size: 1.75rem;
+  font-weight: 800;
+}
+
+.public-quote-modal h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.public-quote-modal p {
+  margin: 0.85rem 0 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.public-quote-modal__hint {
+  font-size: 0.875rem;
+}
+
+.public-quote-modal__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 639px) {
+  .public-quote-page {
+    padding: 0;
+    background: #f8fafc;
+  }
+
+  .public-quote-card {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .public-quote-hero {
+    padding: 1.15rem 1rem 1rem;
+  }
+
+  .public-quote-hero__grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .public-quote-brand {
+    align-items: flex-start;
+  }
+
+  .public-quote-brand__logo,
+  .public-quote-brand__fallback {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .public-quote-brand__name {
+    font-size: 0.9rem;
+  }
+
+  .public-quote-brand__meta {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .public-quote-meta {
+    text-align: left;
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .public-quote-meta__number {
+    font-size: 1.35rem;
+    overflow-wrap: anywhere;
+  }
+
+  .public-quote-meta__dates span {
+    display: block;
+    margin-top: 0.15rem;
+  }
+
+  .public-quote-status {
+    align-items: stretch;
+  }
+
+  .public-quote-status > * {
+    width: 100%;
+  }
+
+  .public-quote-pill {
+    justify-content: center;
+  }
+
+  .public-quote-btn {
+    min-height: 2.75rem;
+  }
+
+  .public-quote-body,
+  .public-quote-sign {
+    padding: 1.25rem 1rem;
+  }
+
+  .public-quote-parties {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .public-quote-party {
+    padding: 0.9rem;
+  }
+
+  .public-quote-table-wrap {
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .public-quote-table,
+  .public-quote-table tbody {
+    display: block;
+  }
+
+  .public-quote-table thead {
+    display: none;
+  }
+
+  .public-quote-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    background: #fff;
+  }
+
+  .public-quote-table tbody tr + tr {
+    margin-top: 0.75rem;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .public-quote-table td,
+  .public-quote-table td:not(:first-child) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .public-quote-table td::before {
+    content: attr(data-label);
+    color: #64748b;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .public-quote-table td:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .public-quote-table td:last-child {
+    text-align: right;
+    align-items: flex-end;
+  }
+
+  .public-quote-totals {
+    padding: 1rem;
+  }
+
+  .public-quote-approved-banner,
+  .public-quote-approved-record {
+    padding: 1rem;
+  }
+
+  .public-quote-approved-banner__meta {
+    line-height: 1.55;
+  }
+
+  .public-quote-approved-record__grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .public-quote-approved-record__grid > div {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    overflow-wrap: anywhere;
+  }
+
+  .public-quote-approved-record__grid > div:first-child {
+    padding-top: 0;
+  }
+
+  .public-quote-form-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .public-quote-form-actions .public-quote-btn,
+  .public-quote-form-actions .public-quote-link {
+    width: 100%;
+    text-align: center;
+  }
+
+  .public-quote-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .public-quote-modal {
+    width: 100%;
+    padding: 1.5rem 1rem max(1.5rem, env(safe-area-inset-bottom));
+    border-radius: 1rem 1rem 0 0;
+  }
+
+  .public-quote-modal__actions {
+    flex-direction: column;
+  }
+
+  .public-quote-modal__actions .public-quote-btn {
+    width: 100%;
+  }
 }

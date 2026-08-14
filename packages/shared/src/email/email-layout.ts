@@ -27,6 +27,8 @@ export function textToHtmlParagraphs(text: string): string {
 }
 
 export interface BrandedEmailInput {
+  brandName?: string;
+  logoUrl?: string | null;
   title: string;
   bodyText: string;
   bodyHtml?: string;
@@ -41,6 +43,8 @@ export function renderBrandedEmail(input: BrandedEmailInput): {
   html: string;
 } {
   const safeTitle = escapeHtml(input.title);
+  const safeBrandName = escapeHtml(input.brandName?.trim() || "FrogmenDash");
+  const safeLogoUrl = input.logoUrl ? escapeHtml(input.logoUrl) : "";
   const bodyHtml =
     input.bodyHtml?.trim() || textToHtmlParagraphs(input.bodyText);
   const safeFooter = input.footerNote ? escapeHtml(input.footerNote) : "";
@@ -68,7 +72,8 @@ export function renderBrandedEmail(input: BrandedEmailInput): {
     <div style="background:#f4f7f5;padding:32px 16px;font-family:Inter,Arial,sans-serif;color:#17201c">
       <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #dfe7e3;border-radius:16px;overflow:hidden">
         <div style="padding:28px 30px;background:linear-gradient(135deg,#047857,#10b981);color:#fff">
-          <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">FrogmenDash</div>
+          ${safeLogoUrl ? `<img src="${safeLogoUrl}" alt="${safeBrandName}" style="display:block;max-width:150px;max-height:54px;margin:0 0 14px" />` : ""}
+          <div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">${safeBrandName}</div>
           <h1 style="margin:10px 0 0;font-size:25px;line-height:1.25">${safeTitle}</h1>
         </div>
         <div style="padding:30px">

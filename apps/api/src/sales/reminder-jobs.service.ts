@@ -22,6 +22,7 @@ import { DATABASE, RAW_DATABASE } from '../database/database.constants';
 import { databaseContext } from '../database/database-context';
 import { MailService } from '../mail/mail.service';
 import { SettingsService } from '../settings/settings.service';
+import { QuotationFollowupsService } from './quotation-followups.service';
 
 interface InvoiceCandidate {
   id: string;
@@ -70,6 +71,7 @@ export class ReminderJobsService implements OnModuleInit {
     private readonly mailService: MailService,
     private readonly config: ConfigService,
     private readonly settingsService: SettingsService,
+    private readonly quotationFollowups: QuotationFollowupsService,
   ) {}
 
   onModuleInit() {
@@ -157,6 +159,8 @@ export class ReminderJobsService implements OnModuleInit {
       for (const rule of rules) {
         sentCount += await this.processRule(rule);
       }
+
+      sentCount += await this.quotationFollowups.processAutomation(organizationId);
 
       return sentCount;
   }

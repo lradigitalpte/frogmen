@@ -21,6 +21,7 @@ import {
   InlineStack,
   Select,
   Spinner,
+  Tag,
   Text,
   TextField,
 } from "@shopify/polaris";
@@ -51,8 +52,12 @@ export default function CompanySettingsPage() {
   const [country, setCountry] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [replyToEmail, setReplyToEmail] = useState("");
   const [website, setWebsite] = useState("");
   const [taxId, setTaxId] = useState("");
+  const [alertEmails, setAlertEmails] = useState<string[]>([]);
+  const [alertEmailDraft, setAlertEmailDraft] = useState("");
+  const [alertEmailError, setAlertEmailError] = useState<string | undefined>();
   const [defaultWarehouseId, setDefaultWarehouseId] = useState("");
   const [warehouseOptions, setWarehouseOptions] = useState<
     Array<{ label: string; value: string }>
@@ -83,8 +88,10 @@ export default function CompanySettingsPage() {
       setCountry(company.companyProfile.country);
       setPhone(company.companyProfile.phone);
       setEmail(company.companyProfile.email);
+      setReplyToEmail(company.companyProfile.replyToEmail);
       setWebsite(company.companyProfile.website);
       setTaxId(company.companyProfile.taxId);
+      setAlertEmails(company.companyProfile.alertEmails);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load company settings",
@@ -124,8 +131,10 @@ export default function CompanySettingsPage() {
           country,
           phone,
           email,
+          replyToEmail,
           website,
           taxId,
+          alertEmails,
         },
       });
       setLogoUrl(result.logoUrl);
@@ -137,6 +146,30 @@ export default function CompanySettingsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function addAlertEmail() {
+    const candidates = alertEmailDraft
+      .split(/[,;\s]+/)
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (candidates.length === 0) {
+      setAlertEmailError("Enter an email address.");
+      return;
+    }
+    if (candidates.some((value) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))) {
+      setAlertEmailError("Enter a valid email address.");
+      return;
+    }
+    const next = [...new Set([...alertEmails, ...candidates])];
+    if (next.length > 20) {
+      setAlertEmailError("You can add up to 20 recipients.");
+      return;
+    }
+    setAlertEmails(next);
+    setAlertEmailDraft("");
+    setAlertEmailError(undefined);
   }
 
   async function handleLogoUpload(file: File | undefined) {
@@ -375,6 +408,15 @@ export default function CompanySettingsPage() {
                     />
                   </FormLayout.Group>
                   <TextField
+                    autoComplete="email"
+                    helpText="Replies to quotation follow-ups and other organization emails will go here. This can be info@frogm3n.com, an administrator, or another monitored inbox."
+                    label="Email reply-to address"
+                    placeholder="info@frogm3n.com"
+                    type="email"
+                    value={replyToEmail}
+                    onChange={setReplyToEmail}
+                  />
+                  <TextField
                     autoComplete="url"
                     label="Website"
                     placeholder="https://www.company.com"
@@ -478,6 +520,78 @@ export default function CompanySettingsPage() {
                   ]}
                   value={defaultWarehouseId}
                 />
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="400">
+                <div className="company-settings__section-heading">
+                  <div className="company-settings__section-icon">
+                    <CircleCheck aria-hidden size={19} />
+                  </div>
+                  <div>
+                    <Text as="h2" variant="headingMd">
+                      Alert emails
+                    </Text>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      Notify selected staff when a customer digitally signs a quotation.
+                    </Text>
+                  </div>
+                </div>
+                <BlockStack gap="300">
+                  <InlineStack gap="200" blockAlign="end" wrap={false}>
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        autoComplete="email"
+                        error={alertEmailError}
+                        label="Add notification recipient"
+                        onChange={(value) => {
+                          setAlertEmailDraft(value);
+                          if (alertEmailError) setAlertEmailError(undefined);
+                        }}
+                        placeholder="name@company.com"
+                        type="email"
+                        value={alertEmailDraft}
+                      />
+                    </div>
+                    <Button onClick={addAlertEmail}>Add recipient</Button>
+                  </InlineStack>
+
+                  {alertEmails.length > 0 ? (
+                    <BlockStack gap="200">
+                      <InlineStack align="space-between" blockAlign="center">
+                        <Text as="span" variant="bodySm" fontWeight="semibold">
+                          Recipients
+                        </Text>
+                        <Badge tone="info">{`${alertEmails.length} of 20`}</Badge>
+                      </InlineStack>
+                      <InlineStack gap="200" wrap>
+                        {alertEmails.map((recipient) => (
+                          <Tag
+                            key={recipient}
+                            onRemove={() =>
+                              setAlertEmails((current) =>
+                                current.filter((emailAddress) => emailAddress !== recipient),
+                              )
+                            }
+                          >
+                            {recipient}
+                          </Tag>
+                        ))}
+                      </InlineStack>
+                    </BlockStack>
+                  ) : (
+                    <Banner tone="warning">
+                      No recipients configured. Customer signatures will still be saved,
+                      but nobody will receive an email notification.
+                    </Banner>
+                  )}
+
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Add one address at a time or paste several separated by commas. Remove
+                    a recipient using the ×, then save company settings.
+                  </Text>
+                </BlockStack>
               </BlockStack>
             </Card>
 
