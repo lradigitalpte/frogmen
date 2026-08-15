@@ -31,12 +31,6 @@ export default async function RegisterPage({
     query.redirect?.startsWith("/") && !query.redirect.startsWith("//")
       ? query.redirect
       : "/dashboard";
-  const isInviteSignup = safeRedirect.startsWith("/invite/");
-
-  if (!isInviteSignup) {
-    redirect("/login");
-  }
-
   if (await hasSession()) {
     redirect(safeRedirect);
   }

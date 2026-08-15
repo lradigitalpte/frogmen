@@ -28,6 +28,7 @@ import { ExpensesModule } from "./expenses/expenses.module";
 import { ExpenseClaimsModule } from "./expense-claims/expense-claims.module";
 import { SecurityModule } from "./security/security.module";
 import { PlatformModule } from "./platform/platform.module";
+import { AnalyticsModule } from "./analytics/analytics.module";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { PlatformModule } from "./platform/platform.module";
     ProductUnitsModule,
     SettingsModule,
     RovInspectionModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

@@ -49,7 +49,38 @@ export function InvitationAcceptPage({
     const invitation = await authClient.organization.getInvitation({
       query: { id: invitationId },
     });
-    if (invitation.error) {
+
+    const organizationId = invitation.data?.organizationId;
+    const status = invitation.data?.status;
+
+    // Check if user is already a member of this organization
+    try {
+      const orgsResult = await authClient.organization.list();
+      const userOrgs = orgsResult.data ?? [];
+      const alreadyMember =
+        organizationId && userOrgs.some((o) => o.id === organizationId);
+
+      if ((status === "accepted" || alreadyMember) && organizationId) {
+        await completeInvitation(organizationId);
+        return;
+      }
+    } catch {
+      // Proceed to accept call if listing fails
+    }
+
+    if (invitation.error && status !== "accepted") {
+      // Check fallback if user was already added
+      try {
+        const orgsResult = await authClient.organization.list();
+        const userOrgs = orgsResult.data ?? [];
+        if (userOrgs.length > 0) {
+          await completeInvitation(userOrgs[0].id);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+
       setError(
         invitation.error.message ??
           "This invitation is invalid, expired, or belongs to another email.",
@@ -58,18 +89,27 @@ export function InvitationAcceptPage({
       return;
     }
 
-    const organizationId = invitation.data?.organizationId;
-    const status = invitation.data?.status;
-
-    if (status === "accepted" && organizationId) {
-      await completeInvitation(organizationId);
-      return;
-    }
-
     const result = await authClient.organization.acceptInvitation({
       invitationId,
     });
+
     if (result.error) {
+      // Check if accepting failed because user is already a member of an org
+      try {
+        const orgsResult = await authClient.organization.list();
+        const userOrgs = orgsResult.data ?? [];
+        const targetOrg = organizationId
+          ? userOrgs.find((o) => o.id === organizationId)
+          : userOrgs[0];
+
+        if (targetOrg) {
+          await completeInvitation(targetOrg.id);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+
       setError(result.error.message ?? "Unable to accept invitation.");
       setAccepting(false);
       return;

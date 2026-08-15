@@ -104,6 +104,7 @@ export function SignInForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
         </FormLayout>
         <div className="auth-form-options"><Checkbox checked={rememberMe} label="Keep me signed in" onChange={setRememberMe} /><Link href={`/forgot-password?email=${encodeURIComponent(email)}`}>Forgot password?</Link></div>
         <Button fullWidth disabled={!email.trim() || !password} loading={loading} variant="primary" onClick={handleSubmit}>Sign in securely</Button>
+        <div className="auth-form-footer">Don&apos;t have an account? <Link href={`/signup?email=${encodeURIComponent(email)}&redirect=${encodeURIComponent(redirectTo)}`}>Create an account</Link></div>
       </BlockStack>
     </div>
   );

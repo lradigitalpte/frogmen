@@ -33,6 +33,11 @@ export const mainNavItems: NavItem[] = [
     icon: "HomeIcon",
   },
   {
+    label: "Analytics",
+    url: "/dashboard/analytics",
+    icon: "OrderIcon",
+  },
+  {
     label: "Contacts",
     url: "/dashboard/customers",
     icon: "PersonIcon",

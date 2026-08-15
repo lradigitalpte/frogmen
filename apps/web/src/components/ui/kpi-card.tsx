@@ -35,7 +35,7 @@ const toneConfig: Record<
 interface KpiCardProps {
   label: string;
   value: string;
-  hint: string;
+  hint: React.ReactNode;
   icon: React.ReactNode;
   tone?: KpiTone;
   loading?: boolean;
