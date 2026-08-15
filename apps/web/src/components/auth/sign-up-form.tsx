@@ -18,6 +18,7 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [userAlreadyExists, setUserAlreadyExists] = useState(false);
   const valid = name.trim() && email.trim() && password.length >= 8 && password === confirmPassword && accepted;
 
   async function waitForSession(maxAttempts = 12) {
@@ -35,10 +36,17 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
     if (!valid) return setError("Complete all fields and make sure the passwords match.");
     setLoading(true);
     setError(null);
+    setUserAlreadyExists(false);
+
     const result = await signUp.email({ email: email.trim(), password, name: name.trim() });
     if (result.error) {
       setLoading(false);
-      return setError(result.error.message ?? "Account creation failed.");
+      const msg = result.error.message ?? "";
+      if (msg.toLowerCase().includes("already exists") || result.error.status === 422 || result.error.status === 400) {
+        setUserAlreadyExists(true);
+        return setError(`An account for ${email.trim()} already exists.`);
+      }
+      return setError(msg || "Account creation failed.");
     }
 
     await waitForSession();
@@ -54,6 +62,8 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
     router.refresh();
   }
 
+  const loginUrl = `/login?email=${encodeURIComponent(email.trim() || defaultEmail)}&redirect=${encodeURIComponent(redirectTo)}`;
+
   return (
     <div className="auth-form-card">
       <BlockStack gap="400">
@@ -64,8 +74,23 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
             <Text as="p" tone="subdued">{invited ? "Confirm your identity and choose a secure password." : "Start your secure organization workspace."}</Text>
           </div>
         </div>
-        {invited ? <Banner tone="info">Your invitation will be applied automatically after you create your password.</Banner> : null}
-        {error ? <Banner tone="critical">{error}</Banner> : null}
+        {invited ? <Banner tone="info">Your invitation will be applied automatically after you log in or sign up.</Banner> : null}
+        {userAlreadyExists ? (
+          <Banner
+            tone="warning"
+            title="Account already exists"
+            action={{
+              content: "Sign in to accept invitation",
+              url: loginUrl,
+            }}
+          >
+            <p>
+              An account with <strong>{email.trim()}</strong> is already registered. Please sign in with your existing password to join this organization.
+            </p>
+          </Banner>
+        ) : error ? (
+          <Banner tone="critical">{error}</Banner>
+        ) : null}
         <FormLayout>
           <TextField autoComplete="name" label="Full name" value={name} onChange={setName} />
           <TextField autoComplete="email" disabled={invited && Boolean(defaultEmail)} label="Work email" type="email" value={email} onChange={setEmail} />

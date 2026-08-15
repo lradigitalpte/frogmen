@@ -4,7 +4,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { createAccessControl, organization } from "better-auth/plugins";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { eq, asc } from "drizzle-orm";
-import { createDb, currencies, members, schema, sessions } from "@frog1/db";
+import { createDb, currencies, members, schema, sessions, users } from "@frog1/db";
 import { sendPasswordResetEmail } from "./auth-email";
 import {
   acceptPendingInvitationsForUser,
@@ -123,18 +123,7 @@ export function createAuth(databaseUrl: string) {
             const email = user.email?.trim();
             if (!email) {
               throw new APIError("BAD_REQUEST", {
-                message: "Public signup is disabled. Contact your administrator.",
-              });
-            }
-
-            const pendingInvitations = await findPendingInvitationsForEmail(
-              db,
-              email,
-            );
-            if (pendingInvitations.length === 0) {
-              throw new APIError("BAD_REQUEST", {
-                message:
-                  "Public signup is disabled. Ask an administrator to invite you or create your account.",
+                message: "A valid email is required.",
               });
             }
           },
@@ -188,6 +177,28 @@ export function createAuth(databaseUrl: string) {
       session: {
         create: {
           after: async (session) => {
+            // Find user email and auto-accept any pending invitations for this user
+            const [u] = await db
+              .select({ email: users.email })
+              .from(users)
+              .where(eq(users.id, session.userId))
+              .limit(1);
+
+            if (u?.email) {
+              const invitedOrgId = await acceptPendingInvitationsForUser(
+                db,
+                session.userId,
+                u.email,
+              );
+              if (invitedOrgId && !session.activeOrganizationId) {
+                await db
+                  .update(sessions)
+                  .set({ activeOrganizationId: invitedOrgId })
+                  .where(eq(sessions.id, session.id));
+                return;
+              }
+            }
+
             if (session.activeOrganizationId) {
               return;
             }
