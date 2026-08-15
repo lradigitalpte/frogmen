@@ -209,6 +209,10 @@ export function DashboardTopBar({
                 onAction: toggleTheme,
               },
               {
+                content: "Switch Organization",
+                onAction: () => router.push("/select-organization"),
+              },
+              {
                 content: "Sign out",
                 onAction: handleSignOut,
               },

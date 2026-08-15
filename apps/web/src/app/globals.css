@@ -6137,7 +6137,38 @@ html.dark .audit-pagination { border-color: #344353; }
 .auth-shell__mobile-brand img { width: 112px; height: 118px; object-fit: contain; }
 }
 
+/* ── Org Selector (multi-org login picker) ─────────────────────────────── */
+.org-selector-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 52px 0; }
+.org-selector-card { width: 100%; }
+.org-selector-list { display: flex; flex-direction: column; gap: 10px; }
+.org-selector-item {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 14px 16px;
+  border: 1.5px solid #d9e4eb; border-radius: 14px;
+  background: #fff; cursor: pointer;
+  text-align: left; transition: border-color .18s, background .18s, box-shadow .18s;
+}
+.org-selector-item:hover { border-color: #176f75; background: #f2faf8; box-shadow: 0 4px 16px rgba(23,111,117,.10); }
+.org-selector-item--active { border-color: #176f75; background: #f2faf8; pointer-events: none; }
+.org-selector-item--disabled { opacity: .45; pointer-events: none; }
+.org-selector-item__icon {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 42px; height: 42px; border-radius: 11px;
+  color: #176f75; background: #e8f7f4;
+}
+.org-selector-item__body { flex: 1; min-width: 0; }
+.org-selector-item__name { display: block; color: #18303e; font-size: 14px; font-weight: 650; }
+.org-selector-item__slug { display: block; color: #6d7884; font-size: 12px; margin-top: 2px; }
+.org-selector-item__action { display: grid; place-items: center; flex: 0 0 auto; color: #87999f; transition: color .18s, transform .18s; }
+.org-selector-item:hover .org-selector-item__action { color: #176f75; transform: translateX(3px); }
+[data-theme="dark"] .org-selector-item { border-color: #2e3f4e; background: #1a2532; }
+[data-theme="dark"] .org-selector-item:hover,
+[data-theme="dark"] .org-selector-item--active { border-color: #2aafa3; background: #1c3040; }
+[data-theme="dark"] .org-selector-item__icon { background: #1e3d45; color: #4ecdc4; }
+[data-theme="dark"] .org-selector-item__name { color: #e8edf2; }
+
 /* Purchase order form — navy / teal palette aligned with PO PDF */
+
 .purchase-order-form-shell {
   --po-navy: #17275b;
   --po-blue: #3568a9;

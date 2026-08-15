@@ -40,20 +40,50 @@ export function SignInForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
 
     await waitForSession();
 
-    let destination = invited
-      ? redirectTo
-      : redirectTo.startsWith("/") && !redirectTo.startsWith("//")
-        ? redirectTo
-        : "/dashboard";
-
+    // mustChangePassword takes top priority — handle it before anything else.
     try {
       const me = await getMe();
       if (me.user.mustChangePassword) {
-        destination = "/change-password-required";
+        setLoading(false);
+        router.push("/change-password-required");
+        router.refresh();
+        return;
       }
     } catch {
-      // Continue with the default destination if profile lookup fails.
+      // If we can't read profile, fall through to normal routing.
     }
+
+    // Invite links skip the org selector — go straight to the invite page.
+    if (invited) {
+      setLoading(false);
+      router.push(redirectTo);
+      router.refresh();
+      return;
+    }
+
+    // Check how many organizations this user belongs to.
+    try {
+      const orgsResult = await authClient.organization.list();
+      const orgs = orgsResult.data ?? [];
+      if (orgs.length > 1) {
+        // Multiple orgs — let the user choose which workspace to enter.
+        const safeRedirect =
+          redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+            ? redirectTo
+            : "/dashboard";
+        setLoading(false);
+        router.push(`/select-organization?redirect=${encodeURIComponent(safeRedirect)}`);
+        router.refresh();
+        return;
+      }
+    } catch {
+      // If org listing fails, fall through to the normal destination.
+    }
+
+    const destination =
+      redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+        ? redirectTo
+        : "/dashboard";
 
     setLoading(false);
     router.push(destination);
