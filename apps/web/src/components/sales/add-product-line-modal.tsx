@@ -22,6 +22,7 @@ import {
 } from "@shopify/polaris";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import {
   applyPriceAdjustment,
   pricingAdjustmentLabel,
@@ -668,7 +669,26 @@ export function AddProductLineModal({
                   label="Line Item Description"
                   onChange={setDescription}
                   value={description}
+                  helpText="Shown as the product name on the quotation. Kit contents from the product record appear underneath when available."
                 />
+                {selectedProduct?.description?.trim() ? (
+                  <Box
+                    background="bg-surface-secondary"
+                    borderRadius="200"
+                    padding="300"
+                  >
+                    <BlockStack gap="150">
+                      <Text as="p" tone="subdued" variant="bodySm">
+                        Included on quotation
+                      </Text>
+                      <LineItemDescription
+                        boldTitle={false}
+                        details={selectedProduct.description}
+                        title=""
+                      />
+                    </BlockStack>
+                  </Box>
+                ) : null}
 
                 <FormLayout.Group>
                   <TextField

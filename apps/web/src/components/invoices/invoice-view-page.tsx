@@ -12,6 +12,7 @@ import {
   Grid,
   InlineStack,
   Layout,
+  Link,
   Modal,
   Select,
   Tabs,
@@ -23,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { AppPage } from "@/components/layout/page";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
@@ -558,12 +560,23 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                         <tr key={l.id}>
                           <td className="frogmen-font-bold">
                             <BlockStack gap="050">
-                              <Text as="span" fontWeight="bold">
-                                {l.description}
-                              </Text>
+                              <LineItemDescription
+                                details={l.productDescription}
+                                productId={l.productId}
+                                title={l.description}
+                              />
                               {l.serialNumber ? (
                                 <Text as="span" tone="subdued" variant="bodySm">
-                                  SN: {l.serialNumber}
+                                  SN:{" "}
+                                  {l.productUnitId ? (
+                                    <Link
+                                      url={`/dashboard/inventory/units/${l.productUnitId}`}
+                                    >
+                                      {l.serialNumber}
+                                    </Link>
+                                  ) : (
+                                    l.serialNumber
+                                  )}
                                 </Text>
                               ) : null}
                             </BlockStack>

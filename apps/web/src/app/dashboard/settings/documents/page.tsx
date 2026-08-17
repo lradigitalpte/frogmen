@@ -38,6 +38,19 @@ const tabs = [
   { id: "email", content: "Email defaults" },
 ];
 
+const lineItemDetailsLayouts = [
+  {
+    id: "bullets" as const,
+    name: "Bullet list",
+    description: "Each included item on its own line under the product name.",
+  },
+  {
+    id: "comma" as const,
+    name: "Comma separated",
+    description: "Compact one-line list under the product name.",
+  },
+];
+
 const documentStyles = [
   {
     id: "official_blue" as const,
@@ -240,6 +253,31 @@ export default function DocumentTemplatesSettingsPage() {
                             <strong>{style.name}</strong>
                             <small>{style.description}</small>
                             <b>{selected ? "Selected" : "Choose style"}</b>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </BlockStack>
+                  <BlockStack gap="300">
+                    <div>
+                      <Text as="h3" variant="headingSm">Product description on quotations and invoices</Text>
+                      <Text as="p" tone="subdued">
+                        When a product has a description, it appears under the line name.
+                      </Text>
+                    </div>
+                    <div className="document-style-picker document-style-picker--two">
+                      {lineItemDetailsLayouts.map((option) => {
+                        const selected = templates.lineItemDetailsLayout === option.id;
+                        return (
+                          <button
+                            type="button"
+                            key={option.id}
+                            className={`document-style-card${selected ? " is-selected" : ""}`}
+                            onClick={() => updateTemplate("lineItemDetailsLayout", option.id)}
+                          >
+                            <strong>{option.name}</strong>
+                            <small>{option.description}</small>
+                            <b>{selected ? "Selected" : "Choose layout"}</b>
                           </button>
                         );
                       })}

@@ -51,6 +51,7 @@ import { convertAmount, currencyInputPrefix } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
 import { getLatestExchangeRate } from "@/lib/exchange-rates-api";
 import { ConfiguredLineItemsList } from "@/components/sales/configured-line-items-list";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import {
   EditConfiguredLineModal,
   type DeliveryFeeMode,
@@ -384,6 +385,7 @@ export function CreateQuotationPage() {
       productUnitId: unit?.id,
       serialNumber: unit?.serialNumber,
       name: selectedProduct.name,
+      details: selectedProduct.description,
       sku: selectedProduct.sku || "N/A",
       quantity: selectedProduct.trackSerial ? 1 : 1,
       baseUnitPrice,
@@ -1148,7 +1150,13 @@ export function CreateQuotationPage() {
 
                           return (
                             <tr key={item.id}>
-                              <td className="frogmen-font-bold">{item.name}</td>
+                              <td className="frogmen-font-bold">
+                                <LineItemDescription
+                                  details={item.details}
+                                  productId={item.productId}
+                                  title={item.name}
+                                />
+                              </td>
                               <td>
                                 {item.serialNumber ? (
                                   <Badge tone="info">{item.serialNumber}</Badge>

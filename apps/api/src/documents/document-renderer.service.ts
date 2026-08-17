@@ -5,6 +5,7 @@ import {
   customers,
   invoiceLines,
   invoices,
+  products,
   purchaseOrderLines,
   purchaseOrders,
   vendors,
@@ -88,12 +89,16 @@ export class DocumentRendererService {
     }
 
     const lines = await this.db
-      .select()
+      .select({
+        line: salesOrderLines,
+        productDescription: products.description,
+      })
       .from(salesOrderLines)
+      .leftJoin(products, eq(products.id, salesOrderLines.productId))
       .where(eq(salesOrderLines.salesOrderId, quotationId));
 
     const lineNetSubtotal = lines.reduce(
-      (sum, line) => sum + Number(line.priceSubtotal),
+      (sum, row) => sum + Number(row.line.priceSubtotal),
       0,
     );
     const deliveryFee = resolveDeliveryFee(
@@ -129,13 +134,14 @@ export class DocumentRendererService {
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,
-      lines: lines.map((line) => ({
-        description: line.description,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        discountPercent: line.discountPercent,
-        taxRatePercent: line.taxRatePercent,
-        priceSubtotal: line.priceSubtotal,
+      lines: lines.map((row) => ({
+        description: row.line.description,
+        details: row.productDescription,
+        quantity: row.line.quantity,
+        unitPrice: row.line.unitPrice,
+        discountPercent: row.line.discountPercent,
+        taxRatePercent: row.line.taxRatePercent,
+        priceSubtotal: row.line.priceSubtotal,
       })),
       accessToken: header.order.accessToken,
       signedBy: header.order.signedBy,
@@ -210,7 +216,14 @@ export class DocumentRendererService {
       .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, organizationId), isNull(invoices.deletedAt)))
       .limit(1);
     if (!header) throw new NotFoundException("Invoice not found");
-    const lines = await this.db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+    const lines = await this.db
+      .select({
+        line: invoiceLines,
+        productDescription: products.description,
+      })
+      .from(invoiceLines)
+      .leftJoin(products, eq(products.id, invoiceLines.productId))
+      .where(eq(invoiceLines.invoiceId, invoiceId));
     return {
       documentType: "invoice",
       number: header.invoice.number,
@@ -236,13 +249,14 @@ export class DocumentRendererService {
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,
-      lines: lines.map((line) => ({
-        description: line.description,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        discountPercent: line.discountPercent,
-        taxRatePercent: line.taxRatePercent,
-        priceSubtotal: line.priceSubtotal,
+      lines: lines.map((row) => ({
+        description: row.line.description,
+        details: row.productDescription,
+        quantity: row.line.quantity,
+        unitPrice: row.line.unitPrice,
+        discountPercent: row.line.discountPercent,
+        taxRatePercent: row.line.taxRatePercent,
+        priceSubtotal: row.line.priceSubtotal,
       })),
     };
   }
@@ -333,9 +347,16 @@ export class DocumentRendererService {
       .where(and(eq(purchaseOrders.id, orderId), eq(purchaseOrders.organizationId, organizationId), isNull(purchaseOrders.deletedAt)))
       .limit(1);
     if (!header) throw new NotFoundException("Purchase order not found");
-    const lines = await this.db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, orderId));
+    const lines = await this.db
+      .select({
+        line: purchaseOrderLines,
+        productDescription: products.description,
+      })
+      .from(purchaseOrderLines)
+      .leftJoin(products, eq(products.id, purchaseOrderLines.productId))
+      .where(eq(purchaseOrderLines.purchaseOrderId, orderId));
     const lineNetSubtotal = lines.reduce(
-      (sum, line) => sum + Number(line.priceSubtotal),
+      (sum, row) => sum + Number(row.line.priceSubtotal),
       0,
     );
     const freight = resolveDeliveryFee(
@@ -378,13 +399,14 @@ export class DocumentRendererService {
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,
-      lines: lines.map((line) => ({
-        description: line.description,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        discountPercent: line.discountPercent,
-        taxRatePercent: line.taxRatePercent,
-        priceSubtotal: line.priceSubtotal,
+      lines: lines.map((row) => ({
+        description: row.line.description,
+        details: row.productDescription,
+        quantity: row.line.quantity,
+        unitPrice: row.line.unitPrice,
+        discountPercent: row.line.discountPercent,
+        taxRatePercent: row.line.taxRatePercent,
+        priceSubtotal: row.line.priceSubtotal,
       })),
     };
   }

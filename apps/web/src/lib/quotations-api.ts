@@ -11,6 +11,7 @@ export interface QuotationLine {
   serialNumber?: string | null;
   warehouseId: string | null;
   description: string;
+  productDescription?: string | null;
   quantity: string;
   unitPrice: string;
   discountPercent: string;

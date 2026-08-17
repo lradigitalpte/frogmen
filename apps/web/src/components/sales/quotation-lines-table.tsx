@@ -13,6 +13,7 @@ import { DeleteIcon } from "@shopify/polaris-icons";
 import { useCallback, useState } from "react";
 import type { QuotationLine } from "@/lib/quotations-api";
 import { formatMoney } from "./format-money";
+import { LineItemDescription } from "./line-item-description";
 
 interface QuotationLinesTableProps {
   lines: QuotationLine[];
@@ -157,6 +158,15 @@ export function QuotationLinesTable({
               onChange={(value) => updateDraft(line.id, { description: value })}
               value={draft.description}
             />
+            {line.productDescription ? (
+              <div style={{ marginTop: "0.4rem" }}>
+                <LineItemDescription
+                  boldTitle={false}
+                  details={line.productDescription}
+                  title=""
+                />
+              </div>
+            ) : null}
           </div>
         </IndexTable.Cell>
         <IndexTable.Cell>

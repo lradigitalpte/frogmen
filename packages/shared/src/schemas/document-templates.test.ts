@@ -22,5 +22,6 @@ describe("document-templates", () => {
     );
     expect(resolved.poEmailBodyIntro).toContain("{{number}}");
     expect(resolved.reminderEmailBodyIntro).toContain("{{outstanding}}");
+    expect(resolved.lineItemDetailsLayout).toBe("bullets");
   });
 });

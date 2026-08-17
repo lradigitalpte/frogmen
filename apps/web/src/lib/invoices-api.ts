@@ -6,6 +6,9 @@ export type PaymentStatus = "draft" | "in_process" | "paid";
 export interface InvoiceLine {
   id: string;
   description: string;
+  productDescription?: string | null;
+  productId?: string | null;
+  productUnitId?: string | null;
   serialNumber?: string;
   quantity: number;
   unitPrice: number;

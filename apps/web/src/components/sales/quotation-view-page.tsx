@@ -11,6 +11,7 @@ import {
   EmptyState,
   Grid,
   InlineStack,
+  Link,
   Modal,
   Tabs,
   Text,
@@ -22,6 +23,7 @@ import { SendDocumentEmailModal } from "@/components/documents/send-document-ema
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import { formatQuantity } from "@/lib/format-quantity";
 import { resolveDeliveryFee } from "@/lib/line-item-utils";
 import { listCurrencies } from "@/lib/currencies-api";
@@ -572,12 +574,23 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                           <tr key={line.id}>
                             <td>
                               <BlockStack gap="050">
-                                <Text as="span" fontWeight="bold">
-                                  {line.description}
-                                </Text>
+                                <LineItemDescription
+                                  details={line.productDescription}
+                                  productId={line.productId}
+                                  title={line.description}
+                                />
                                 {line.serialNumber ? (
                                   <Text as="span" tone="subdued" variant="bodySm">
-                                    SN: {line.serialNumber}
+                                    SN:{" "}
+                                    {line.productUnitId ? (
+                                      <Link
+                                        url={`/dashboard/inventory/units/${line.productUnitId}`}
+                                      >
+                                        {line.serialNumber}
+                                      </Link>
+                                    ) : (
+                                      line.serialNumber
+                                    )}
                                   </Text>
                                 ) : line.productUnitId ? (
                                   <Text as="span" tone="subdued" variant="bodySm">

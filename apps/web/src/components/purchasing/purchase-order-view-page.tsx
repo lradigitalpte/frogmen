@@ -21,6 +21,7 @@ import { Building2, Package, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { PurchaseOrderNextSteps } from "@/components/purchasing/purchase-order-next-steps";
@@ -544,9 +545,11 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           >
                             <IndexTable.Cell>
                               <BlockStack gap="050">
-                                <Text as="span" fontWeight="semibold">
-                                  {line.productName ?? line.description}
-                                </Text>
+                                <LineItemDescription
+                                  details={line.productDescription}
+                                  productId={line.productId}
+                                  title={line.productName ?? line.description}
+                                />
                                 {line.productSku ? (
                                   <Text as="span" tone="subdued" variant="bodySm">
                                     {line.productSku}

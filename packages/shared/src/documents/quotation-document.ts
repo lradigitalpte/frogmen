@@ -8,11 +8,13 @@ import {
   type DocumentBankAccount,
   renderDocumentPaymentDetailsHtml,
 } from "./document-payment-details";
+import { renderLineItemDescriptionHtml } from "./line-item-details";
 
 export type { DocumentBankAccount } from "./document-payment-details";
 
 export interface QuotationDocumentLine {
   description: string;
+  details?: string | null;
   quantity: string;
   unitPrice: string;
   discountPercent: string;
@@ -107,7 +109,7 @@ export function renderQuotationDocumentHtml(
     .map(
       (line) => `
       <tr>
-        <td>${escapeHtml(line.description)}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(line.discountPercent)}%</td>
@@ -131,7 +133,7 @@ export function renderQuotationDocumentHtml(
     };
     const officialRows = quotation.lines.map((line) => `
       <tr>
-        <td>${escapeHtml(line.description)}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
         <td class="num">${money(line.priceSubtotal)}</td>
@@ -191,7 +193,7 @@ export function renderQuotationDocumentHtml(
 .meta{display:grid;grid-template-columns:1fr 1fr}.meta span,.meta b{padding:8px 10px}.meta span{color:#fff;background:#3568a9;border-bottom:1px solid #fff}.meta b{text-align:right;font-weight:500}
 .company{margin:22px 0 24px}.company strong{display:block;color:#17275b;margin-bottom:8px}.company p{margin:4px 0}
 .addresses{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:20px 0}.address-title{font-weight:700;margin:0 0 7px}.address-box{min-height:92px;padding:10px;border:1px solid #b9c5d8}.address-box p{margin:3px 0}
-table{width:100%;border-collapse:collapse;margin:22px 0 12px}th{padding:10px;color:#fff;background:#3c72b8;text-align:left}td{padding:10px;border:1px solid #d3dbe7}.num{text-align:right}
+table{width:100%;border-collapse:collapse;margin:22px 0 12px}th{padding:10px;color:#fff;background:#3c72b8;text-align:left}td{padding:10px;border:1px solid #d3dbe7;vertical-align:top}.num{text-align:right;white-space:nowrap}.line-title{font-weight:700}.line-details{margin:6px 0 0;padding-left:16px;color:#5b6578;font-size:11px;font-weight:400;line-height:1.45}.line-details li{margin:1px 0}div.line-details{padding-left:0}
 .lower{display:grid;grid-template-columns:1.15fr 1fr;gap:18px}.notes{min-height:105px;padding:10px;border:1px solid #b9c5d8;white-space:pre-wrap}.notes strong{display:block;color:#17275b;margin-bottom:8px}
 .totals{width:100%}.row{display:flex;justify-content:space-between;padding:7px 10px;gap:12px}.row span:first-child{flex:1}.charge-scope{color:#687386;font-size:11px;font-weight:400}.grand{margin-top:3px;border:1px solid #b9c5d8;font-size:14px;font-weight:800}.footer{margin-top:28px;color:#687386;font-size:10px}
 @media print{body{padding:30px 38px}} 
@@ -276,10 +278,14 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
     .section-label { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.05em; color: #6b7280; text-transform: uppercase; }
     table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
     th { background: var(--accent); color: #fff; font-size: 12px; }
     .style-clean_minimal th { color: #111827; border-top: 1px solid #111827; border-bottom: 1px solid #111827; background: #fff; }
-    .num { text-align: right; }
+    .num { text-align: right; white-space: nowrap; }
+    .line-title { font-weight: 700; }
+    .line-details { margin: 6px 0 0; padding-left: 16px; color: #6b7280; font-size: 12px; font-weight: 400; line-height: 1.45; }
+    .line-details li { margin: 1px 0; }
+    div.line-details { padding-left: 0; }
     .totals { margin-left: auto; width: 280px; }
     .totals-row { display: flex; justify-content: space-between; padding: 4px 0; gap: 12px; }
     .totals-row span:first-child { flex: 1; }

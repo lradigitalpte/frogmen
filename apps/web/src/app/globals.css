@@ -4882,6 +4882,20 @@ textarea.Polaris-TextField__Input:focus {
 .frogmen-recent-table td {
   padding: 0.65rem 0.85rem;
   border-bottom: 1px solid #f1f2f3;
+  vertical-align: top;
+}
+
+.line-item-details {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+  color: #637381;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.line-item-details li {
+  margin: 0.1rem 0;
 }
 
 .frogmen-font-bold { font-weight: 700; }
@@ -5897,6 +5911,7 @@ html.dark .finance-settings-example > div { border-color: #344353; }
 .official-invoice-preview > small { color: #6c7480; }
 .document-settings-tab { min-height: 390px; padding: 28px 8px 8px; }
 .document-style-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.document-style-picker--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .document-style-card { display: flex; flex-direction: column; gap: 7px; padding: 14px; border: 1px solid #dfe4ea; border-radius: 12px; color: inherit; text-align: left; background: #fff; cursor: pointer; }
 .document-style-card:hover { border-color: #8aa8d4; }
 .document-style-card.is-selected { border-color: #3568a9; box-shadow: 0 0 0 2px rgba(53,104,169,.13); }

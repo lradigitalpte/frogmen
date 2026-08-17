@@ -4,6 +4,7 @@ export interface ConfiguredLineItem {
   productUnitId?: string;
   serialNumber?: string;
   name: string;
+  details?: string | null;
   sku: string;
   quantity: number;
   baseUnitPrice: number;

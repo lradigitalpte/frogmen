@@ -28,6 +28,7 @@ import { ProductCatalogSearchResults } from "@/components/products/product-catal
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { DocumentNotesField } from "@/components/documents/document-notes-field";
 import { todayIsoDate } from "@/components/sales/format-money";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import { formatQuantity } from "@/lib/format-quantity";
 import { listCustomers } from "@/lib/customers-api";
 import type { Customer } from "@/types/customer";
@@ -52,6 +53,7 @@ interface ConfiguredInvoiceLine {
   productId?: string;
   productUnitId?: string;
   description: string;
+  productDescription?: string | null;
   serialNumber?: string;
   quantity: number;
   baseUnitPrice: number;
@@ -258,6 +260,7 @@ export function CreateInvoicePage() {
                 productId: l.productId || undefined,
                 productUnitId: l.productUnitId || undefined,
                 description: l.description,
+                productDescription: l.productDescription ?? null,
                 serialNumber: l.serialNumber ?? undefined,
                 quantity: parseFloat(l.quantity) || 1,
                 baseUnitPrice,
@@ -343,6 +346,7 @@ export function CreateInvoicePage() {
         productId: selectedProduct.id,
         productUnitId: unit?.id,
         description: selectedProduct.name,
+        productDescription: selectedProduct.description,
         serialNumber: unit?.serialNumber,
         quantity: 1,
         baseUnitPrice: unitPrice,
@@ -691,7 +695,13 @@ export function CreateInvoicePage() {
 
                           return (
                             <tr key={line.id}>
-                              <td className="frogmen-font-bold">{line.description}</td>
+                              <td className="frogmen-font-bold">
+                                <LineItemDescription
+                                  details={line.productDescription}
+                                  productId={line.productId}
+                                  title={line.description}
+                                />
+                              </td>
                               <td>
                                 {line.serialNumber ? (
                                   <Badge tone="info">{line.serialNumber}</Badge>
@@ -1133,9 +1143,11 @@ export function CreateInvoicePage() {
                             return (
                               <tr key={line.id}>
                                 <td>
-                                  <Text as="span" fontWeight="bold">
-                                    {line.description}
-                                  </Text>
+                                  <LineItemDescription
+                                    details={line.productDescription}
+                                    productId={line.productId}
+                                    title={line.description}
+                                  />
                                 </td>
                                 <td>
                                   {line.serialNumber ? (
@@ -1309,7 +1321,13 @@ export function CreateInvoicePage() {
 
                           return (
                             <tr key={l.id}>
-                              <td className="frogmen-font-bold">{l.description}</td>
+                              <td className="frogmen-font-bold">
+                                <LineItemDescription
+                                  details={l.productDescription}
+                                  productId={l.productId}
+                                  title={l.description}
+                                />
+                              </td>
                               <td>
                                 {l.serialNumber ? (
                                   <Badge tone="info">{l.serialNumber}</Badge>

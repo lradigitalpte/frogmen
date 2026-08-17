@@ -14,6 +14,7 @@ import {
 } from "@/lib/line-item-utils";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { formatQuantity } from "@/lib/format-quantity";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 
 interface ConfiguredLineItemsListProps {
   lines: ConfiguredLineItem[];
@@ -51,9 +52,11 @@ export function ConfiguredLineItemsList({
             <div className="frogmen-line-card__main">
               <BlockStack gap="200">
                 <div className="frogmen-line-card__title">
-                  <Text as="h3" variant="headingSm">
-                    {line.name}
-                  </Text>
+                  <LineItemDescription
+                    details={line.details}
+                    productId={line.productId}
+                    title={line.name}
+                  />
                 </div>
                 <div className="frogmen-line-card__meta">
                   <div className="frogmen-line-card__meta-item">

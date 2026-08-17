@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
-import { formatCountryLabel, formatPostalAddressLines } from "@frog1/shared";
+import { formatCountryLabel, formatPostalAddressLines, formatProductDetailsInline, productDetailsLines, type LineItemDetailsLayout } from "@frog1/shared";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
 import { resolveDeliveryFee } from "@/lib/line-item-utils";
@@ -17,6 +17,7 @@ type SignatureMode = "draw" | "type" | "upload";
 interface QuotationLine {
   id: string;
   description: string;
+  productDescription?: string | null;
   quantity: string;
   unitPrice: string;
   priceSubtotal: string;
@@ -64,6 +65,7 @@ interface PublicQuotationData {
     city?: string;
     country?: string;
     taxId?: string;
+    lineItemDetailsLayout?: LineItemDetailsLayout;
   };
 }
 
@@ -468,14 +470,41 @@ export default function PublicQuotationPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {data.lines.map((line) => (
+                      {data.lines.map((line) => {
+                        const items = productDetailsLines(
+                          line.description,
+                          line.productDescription,
+                        );
+                        const commaDetails = formatProductDetailsInline(
+                          line.description,
+                          line.productDescription,
+                        );
+                        const useComma =
+                          data.branding.lineItemDetailsLayout === "comma";
+                        return (
                         <tr key={line.id}>
-                          <td data-label="Description">{line.description}</td>
+                          <td data-label="Description">
+                            <div className="public-quote-line-title">
+                              {line.description}
+                            </div>
+                            {useComma && commaDetails ? (
+                              <div className="public-quote-line-details">
+                                {commaDetails}
+                              </div>
+                            ) : items.length > 0 ? (
+                              <ul className="line-item-details">
+                                {items.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </td>
                           <td data-label="Quantity">{formatQuantity(line.quantity)}</td>
                           <td data-label="Unit price">{fmt(line.unitPrice)}</td>
                           <td data-label="Subtotal">{fmt(line.priceSubtotal)}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

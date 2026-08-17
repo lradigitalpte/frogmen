@@ -28,6 +28,7 @@ import {
   type LinkableUnitOption,
 } from "@/components/products/link-component-modal";
 import { ProductImageGallery } from "@/components/products/product-image-gallery";
+import { LineItemDescription } from "@/components/sales/line-item-description";
 import {
   productUnitStatusLabel,
   productUnitStatusVariant,
@@ -699,10 +700,22 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                   ) : null}
                 </BlockStack>
                 <Divider />
-                <Text as="p" tone="subdued">
-                  {product.description?.trim() ||
-                    "No description added for this product."}
-                </Text>
+                {product.description?.trim() ? (
+                  <BlockStack gap="200">
+                    <Text as="h3" variant="headingSm">
+                      Description
+                    </Text>
+                    <LineItemDescription
+                      boldTitle={false}
+                      details={product.description}
+                      title=""
+                    />
+                  </BlockStack>
+                ) : (
+                  <Text as="p" tone="subdued">
+                    No description added for this product.
+                  </Text>
+                )}
               </BlockStack>
             </Card>
 

@@ -240,9 +240,11 @@ export class InvoicesService {
       .select({
         line: invoiceLines,
         serialNumber: productUnits.serialNumber,
+        productDescription: products.description,
       })
       .from(invoiceLines)
       .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
+      .leftJoin(products, eq(products.id, invoiceLines.productId))
       .where(eq(invoiceLines.invoiceId, id))
       .orderBy(asc(invoiceLines.lineNumber));
 
@@ -258,6 +260,7 @@ export class InvoicesService {
       lines: lines.map((row) => ({
         ...row.line,
         serialNumber: row.serialNumber,
+        productDescription: row.productDescription,
       })),
     });
     return {
@@ -1544,7 +1547,10 @@ export class InvoicesService {
       currencyCode: string | null;
       paymentTermName?: string | null;
       lines: Array<
-        typeof invoiceLines.$inferSelect & { serialNumber?: string | null }
+        typeof invoiceLines.$inferSelect & {
+          serialNumber?: string | null;
+          productDescription?: string | null;
+        }
       >;
     },
   ) {
@@ -1555,6 +1561,9 @@ export class InvoicesService {
       lines: row.lines.map((line) => ({
         id: line.id,
         description: line.description,
+        productDescription: line.productDescription ?? null,
+        productId: line.productId ?? null,
+        productUnitId: line.productUnitId ?? null,
         serialNumber: line.serialNumber ?? undefined,
         quantity: Number(line.quantity),
         unitPrice: Number(line.unitPrice),

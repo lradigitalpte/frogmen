@@ -42,7 +42,7 @@ import { ExchangeRatesService } from "../currencies/exchange-rates.service";
 import { MailService } from "../mail/mail.service";
 import { SettingsService } from "../settings/settings.service";
 import { UploadsService } from "../uploads/uploads.service";
-import { applyTemplatePlaceholders, parseOrgCompanyProfile } from "@frog1/shared";
+import { applyTemplatePlaceholders, parseOrgCompanyProfile, parseOrgDocumentTemplates, resolveDocumentTemplates } from "@frog1/shared";
 import { nextDocumentNumber } from "./document-sequences";
 import {
   publicQuotationSigningUrl,
@@ -382,9 +382,11 @@ export class QuotationsService {
       .select({
         line: salesOrderLines,
         serialNumber: productUnits.serialNumber,
+        productDescription: products.description,
       })
       .from(salesOrderLines)
       .leftJoin(productUnits, eq(productUnits.id, salesOrderLines.productUnitId))
+      .leftJoin(products, eq(products.id, salesOrderLines.productId))
       .where(eq(salesOrderLines.salesOrderId, id))
       .orderBy(asc(salesOrderLines.lineNumber));
 
@@ -445,6 +447,7 @@ export class QuotationsService {
       lines: lines.map((row) => ({
         ...row.line,
         serialNumber: row.serialNumber,
+        productDescription: row.productDescription,
       })),
       activities,
     };
@@ -1928,6 +1931,7 @@ export class QuotationsService {
       .select({
         id: salesOrderLines.id,
         description: salesOrderLines.description,
+        productDescription: products.description,
         quantity: salesOrderLines.quantity,
         unitPrice: salesOrderLines.unitPrice,
         priceSubtotal: salesOrderLines.priceSubtotal,
@@ -1935,6 +1939,7 @@ export class QuotationsService {
         taxRatePercent: salesOrderLines.taxRatePercent,
       })
       .from(salesOrderLines)
+      .leftJoin(products, eq(products.id, salesOrderLines.productId))
       .where(eq(salesOrderLines.salesOrderId, order.id));
 
     const [org] = await this.rawDb
@@ -1950,6 +1955,9 @@ export class QuotationsService {
     const companyProfile = org
       ? parseOrgCompanyProfile(org.metadata ?? null)
       : null;
+    const documentTemplates = resolveDocumentTemplates(
+      org ? parseOrgDocumentTemplates(org.metadata ?? null) : {},
+    );
     const logoDataUri = org?.logo
       ? await this.uploadsService.readStoredFileAsDataUri(org.logo)
       : null;
@@ -1967,6 +1975,7 @@ export class QuotationsService {
         city: companyProfile?.city,
         country: companyProfile?.country,
         taxId: companyProfile?.taxId,
+        lineItemDetailsLayout: documentTemplates.lineItemDetailsLayout,
       },
     };
   }

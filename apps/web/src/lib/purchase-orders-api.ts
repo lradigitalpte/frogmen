@@ -26,6 +26,7 @@ export interface PurchaseOrderLine {
   priceTotal: string;
   productName?: string | null;
   productSku?: string | null;
+  productDescription?: string | null;
   trackSerial?: boolean | null;
   productType?: string | null;
   warehouseName?: string | null;

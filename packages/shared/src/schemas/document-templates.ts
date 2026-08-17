@@ -14,6 +14,7 @@ export const documentTemplateSettingsSchema = z.object({
   documentStyle: z
     .enum(["official_blue", "modern_navy", "clean_minimal"])
     .optional(),
+  lineItemDetailsLayout: z.enum(["bullets", "comma"]).optional(),
   quotationTitle: optionalText(120),
   invoiceTitle: optionalText(120),
   footerText: optionalText(1000),
@@ -51,6 +52,7 @@ export type UpdateDocumentTemplatesInput = z.infer<
 
 export const DEFAULT_DOCUMENT_TEMPLATES: Required<DocumentTemplateSettings> = {
   documentStyle: "official_blue",
+  lineItemDetailsLayout: "bullets",
   quotationTitle: "Quotation",
   invoiceTitle: "Commercial Invoice",
   footerText: "Thank you for your business.",
@@ -105,6 +107,9 @@ export function resolveDocumentTemplates(
   return {
     documentStyle:
       settings.documentStyle ?? DEFAULT_DOCUMENT_TEMPLATES.documentStyle,
+    lineItemDetailsLayout:
+      settings.lineItemDetailsLayout ??
+      DEFAULT_DOCUMENT_TEMPLATES.lineItemDetailsLayout,
     quotationTitle:
       settings.quotationTitle ?? DEFAULT_DOCUMENT_TEMPLATES.quotationTitle,
     invoiceTitle:
