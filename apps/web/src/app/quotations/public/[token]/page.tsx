@@ -1,7 +1,16 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
-import { formatCountryLabel, formatPostalAddressLines, formatProductDetailsInline, productDetailsLines, type LineItemDetailsLayout } from "@frog1/shared";
+import {
+  formatCountryLabel,
+  formatDocumentDate,
+  formatPostalAddressLines,
+  formatProductDetailsInline,
+  formatTrnLabel,
+  formatVatLabel,
+  productDetailsLines,
+  type LineItemDetailsLayout,
+} from "@frog1/shared";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
 import { resolveDeliveryFee } from "@/lib/line-item-utils";
@@ -18,6 +27,7 @@ interface QuotationLine {
   id: string;
   description: string;
   productDescription?: string | null;
+  serialNumber?: string | null;
   quantity: string;
   unitPrice: string;
   priceSubtotal: string;
@@ -351,6 +361,13 @@ export default function PublicQuotationPage({
       .filter(Boolean)
       .join(", "),
   ].filter((value): value is string => Boolean(value));
+  const quoteDateLabel = formatDocumentDate(data.quoteDate);
+  const validityDateLabel = formatDocumentDate(data.validityDate);
+  const trnLabel = formatTrnLabel(data.branding.taxId);
+  const vatLabel = formatVatLabel(data.lines);
+  const showSerialColumn = data.lines.some((line) =>
+    Boolean(line.serialNumber?.trim()),
+  );
 
   return (
     <div className="public-quote-page">
@@ -386,9 +403,9 @@ export default function PublicQuotationPage({
                 <div className="public-quote-meta__label">Official quotation</div>
                 <div className="public-quote-meta__number">#{data.number}</div>
                 <div className="public-quote-meta__dates">
-                  <span>Date {data.quoteDate}</span>
-                  {data.validityDate ? (
-                    <span> · Valid until {data.validityDate}</span>
+                  <span>Date {quoteDateLabel}</span>
+                  {validityDateLabel ? (
+                    <span> · Valid until {validityDateLabel}</span>
                   ) : null}
                 </div>
               </div>
@@ -429,7 +446,7 @@ export default function PublicQuotationPage({
                 {companyAddress.map((line, index) => (
                   <div key={`${index}-${line}`}>{line}</div>
                 ))}
-                {data.branding.taxId ? <div>TRN: {data.branding.taxId}</div> : null}
+                {trnLabel ? <div>{trnLabel}</div> : null}
                 {data.branding.phone ? <div>Phone: {data.branding.phone}</div> : null}
                 {data.branding.email ? <div>Email: {data.branding.email}</div> : null}
                 {data.branding.website ? (
@@ -443,7 +460,7 @@ export default function PublicQuotationPage({
               </section>
 
               <section className="public-quote-party">
-                <div className="public-quote-section-title">Quotation to</div>
+                <div className="public-quote-section-title">Quotation To:</div>
                 <div className="public-quote-party__name">{data.customerName}</div>
                 {customerAddress.length ? (
                   customerAddress.map((line, index) => (
@@ -464,6 +481,7 @@ export default function PublicQuotationPage({
                     <thead>
                       <tr>
                         <th>Description</th>
+                        {showSerialColumn ? <th>S/N</th> : null}
                         <th>Qty</th>
                         <th>Unit price</th>
                         <th>Subtotal</th>
@@ -499,6 +517,11 @@ export default function PublicQuotationPage({
                               </ul>
                             ) : null}
                           </td>
+                          {showSerialColumn ? (
+                            <td data-label="S/N">
+                              {line.serialNumber?.trim() || "—"}
+                            </td>
+                          ) : null}
                           <td data-label="Quantity">{formatQuantity(line.quantity)}</td>
                           <td data-label="Unit price">{fmt(line.unitPrice)}</td>
                           <td data-label="Subtotal">{fmt(line.priceSubtotal)}</td>
@@ -542,7 +565,7 @@ export default function PublicQuotationPage({
                   </div>
                 )}
                 <div className="public-quote-totals__row">
-                  <span>VAT / tax</span>
+                  <span>{vatLabel}</span>
                   <span>+{fmt(data.amountTax)}</span>
                 </div>
                 <div className="public-quote-totals__row public-quote-totals__row--grand">

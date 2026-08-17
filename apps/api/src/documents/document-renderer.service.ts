@@ -6,6 +6,7 @@ import {
   invoiceLines,
   invoices,
   products,
+  productUnits,
   purchaseOrderLines,
   purchaseOrders,
   vendors,
@@ -92,9 +93,11 @@ export class DocumentRendererService {
       .select({
         line: salesOrderLines,
         productDescription: products.description,
+        serialNumber: productUnits.serialNumber,
       })
       .from(salesOrderLines)
       .leftJoin(products, eq(products.id, salesOrderLines.productId))
+      .leftJoin(productUnits, eq(productUnits.id, salesOrderLines.productUnitId))
       .where(eq(salesOrderLines.salesOrderId, quotationId));
 
     const lineNetSubtotal = lines.reduce(
@@ -137,6 +140,7 @@ export class DocumentRendererService {
       lines: lines.map((row) => ({
         description: row.line.description,
         details: row.productDescription,
+        serialNumber: row.serialNumber,
         quantity: row.line.quantity,
         unitPrice: row.line.unitPrice,
         discountPercent: row.line.discountPercent,
@@ -220,9 +224,11 @@ export class DocumentRendererService {
       .select({
         line: invoiceLines,
         productDescription: products.description,
+        serialNumber: productUnits.serialNumber,
       })
       .from(invoiceLines)
       .leftJoin(products, eq(products.id, invoiceLines.productId))
+      .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
       .where(eq(invoiceLines.invoiceId, invoiceId));
     return {
       documentType: "invoice",
@@ -252,6 +258,7 @@ export class DocumentRendererService {
       lines: lines.map((row) => ({
         description: row.line.description,
         details: row.productDescription,
+        serialNumber: row.serialNumber,
         quantity: row.line.quantity,
         unitPrice: row.line.unitPrice,
         discountPercent: row.line.discountPercent,
