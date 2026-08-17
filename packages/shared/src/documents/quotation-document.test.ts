@@ -37,9 +37,15 @@ describe("formatVatLabel", () => {
     ).toBe("VAT (5%)");
   });
 
-  it("falls back to VAT when rates differ", () => {
+  it("uses the charged VAT rate when some lines are zero-rated", () => {
     expect(
       formatVatLabel([{ taxRatePercent: "5" }, { taxRatePercent: "0" }]),
+    ).toBe("VAT (5%)");
+  });
+
+  it("falls back to VAT when more than one non-zero rate is charged", () => {
+    expect(
+      formatVatLabel([{ taxRatePercent: "5" }, { taxRatePercent: "10" }]),
     ).toBe("VAT");
   });
 });

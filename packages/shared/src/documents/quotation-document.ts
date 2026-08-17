@@ -107,19 +107,16 @@ export function formatTrnLabel(taxId: string | null | undefined): string | undef
 export function formatVatLabel(
   lines: Array<{ taxRatePercent?: string | number | null }>,
 ): string {
-  const rates = [
-    ...new Set(
-      lines
-        .map((line) => Number(line.taxRatePercent))
-        .filter((rate) => Number.isFinite(rate)),
-    ),
-  ];
+  const rates = lines
+    .map((line) => Number(line.taxRatePercent))
+    .filter((rate) => Number.isFinite(rate));
+  const taxedRates = [...new Set(rates.filter((rate) => rate > 0))];
 
-  if (rates.length !== 1) {
+  if (taxedRates.length !== 1) {
     return "VAT";
   }
 
-  const pretty = String(Number.parseFloat(rates[0].toFixed(2)));
+  const pretty = String(Number.parseFloat(taxedRates[0].toFixed(2)));
   return `VAT (${pretty}%)`;
 }
 
