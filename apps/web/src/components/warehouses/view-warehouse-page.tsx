@@ -20,6 +20,7 @@ import { AppPage } from "@/components/layout/page";
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { AdjustStockModal } from "@/components/stock/adjust-stock-modal";
 import { QuickAddSerialModal } from "@/components/stock/quick-add-serial-modal";
+import { formatPostalAddressLines } from "@frog1/shared";
 import { formatQuantity } from "@/lib/format-quantity";
 import { listStock } from "@/lib/products-api";
 import { archiveWarehouse, getWarehouse } from "@/lib/warehouses-api";
@@ -31,11 +32,12 @@ interface ViewWarehousePageProps {
 }
 
 function formatAddress(warehouse: Warehouse) {
-  const lines = [
-    warehouse.street1,
-    [warehouse.city, warehouse.zip].filter(Boolean).join(" "),
-    warehouse.countryCode,
-  ].filter(Boolean);
+  const lines = formatPostalAddressLines({
+    street1: warehouse.street1,
+    city: warehouse.city,
+    zip: warehouse.zip,
+    countryCode: warehouse.countryCode,
+  });
 
   return lines.length > 0 ? lines.join("\n") : " ";
 }

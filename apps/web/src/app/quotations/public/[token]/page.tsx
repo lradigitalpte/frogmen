@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import { formatCountryLabel, formatPostalAddressLines } from "@frog1/shared";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
 import { resolveDeliveryFee } from "@/lib/line-item-utils";
@@ -334,17 +335,19 @@ export default function PublicQuotationPage({
   );
   const fmt = (amount: number | string) =>
     formatMoney(amount, currencyCode, decimalPlaces);
-  const customerAddress = [
-    data.customerStreet1,
-    data.customerStreet2,
-    [data.customerCity, data.customerState, data.customerZip]
-      .filter(Boolean)
-      .join(", "),
-    data.customerCountry,
-  ].filter((value): value is string => Boolean(value));
+  const customerAddress = formatPostalAddressLines({
+    street1: data.customerStreet1,
+    street2: data.customerStreet2,
+    city: data.customerCity,
+    stateCode: data.customerState,
+    zip: data.customerZip,
+    countryCode: data.customerCountry,
+  });
   const companyAddress = [
     data.branding.address,
-    [data.branding.city, data.branding.country].filter(Boolean).join(", "),
+    [data.branding.city, formatCountryLabel(data.branding.country)]
+      .filter(Boolean)
+      .join(", "),
   ].filter((value): value is string => Boolean(value));
 
   return (

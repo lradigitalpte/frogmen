@@ -15,6 +15,7 @@ import {
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatCountryLabel } from "@frog1/shared";
 import {
   archiveWarehouse,
   listWarehouses,
@@ -30,7 +31,11 @@ const tabs: { id: WarehouseTab; content: string }[] = [
 ];
 
 function locationLine(warehouse: Warehouse) {
-  return [warehouse.city, warehouse.countryCode].filter(Boolean).join(", ") || " ";
+  return (
+    [warehouse.city, formatCountryLabel(warehouse.countryCode)]
+      .filter(Boolean)
+      .join(", ") || " "
+  );
 }
 
 export function WarehousesListPage() {

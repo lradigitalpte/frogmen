@@ -13,6 +13,8 @@ import {
 } from "@shopify/polaris";
 import {
   countryHasStates,
+  formatCountryLabel,
+  formatStateLabel,
   getCountryOptions,
   getStateOptions,
 } from "@frog1/shared";
@@ -71,9 +73,11 @@ const countryOptions = [
 ];
 
 function formatLocation(values: VendorFormValues) {
-  const parts = [values.city, values.stateCode, values.countryCode].filter(
-    Boolean,
-  );
+  const parts = [
+    values.city,
+    formatStateLabel(values.countryCode, values.stateCode),
+    formatCountryLabel(values.countryCode),
+  ].filter(Boolean);
   return parts.length > 0 ? parts.join(", ") : " ";
 }
 

@@ -16,7 +16,7 @@ import {
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCountryName, getStateName } from "@frog1/shared";
+import { formatPostalAddressLines } from "@frog1/shared";
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import {
@@ -143,25 +143,14 @@ export function EditVendorPage({ vendorId }: { vendorId: string }) {
 }
 
 function formatAddressLines(vendor: Vendor): string[] {
-  const lines: string[] = [];
-
-  if (vendor.street1) lines.push(vendor.street1);
-  if (vendor.street2) lines.push(vendor.street2);
-
-  const cityLine = [
-    vendor.city,
-    getStateName(vendor.countryCode, vendor.stateCode) ?? vendor.stateCode,
-    vendor.zip,
-  ]
-    .filter(Boolean)
-    .join(", ");
-
-  if (cityLine) lines.push(cityLine);
-
-  const country = getCountryName(vendor.countryCode);
-  if (country) lines.push(country);
-
-  return lines;
+  return formatPostalAddressLines({
+    street1: vendor.street1,
+    street2: vendor.street2,
+    city: vendor.city,
+    stateCode: vendor.stateCode,
+    zip: vendor.zip,
+    countryCode: vendor.countryCode,
+  });
 }
 
 function formatWebsite(url: string | null) {

@@ -61,3 +61,73 @@ export function getStateName(
   return getStatesForCountry(countryCode).find((state) => state.code === stateCode)
     ?.name;
 }
+
+function nonempty(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** Display label for a stored ISO country code, falling back to the raw value. */
+export function formatCountryLabel(code: string | null | undefined) {
+  const value = nonempty(code);
+  if (!value) {
+    return undefined;
+  }
+
+  return getCountryName(value) ?? value;
+}
+
+/** Display label for a stored ISO state/emirate code, falling back to the raw value. */
+export function formatStateLabel(
+  countryCode: string | null | undefined,
+  stateCode: string | null | undefined,
+) {
+  const value = nonempty(stateCode);
+  if (!value) {
+    return undefined;
+  }
+
+  return getStateName(countryCode, value) ?? value;
+}
+
+export interface PostalAddressInput {
+  street1?: string | null;
+  street2?: string | null;
+  city?: string | null;
+  stateCode?: string | null;
+  zip?: string | null;
+  countryCode?: string | null;
+}
+
+/** Human-readable postal lines: names, not ISO codes. */
+export function formatPostalAddressLines(address: PostalAddressInput): string[] {
+  const lines: string[] = [];
+  const street1 = nonempty(address.street1);
+  const street2 = nonempty(address.street2);
+
+  if (street1) {
+    lines.push(street1);
+  }
+  if (street2) {
+    lines.push(street2);
+  }
+
+  const locality = [
+    nonempty(address.city),
+    formatStateLabel(address.countryCode, address.stateCode),
+    nonempty(address.zip),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  if (locality) {
+    lines.push(locality);
+  }
+
+  const country = formatCountryLabel(address.countryCode);
+  if (country) {
+    lines.push(country);
+  }
+
+  return lines;
+}

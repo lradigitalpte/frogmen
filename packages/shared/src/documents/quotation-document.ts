@@ -3,6 +3,7 @@ import { resolveCompanyProfile } from "../schemas/company-settings";
 import type { DocumentTemplateSettings } from "../schemas/document-templates";
 import { resolveDocumentTemplates } from "../schemas/document-templates";
 import { formatQuantity } from "../format-quantity";
+import { formatCountryLabel } from "../locations";
 import {
   type DocumentBankAccount,
   renderDocumentPaymentDetailsHtml,
@@ -97,7 +98,8 @@ export function renderQuotationDocumentHtml(
   const isCreditNote = quotation.documentType === "credit_note";
   const title = isCreditNote ? "Credit Note" : isInvoice ? templates.invoiceTitle : isPurchaseOrder ? "Purchase Order" : templates.quotationTitle;
   const showPaymentDetails = isInvoice;
-  const addressLine = [profile.address, profile.city, profile.country]
+  const country = formatCountryLabel(profile.country);
+  const addressLine = [profile.address, profile.city, country]
     .filter(Boolean)
     .join(", ");
 
@@ -144,7 +146,7 @@ export function renderQuotationDocumentHtml(
       .replace(/^(Delivery:\s*)Delivery:\s*/gim, "$1");
     const companyLines = [
       profile.address,
-      [profile.city, profile.country].filter(Boolean).join(", "),
+      [profile.city, country].filter(Boolean).join(", "),
       profile.taxId && `TRN: ${profile.taxId}`,
       profile.phone && `Phone: ${profile.phone}`,
       profile.email && `Email: ${profile.email}`,

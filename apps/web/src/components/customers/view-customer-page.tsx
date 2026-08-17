@@ -13,7 +13,7 @@ import {
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCountryName, getStateName } from "@frog1/shared";
+import { formatPostalAddressLines } from "@frog1/shared";
 import {
   archiveCustomer,
   getCustomer,
@@ -40,25 +40,14 @@ function formatAmount(amount: number, currency: string) {
 }
 
 function formatAddressLines(customer: Customer): string[] {
-  const lines: string[] = [];
-
-  if (customer.street1) lines.push(customer.street1);
-  if (customer.street2) lines.push(customer.street2);
-
-  const cityLine = [
-    customer.city,
-    getStateName(customer.countryCode, customer.stateCode) ?? customer.stateCode,
-    customer.zip,
-  ]
-    .filter(Boolean)
-    .join(", ");
-
-  if (cityLine) lines.push(cityLine);
-
-  const country = getCountryName(customer.countryCode);
-  if (country) lines.push(country);
-
-  return lines;
+  return formatPostalAddressLines({
+    street1: customer.street1,
+    street2: customer.street2,
+    city: customer.city,
+    stateCode: customer.stateCode,
+    zip: customer.zip,
+    countryCode: customer.countryCode,
+  });
 }
 
 export function ViewCustomerPage({ id, customerId }: ViewCustomerPageProps) {
