@@ -2,6 +2,7 @@ export const APP_NAME = "frog1";
 
 export * from "./locations";
 export * from "./schemas/customer";
+export * from "./schemas/lead";
 export * from "./schemas/vendor";
 export * from "./schemas/sales-pricing";
 export * from "./schemas/company-settings";

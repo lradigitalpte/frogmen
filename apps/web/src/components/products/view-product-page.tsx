@@ -39,6 +39,8 @@ import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
+import { useToast } from "@/components/providers/toast-provider";
+import { DeleteProductModal } from "@/components/products/delete-product-modal";
 import {
   adjustStock,
   archiveProduct,
@@ -46,6 +48,8 @@ import {
   getProduct,
   getProductStock,
   listProductUnits,
+  permanentlyDeleteProduct,
+  restoreProduct,
 } from "@/lib/products-api";
 import { listWarehouses } from "@/lib/warehouses-api";
 import {
@@ -82,6 +86,7 @@ function DetailRow({
 
 export function ViewProductPage({ productId }: ViewProductPageProps) {
   const router = useRouter();
+  const { showSuccess } = useToast();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
   const [product, setProduct] = useState<ProductDetail | null>(null);
 
@@ -111,6 +116,9 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
   const [unitWarehouseId, setUnitWarehouseId] = useState("");
 
   const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [linkedComponentsByParent, setLinkedComponentsByParent] = useState<
     Map<string, LinkableUnitOption[]>
   >(new Map());
@@ -247,6 +255,28 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
     router.push("/dashboard/inventory/products");
   }
 
+  async function handleRestore() {
+    await restoreProduct(productId);
+    showSuccess("Product restored");
+    await loadData();
+  }
+
+  async function handlePermanentDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await permanentlyDeleteProduct(productId);
+      showSuccess("Product deleted");
+      router.push("/dashboard/inventory/products");
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete product",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function handleAdjustStock() {
     await adjustStock({
       productId,
@@ -299,7 +329,9 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
           {tag}
         </Badge>
       ))}
-      {!product.isActive ? <Badge tone="critical">Archived</Badge> : null}
+      {!product.isActive || product.deletedAt ? (
+        <Badge tone="critical">Archived</Badge>
+      ) : null}
     </InlineStack>
   );
 
@@ -323,10 +355,22 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
             ]
           : []),
         {
-          content: "Archive",
-          destructive: true,
-          onAction: handleArchive,
+          content: product.deletedAt ? "Restore" : "Archive",
+          destructive: !product.deletedAt,
+          onAction: product.deletedAt ? () => void handleRestore() : handleArchive,
         },
+        ...(product.deletedAt
+          ? [
+              {
+                content: "Delete forever",
+                destructive: true,
+                onAction: () => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                },
+              },
+            ]
+          : []),
       ]}
       subtitle={product.sku ? `SKU ${product.sku}` : undefined}
       title={product.name}
@@ -916,6 +960,21 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
         product={product}
         onClose={() => setLinkModalOpen(false)}
         onLinked={loadData}
+      />
+
+      <DeleteProductModal
+        error={deleteError}
+        loading={deleting}
+        open={deleteOpen}
+        productName={product.name}
+        onClose={() => {
+          if (deleting) {
+            return;
+          }
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
+        onConfirm={() => void handlePermanentDelete()}
       />
     </AppPage>
   );

@@ -18,6 +18,7 @@ export * from "./expenses";
 export * from "./expense-claims";
 export * from "./product-cost-events";
 export * from "./rov-inspection";
+export * from "./leads";
 
 import * as auth from "./auth";
 import * as security from "./security";
@@ -39,6 +40,7 @@ import * as expenses from "./expenses";
 import * as expenseClaims from "./expense-claims";
 import * as productCostEvents from "./product-cost-events";
 import * as rovInspection from "./rov-inspection";
+import * as leads from "./leads";
 
 export const schema = {
   ...auth,
@@ -61,4 +63,5 @@ export const schema = {
   ...expenseClaims,
   ...productCostEvents,
   ...rovInspection,
+  ...leads,
 };

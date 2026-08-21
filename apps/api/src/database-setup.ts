@@ -1,18 +1,19 @@
 import {
   applyAccountingIfNeeded,
+  applyBankAccountsIfNeeded,
   applyCreditNotesIfNeeded,
   applyCustomerCreditIfNeeded,
   applyCustomerIsLocalIfNeeded,
   applyCustomersIfNeeded,
   applyDealsIfNeeded,
-  applyQuotationSignatureFieldsIfNeeded,
+  applyExpensesIfNeeded,
   applyInventoryIfNeeded,
+  applyLeadsIfNeeded,
   applyPaymentRemindersIfNeeded,
   applyPurchasingIfNeeded,
+  applyQuotationSignatureFieldsIfNeeded,
   applyRovInspectionIfNeeded,
   applyUserAuthFlagsIfNeeded,
-  applyBankAccountsIfNeeded,
-  applyExpensesIfNeeded,
   ensureCurrencies,
   runMigrations,
 } from "@frog1/db";
@@ -32,7 +33,7 @@ export async function runDatabaseSetup(databaseUrl: string) {
   await applyBankAccountsIfNeeded(databaseUrl);
   await applyExpensesIfNeeded(databaseUrl);
   await applyDealsIfNeeded(databaseUrl);
+  await applyLeadsIfNeeded(databaseUrl);
   await applyQuotationSignatureFieldsIfNeeded(databaseUrl);
   await ensureCurrencies(databaseUrl);
 }
-

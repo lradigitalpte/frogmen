@@ -19,6 +19,7 @@ import {
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { DeleteProductModal } from "@/components/products/delete-product-modal";
 import {
   archiveProduct,
   exportProductCatalog,
@@ -26,6 +27,7 @@ import {
   listProducts,
   listStock,
   restoreProduct,
+  permanentlyDeleteProduct,
   previewProductCatalog,
   type ProductTransferField,
   type ProductTransferPreview,
@@ -141,6 +143,9 @@ export function ProductsListPage() {
   const [exportFields, setExportFields] = useState<ProductTransferField[]>([
     "description", "barcode", "sellingPrice", "category", "tags", "dimensions", "images",
   ]);
+  const [pendingDelete, setPendingDelete] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
 
   const activeTab = tabs[selectedTab]?.id ?? "all";
@@ -231,6 +236,27 @@ export function ProductsListPage() {
     }
 
     await loadProducts();
+  }
+
+  async function handlePermanentDelete() {
+    if (!pendingDelete) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await permanentlyDeleteProduct(pendingDelete.id);
+      showSuccess(`${pendingDelete.name} deleted`);
+      setPendingDelete(null);
+      await loadProducts();
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete product",
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function toggleExportField(field: ProductTransferField, checked: boolean) {
@@ -391,6 +417,19 @@ export function ProductsListPage() {
             >
               {activeTab === "archived" ? "Restore" : "Archive"}
             </Button>
+            {activeTab === "archived" ? (
+              <Button
+                size="slim"
+                tone="critical"
+                variant="plain"
+                onClick={() => {
+                  setDeleteError(null);
+                  setPendingDelete(product);
+                }}
+              >
+                Delete forever
+              </Button>
+            ) : null}
           </InlineStack>
         </IndexTable.Cell>
       </IndexTable.Row>
@@ -494,6 +533,19 @@ export function ProductsListPage() {
               >
                 {activeTab === "archived" ? "Restore" : "Archive"}
               </Button>
+              {activeTab === "archived" ? (
+                <Button
+                  size="slim"
+                  tone="critical"
+                  variant="plain"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setPendingDelete(rootProduct);
+                  }}
+                >
+                  Delete forever
+                </Button>
+              ) : null}
             </InlineStack>
           </IndexTable.Cell>
         </IndexTable.Row>
@@ -651,6 +703,21 @@ export function ProductsListPage() {
           </BlockStack>
         </Modal.Section>
       </Modal>
+
+      <DeleteProductModal
+        error={deleteError}
+        loading={deleting}
+        open={Boolean(pendingDelete)}
+        productName={pendingDelete?.name ?? ""}
+        onClose={() => {
+          if (deleting) {
+            return;
+          }
+          setPendingDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => void handlePermanentDelete()}
+      />
     </AppPage>
   );
 }

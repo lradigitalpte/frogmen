@@ -8,11 +8,11 @@ export type StatusBadgeVariant =
   | "neutral";
 
 const variantStyles: Record<StatusBadgeVariant, string> = {
-  success: "bg-frogmen-emerald/15 text-frogmen-emerald-dark",
-  warning: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  destructive: "bg-destructive/15 text-destructive",
-  info: "bg-secondary/15 text-secondary",
-  neutral: "bg-muted text-muted-foreground",
+  success: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25",
+  warning: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25",
+  destructive: "bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/25",
+  info: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25",
+  neutral: "bg-muted/80 text-muted-foreground border border-border/80",
 };
 
 interface StatusBadgeProps {

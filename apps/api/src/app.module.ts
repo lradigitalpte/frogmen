@@ -29,6 +29,7 @@ import { ExpenseClaimsModule } from "./expense-claims/expense-claims.module";
 import { SecurityModule } from "./security/security.module";
 import { PlatformModule } from "./platform/platform.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
+import { LeadsModule } from "./leads/leads.module";
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AnalyticsModule } from "./analytics/analytics.module";
     MeModule,
     UploadsModule,
     CustomersModule,
+    LeadsModule,
     CurrenciesModule,
     SalesModule,
     InvoicesModule,

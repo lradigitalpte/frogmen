@@ -50,6 +50,14 @@ import {
 
   warehouses,
 
+  salesOrderLines,
+
+  invoiceLines,
+
+  purchaseOrderLines,
+
+  goodsReceiptLines,
+
   type Database,
 
 } from "@frog1/db";
@@ -1405,6 +1413,100 @@ export class ProductsService {
 
     return product;
 
+  }
+
+  async permanentlyDelete(organizationId: string, id: string) {
+    const existing = await this.getById(organizationId, id);
+
+    if (!existing.deletedAt) {
+      throw new BadRequestException(
+        "Archive the product first before deleting it forever.",
+      );
+    }
+
+    const [child] = await this.db
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.organizationId, organizationId),
+          eq(products.parentId, id),
+        ),
+      )
+      .limit(1);
+
+    if (child) {
+      throw new BadRequestException(
+        "Remove or permanently delete linked sub-products first.",
+      );
+    }
+
+    const [quoteUse] = await this.db
+      .select({ total: count() })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.productId, id));
+    const [invoiceUse] = await this.db
+      .select({ total: count() })
+      .from(invoiceLines)
+      .where(eq(invoiceLines.productId, id));
+    const [poUse] = await this.db
+      .select({ total: count() })
+      .from(purchaseOrderLines)
+      .where(eq(purchaseOrderLines.productId, id));
+    const [receiptUse] = await this.db
+      .select({ total: count() })
+      .from(goodsReceiptLines)
+      .where(eq(goodsReceiptLines.productId, id));
+
+    const documentUses =
+      Number(quoteUse?.total ?? 0) +
+      Number(invoiceUse?.total ?? 0) +
+      Number(poUse?.total ?? 0) +
+      Number(receiptUse?.total ?? 0);
+
+    if (documentUses > 0) {
+      throw new BadRequestException(
+        "This product is used on quotations, invoices, or purchase orders, so it cannot be deleted. Keep it archived.",
+      );
+    }
+
+    const unitRows = await this.db
+      .select({ id: productUnits.id })
+      .from(productUnits)
+      .where(eq(productUnits.productId, id));
+    const unitIds = unitRows.map((row) => row.id);
+
+    if (unitIds.length > 0) {
+      const [quoteUnitUse] = await this.db
+        .select({ total: count() })
+        .from(salesOrderLines)
+        .where(inArray(salesOrderLines.productUnitId, unitIds));
+      const [invoiceUnitUse] = await this.db
+        .select({ total: count() })
+        .from(invoiceLines)
+        .where(inArray(invoiceLines.productUnitId, unitIds));
+
+      if (
+        Number(quoteUnitUse?.total ?? 0) + Number(invoiceUnitUse?.total ?? 0) >
+        0
+      ) {
+        throw new BadRequestException(
+          "This product has serials used on quotations or invoices, so it cannot be deleted. Keep it archived.",
+        );
+      }
+    }
+
+    for (const imagePath of existing.images ?? []) {
+      await this.uploadsService.deleteStoredFile(imagePath).catch(() => undefined);
+    }
+
+    await this.db
+      .delete(products)
+      .where(
+        and(eq(products.id, id), eq(products.organizationId, organizationId)),
+      );
+
+    return { deleted: true as const, id };
   }
 
 }

@@ -156,6 +156,14 @@ export class ProductsController {
     );
   }
 
+  @Delete(":id/permanent")
+  permanentlyDelete(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+  ) {
+    return this.productsService.permanentlyDelete(this.orgId(session), id);
+  }
+
   @Delete(":id")
   archive(@Session() session: UserSession, @Param("id") id: string) {
     return this.productsService.archive(this.orgId(session), id);

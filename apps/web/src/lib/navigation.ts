@@ -41,6 +41,16 @@ export const mainNavItems: NavItem[] = [
     label: "Contacts",
     url: "/dashboard/customers",
     icon: "PersonIcon",
+    children: [
+      {
+        label: "All Contacts",
+        url: "/dashboard/customers",
+      },
+      {
+        label: "Leads Management",
+        url: "/dashboard/leads",
+      },
+    ],
   },
   {
     label: "Sales & Finance",

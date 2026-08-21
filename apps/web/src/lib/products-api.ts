@@ -130,6 +130,13 @@ export function restoreProduct(id: string) {
   });
 }
 
+export function permanentlyDeleteProduct(id: string) {
+  return apiFetch<{ deleted: true; id: string }>(
+    `/api/v1/products/${id}/permanent`,
+    { method: "DELETE" },
+  );
+}
+
 export async function uploadProductImage(id: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
