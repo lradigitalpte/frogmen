@@ -251,47 +251,48 @@ export function renderQuotationDocumentHtml(
 <title>${escapeHtml(title)} ${escapeHtml(quotation.number)}</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;padding:28px 32px;font:12px Arial,Helvetica,sans-serif;color:#202735;background:#fff;border-top:7px solid #1d2d62}
-.top{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:center;margin-bottom:6px}
-.brand-logo{display:block;width:auto;height:118px;max-width:240px;object-fit:contain;object-position:left center}
-.brand-fallback{width:118px;height:118px;background:#1d2d62;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:36px}
-.doc-title{text-align:right;color:#17275b;font-size:26px;line-height:1.1;margin:0 0 10px;letter-spacing:.01em}
+body{margin:0;padding:20px 24px;font:11.5px Arial,Helvetica,sans-serif;color:#202735;background:#fff;border-top:6px solid #1d2d62}
+.top{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px;align-items:center;margin-bottom:4px}
+.brand-logo{display:block;width:auto;height:95px;max-width:210px;object-fit:contain;object-position:left center}
+.brand-fallback{width:95px;height:95px;background:#1d2d62;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:32px}
+.doc-title{text-align:right;color:#17275b;font-size:24px;line-height:1.1;margin:0 0 8px;letter-spacing:.01em}
 .meta{display:grid;grid-template-columns:1.05fr .95fr;border:1px solid #3568a9;overflow:hidden}
-.meta span,.meta b{padding:7px 10px;font-size:12px}
+.meta span,.meta b{padding:6px 9px;font-size:11.5px}
 .meta span{color:#fff;background:#3568a9;border-bottom:1px solid #fff}
 .meta b{text-align:right;font-weight:600;border-bottom:1px solid #d7e3f2;background:#fff}
 .meta span:nth-last-child(2),.meta b:last-child{border-bottom:0}
-.company{margin:14px 0 18px;line-height:1.45}
-.company strong{display:block;color:#17275b;margin-bottom:6px;font-size:13px}
-.company p{margin:3px 0}
-.addresses{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:0 0 8px}
-.address-title{font-weight:700;margin:0 0 6px;color:#17275b}
-.address-box{min-height:96px;padding:10px 12px;border:1px solid #b9c5d8;background:#fbfcfe}
-.address-box p{margin:3px 0}
-table{width:100%;border-collapse:collapse;table-layout:fixed;margin:18px 0 14px}
+.company{margin:10px 0 12px;line-height:1.4}
+.company strong{display:block;color:#17275b;margin-bottom:4px;font-size:12.5px}
+.company p{margin:2px 0}
+.addresses{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 6px}
+.address-title{font-weight:700;margin:0 0 4px;color:#17275b}
+.address-box{min-height:76px;padding:8px 10px;border:1px solid #b9c5d8;background:#fbfcfe}
+.address-box p{margin:2px 0}
+table{width:100%;border-collapse:collapse;table-layout:fixed;margin:12px 0 10px}
 col.col-sn{width:90px} col.col-qty{width:52px} col.col-price,col.col-total{width:122px}
-th{padding:9px 10px;color:#fff;background:#3c72b8;text-align:left;font-weight:700;font-size:12px}
-td{padding:9px 10px;border:1px solid #d3dbe7;vertical-align:top}
-.sn{white-space:nowrap;font-size:11px;color:#334155;letter-spacing:.01em}
+th{padding:7px 9px;color:#fff;background:#3c72b8;text-align:left;font-weight:700;font-size:11.5px}
+td{padding:7px 9px;border:1px solid #d3dbe7;vertical-align:top}
+tr{page-break-inside:avoid;break-inside:avoid}
+.sn{white-space:nowrap;font-size:10.5px;color:#334155;letter-spacing:.01em}
 .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .line-title{font-weight:700}
-.line-details{margin:6px 0 0;padding-left:16px;color:#5b6578;font-size:11px;font-weight:400;line-height:1.45}
+.line-details{margin:4px 0 0;padding-left:14px;color:#5b6578;font-size:10.5px;font-weight:400;line-height:1.4}
 .line-details li{margin:1px 0} div.line-details{padding-left:0}
-.lower{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-.notes{min-height:112px;padding:10px 12px;border:1px solid #b9c5d8;white-space:pre-wrap;background:#fbfcfe}
-.notes strong{display:block;color:#17275b;margin-bottom:8px}
+.lower{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;page-break-inside:avoid;break-inside:avoid}
+.notes{min-height:76px;padding:8px 10px;border:1px solid #b9c5d8;white-space:pre-wrap;background:#fbfcfe;page-break-inside:avoid;break-inside:avoid}
+.notes strong{display:block;color:#17275b;margin-bottom:6px}
 .notes[style]{min-height:0}
-.totals{width:100%;border:1px solid #d3dbe7}
-.row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;gap:16px;border-bottom:1px solid #edf1f6}
+.totals{width:100%;border:1px solid #d3dbe7;page-break-inside:avoid;break-inside:avoid}
+.row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;gap:14px;border-bottom:1px solid #edf1f6}
 .row:last-child{border-bottom:0}
 .row span:first-child{flex:1;color:#334155;white-space:nowrap}
 .row span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
-.charge-scope{color:#687386;font-size:11px;font-weight:400}
-.grand{background:#f4f7fb;font-size:13px;font-weight:800;color:#17275b;align-items:center;padding:10px 12px}
-.grand span:first-child{color:#17275b;line-height:1.25;white-space:nowrap}
-.grand span:last-child{font-size:15px}
-.footer{margin-top:22px;color:#687386;font-size:10px;text-align:center}
-@media print{body{padding:6px 2px}}
+.charge-scope{color:#687386;font-size:10.5px;font-weight:400}
+.grand{background:#f4f7fb;font-size:12.5px;font-weight:800;color:#17275b;align-items:center;padding:9px 10px}
+.grand span:first-child{color:#17275b;line-height:1.2;white-space:nowrap}
+.grand span:last-child{font-size:14.5px}
+.footer{margin-top:16px;color:#687386;font-size:9.5px;text-align:center;page-break-inside:avoid;break-inside:avoid}
+@media print{body{padding:4px 2px}}
 </style></head><body>
 <div class="top"><div>${officialLogo}</div>
 <div><h1 class="doc-title">${escapeHtml(title)}</h1><div class="meta">
@@ -376,23 +377,24 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     .muted { color: #6b7280; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
     .section-label { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.05em; color: #6b7280; text-transform: uppercase; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 20px 0; }
-    th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 14px 0; }
+    th, td { padding: 7px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
     th { background: var(--accent); color: #fff; font-size: 12px; }
     .style-clean_minimal th { color: #111827; border-top: 1px solid #111827; border-bottom: 1px solid #111827; background: #fff; }
-    .sn { white-space: nowrap; font-size: 12px; color: #374151; }
+    .sn { white-space: nowrap; font-size: 11.5px; color: #374151; }
     .num { text-align: right; white-space: nowrap; }
     .line-title { font-weight: 700; }
-    .line-details { margin: 6px 0 0; padding-left: 16px; color: #6b7280; font-size: 12px; font-weight: 400; line-height: 1.45; }
+    .line-details { margin: 4px 0 0; padding-left: 14px; color: #6b7280; font-size: 11.5px; font-weight: 400; line-height: 1.4; }
     .line-details li { margin: 1px 0; }
     div.line-details { padding-left: 0; }
-    .totals { margin-left: auto; width: 340px; }
+    .totals { margin-left: auto; width: 340px; page-break-inside: avoid; break-inside: avoid; }
     .totals-row { display: flex; justify-content: space-between; padding: 4px 0; gap: 12px; }
     .totals-row span:first-child { flex: 1; white-space: nowrap; }
     .charge-scope { color: #9ca3af; font-size: 11px; font-weight: 400; }
     .total-strong { font-size: 16px; font-weight: 800; color: var(--accent); }
-    .terms { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; white-space: pre-wrap; }
-    .footer { margin-top: 16px; color: #6b7280; font-size: 12px; }
+    .terms { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e5e7eb; white-space: pre-wrap; page-break-inside: avoid; break-inside: avoid; }
+    .footer { margin-top: 14px; color: #6b7280; font-size: 11px; page-break-inside: avoid; break-inside: avoid; }
   </style>
 </head>
 <body class="${styleClass}">
