@@ -147,17 +147,14 @@ export function renderQuotationDocumentHtml(
   const quoteDateLabel = formatDocumentDate(quotation.quoteDate);
   const validityDateLabel = formatDocumentDate(quotation.validityDate);
   const vatLabel = formatVatLabel(quotation.lines);
-  const showSerialColumn = quotation.lines.some((line) =>
-    Boolean(line.serialNumber?.trim()),
-  );
   const trnLabel = formatTrnLabel(profile.taxId);
 
   const lineRows = quotation.lines
     .map(
-      (line) => `
+      (line, index) => `
       <tr>
+        <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
         <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
-        ${showSerialColumn ? `<td class="sn">${escapeHtml(line.serialNumber?.trim() || "—")}</td>` : ""}
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(line.discountPercent)}%</td>
@@ -179,10 +176,10 @@ export function renderQuotationDocumentHtml(
         maximumFractionDigits: quotation.decimalPlaces,
       }) : "0.00"}`;
     };
-    const officialRows = quotation.lines.map((line) => `
+    const officialRows = quotation.lines.map((line, index) => `
       <tr>
+        <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
         <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
-        ${showSerialColumn ? `<td class="sn">${escapeHtml(line.serialNumber?.trim() || "—")}</td>` : ""}
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
         <td class="num">${money(line.priceSubtotal)}</td>
@@ -304,8 +301,8 @@ tr{page-break-inside:avoid;break-inside:avoid}
 <div class="company"><strong>${escapeHtml(branding.name)}</strong>${companyLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
 <div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? "Tax Invoice To:" : isPurchaseOrder ? "Purchase Order To:" : "Quotation To:"}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
 <div><p class="address-title">Billing Address:</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div></div></div>
-<table><colgroup><col />${showSerialColumn ? '<col class="col-sn" />' : ""}<col class="col-qty" /><col class="col-price" /><col class="col-total" /></colgroup>
-<thead><tr><th>Description</th>${showSerialColumn ? '<th>S/N</th>' : ""}<th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead>
+<table><colgroup><col class="col-sn" /><col /><col class="col-qty" /><col class="col-price" /><col class="col-total" /></colgroup>
+<thead><tr><th style="text-align:center;width:44px;">S/N</th><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead>
 <tbody>${officialRows}</tbody></table>
 <div class="lower"><div class="notes"><strong>${isPurchaseOrder ? "Vendor terms" : "Notes"}</strong>${escapeHtml(notes)}</div><div class="totals">
 <div class="row"><span>Sub Total</span><span>${money(subTotalValue)}</span></div>
@@ -435,8 +432,8 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   <table>
     <thead>
       <tr>
+        <th style="text-align: center; width: 44px;">S/N</th>
         <th>Description</th>
-        ${showSerialColumn ? "<th>S/N</th>" : ""}
         <th class="num">Qty</th>
         <th class="num">Unit price</th>
         <th class="num">Disc.</th>
