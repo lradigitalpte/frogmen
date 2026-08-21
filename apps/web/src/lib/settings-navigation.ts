@@ -66,6 +66,11 @@ export const settingsNavGroups: SettingsNavGroup[] = [
         href: "/dashboard/settings/documents",
         description: "Payment details, terms, email, and PDF setup",
       },
+      {
+        label: "Company File Vault",
+        href: "/dashboard/settings/vault",
+        description: "Store agreements, inspection videos, and media files",
+      },
     ],
   },
   {

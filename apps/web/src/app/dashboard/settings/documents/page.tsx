@@ -30,12 +30,14 @@ import {
 } from "@shopify/polaris";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CompanyFileVault } from "@/components/settings/company-file-vault";
 
 const tabs = [
   { id: "identity", content: "Document setup" },
   { id: "payment", content: "Payment details" },
   { id: "terms", content: "Terms & notes" },
   { id: "email", content: "Email defaults" },
+  { id: "vault", content: "Company File Vault" },
 ];
 
 const lineItemDetailsLayouts = [
@@ -224,10 +226,14 @@ export default function DocumentTemplatesSettingsPage() {
                     </Text>
                   </BlockStack>
                   <Banner tone="info">
-                    <p>
-                      The logo, legal company name, address, TRN, phone, email, and
-                      website come from <strong>Company setup</strong>.
-                    </p>
+                    <InlineStack align="space-between" blockAlign="center">
+                      <p>
+                        📁 Store company contracts, ROV inspection videos, and media files in your S3 cloud bucket.
+                      </p>
+                      <Link href="/dashboard/settings/vault" className="font-bold underline">
+                        Open Company Cloud Vault →
+                      </Link>
+                    </InlineStack>
                   </Banner>
                   <BlockStack gap="300">
                     <InlineStack align="space-between" blockAlign="center">
@@ -403,6 +409,8 @@ export default function DocumentTemplatesSettingsPage() {
                   </FormLayout>
                 </BlockStack>
               ) : null}
+
+              {selectedTab === 4 ? <CompanyFileVault /> : null}
             </div>
           </Tabs>
         </Card>
