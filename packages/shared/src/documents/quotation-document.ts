@@ -237,6 +237,15 @@ export function renderQuotationDocumentHtml(
       ? `<img class="brand-logo" src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.name)}" />`
       : `<div class="brand-fallback">${escapeHtml(branding.name.charAt(0).toUpperCase())}</div>`;
 
+    const vatAmountNum = Number(quotation.amountTax ?? 0);
+    const hasVat = Number.isFinite(vatAmountNum) && vatAmountNum > 0;
+    const officialVatRow = hasVat
+      ? `<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>`
+      : "";
+    const officialGrandLabel = hasVat
+      ? "Total Amount<br />(Including VAT)"
+      : "Total Amount";
+
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8" />
 <title>${escapeHtml(title)} ${escapeHtml(quotation.number)}</title>
@@ -301,8 +310,8 @@ td{padding:9px 10px;border:1px solid #d3dbe7;vertical-align:top}
 <div class="row"><span>Sub Total</span><span>${money(subTotalValue)}</span></div>
 ${deliveryFeeRow}
 ${otherChargesRow}
-<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>
-<div class="row grand"><span>Total Amount<br />(Including VAT)</span><span>${money(quotation.amountTotal)}</span></div>
+${officialVatRow}
+<div class="row grand"><span>${officialGrandLabel}</span><span>${money(quotation.amountTotal)}</span></div>
 </div></div>
 ${paymentDetailsHtml}
 ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}</body></html>`;
@@ -341,6 +350,8 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     quotation.otherCharges
       ? `<div class="totals-row"><span class="muted">Other charges</span><span>+${formatDocumentMoney(quotation.otherCharges, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
       : "";
+  const stdVatNum = Number(quotation.amountTax ?? 0);
+  const stdHasVat = Number.isFinite(stdVatNum) && stdVatNum > 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -438,8 +449,8 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     <div class="totals-row"><span class="muted">${quotation.deliveryFee ? "Subtotal" : "Untaxed amount"}</span><span>${formatDocumentMoney(subTotalValue, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
     ${deliveryFeeRow}
 ${additionalChargeRows}${otherChargesRow}
-    <div class="totals-row"><span class="muted">${escapeHtml(vatLabel)}</span><span>+${formatDocumentMoney(quotation.amountTax, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
-    <div class="totals-row"><span><strong>Total</strong></span><span class="total-strong">${formatDocumentMoney(quotation.amountTotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
+    ${stdHasVat ? `<div class="totals-row"><span class="muted">${escapeHtml(vatLabel)}</span><span>+${formatDocumentMoney(quotation.amountTax, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>` : ""}
+    <div class="totals-row"><span><strong>${stdHasVat ? "Total Amount (Including VAT)" : "Total Amount"}</strong></span><span class="total-strong">${formatDocumentMoney(quotation.amountTotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
   </div>
 
   ${quotation.notes ? `<div class="terms"><strong>Notes</strong>\n${escapeHtml(quotation.notes)}</div>` : ""}
