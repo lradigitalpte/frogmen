@@ -215,6 +215,32 @@ export function CreateQuotationPage() {
   const [documentCurrencyError, setDocumentCurrencyError] = useState<string | null>(null);
   const prevCurrencyIdRef = useRef<string | null>(null);
 
+  // Global Commercial Discount (%) & Global VAT Rate (%)
+  const [globalDiscountPercent, setGlobalDiscountPercent] = useState<string>("0");
+  const [globalVatPercent, setGlobalVatPercent] = useState<string>("5");
+
+  function applyGlobalDiscount(discountPctStr: string) {
+    setGlobalDiscountPercent(discountPctStr);
+    const pct = Math.max(0, parseFloat(discountPctStr) || 0);
+    setLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        discountPercent: pct,
+      })),
+    );
+  }
+
+  function applyGlobalVat(vatPctStr: string) {
+    setGlobalVatPercent(vatPctStr);
+    const pct = Math.max(0, parseFloat(vatPctStr) || 0);
+    setLines((prev) =>
+      prev.map((line) => ({
+        ...line,
+        taxRatePercent: pct,
+      })),
+    );
+  }
+
   const {
     exchangeRateError: productExchangeRateError,
     exchangeRateLoading: productExchangeRateLoading,
@@ -391,8 +417,8 @@ export function CreateQuotationPage() {
       baseUnitPrice,
       unitPrice: baseUnitPrice,
       unitCost,
-      discountPercent: 0,
-      taxRatePercent: salesPricing.defaultVatRatePercent ?? 5,
+      discountPercent: parseFloat(globalDiscountPercent) || 0,
+      taxRatePercent: parseFloat(globalVatPercent) || salesPricing.defaultVatRatePercent || 5,
       availableQuantity: selectedAvailableQuantity,
     };
 
@@ -994,6 +1020,46 @@ export function CreateQuotationPage() {
                   <Text as="h2" variant="headingMd">
                     Price breakdown
                   </Text>
+
+                  <BlockStack gap="300">
+                    <TextField
+                      autoComplete="off"
+                      label="Global Commercial Discount (%)"
+                      type="number"
+                      value={globalDiscountPercent}
+                      onChange={applyGlobalDiscount}
+                      prefix="%"
+                      placeholder="0"
+                      helpText="Applies discount across all quotation lines"
+                    />
+                    <TextField
+                      autoComplete="off"
+                      label="Global Delivery & Freight Fee"
+                      type="number"
+                      value={deliveryFeeValue}
+                      onChange={(val) => {
+                        setDeliveryFeeMode(val ? "amount" : "none");
+                        setDeliveryFeeValue(val);
+                      }}
+                      prefix={displayCurrency?.code ?? "AED"}
+                      placeholder="0.00"
+                      helpText="Global shipping fee for entire quotation"
+                    />
+                    <Select
+                      label="Global VAT / Tax Rate"
+                      options={[
+                        { label: "5% Standard VAT (GCC)", value: "5" },
+                        { label: "0% Zero-Rated / Exempt", value: "0" },
+                        { label: "15% VAT", value: "15" },
+                      ]}
+                      value={globalVatPercent}
+                      onChange={applyGlobalVat}
+                      helpText="Applies tax rate across all quotation lines"
+                    />
+                  </BlockStack>
+
+                  <Divider />
+
                   <div className="quotation-summary-panel__rows">
                     {showPricingAdjustment ? (
                       <>

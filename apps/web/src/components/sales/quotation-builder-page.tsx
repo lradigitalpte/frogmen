@@ -13,6 +13,7 @@ import {
   Select,
   SkeletonBodyText,
   Text,
+  TextField,
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -79,6 +80,11 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
   const [reconvertFromId, setReconvertFromId] = useState("");
   const [reconverting, setReconverting] = useState(false);
 
+  // Editable Financial Summary Controls: Discount %, Delivery Fee (AED), VAT Rate %
+  const [discountPercent, setDiscountPercent] = useState<string>("5");
+  const [deliveryFee, setDeliveryFee] = useState<string>("0");
+  const [vatPercent, setVatPercent] = useState<string>("5");
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -101,6 +107,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
       );
 
       setQuotation(quotationResult);
+      setDeliveryFee(quotationResult.deliveryFeeAmount ?? "0");
       setHeader({
         customer,
         currencyId: quotationResult.currencyId,
@@ -151,12 +158,28 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
 
   const lineCount = quotation?.lines?.length ?? 0;
 
-  // Financial Summary Breakdown (Subtotal, Discount, Net Subtotal, VAT +5%, Grand Total)
-  const amountUntaxedNum = parseFloat(quotation?.amountUntaxed || "12450.00") || 12450.00;
-  const discountAmount = amountUntaxedNum * 0.05; // 5% discount
-  const netSubtotal = amountUntaxedNum - discountAmount;
-  const vatAmount = netSubtotal * 0.05; // 5% VAT
-  const grandTotal = netSubtotal + vatAmount;
+  // Dynamic Financial Calculations based on actual lines & user inputs
+  const equipmentSubtotal = useMemo(() => {
+    if (!quotation?.lines || quotation.lines.length === 0) {
+      return parseFloat(quotation?.amountUntaxed || "0") || 0;
+    }
+    return quotation.lines.reduce((sum, line) => {
+      const qty = parseFloat(line.quantity) || 0;
+      const price = parseFloat(line.unitPrice) || 0;
+      return sum + qty * price;
+    }, 0);
+  }, [quotation?.lines, quotation?.amountUntaxed]);
+
+  const discountRateNum = parseFloat(discountPercent) || 0;
+  const discountAmount = equipmentSubtotal * (discountRateNum / 100);
+  const netSubtotal = Math.max(0, equipmentSubtotal - discountAmount);
+
+  const deliveryFeeNum = Math.max(0, parseFloat(deliveryFee) || 0);
+  const taxableBase = netSubtotal + deliveryFeeNum;
+
+  const vatRateNum = parseFloat(vatPercent) || 0;
+  const vatAmount = taxableBase * (vatRateNum / 100);
+  const grandTotal = taxableBase + vatAmount;
 
   const currencyChanged =
     Boolean(quotation && header && header.currencyId !== quotation.currencyId);
@@ -177,6 +200,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         internalReference: header.internalReference || null,
         paymentReference: header.paymentReference || null,
         notes: header.notes || null,
+        deliveryFeeAmount: deliveryFeeNum,
       });
 
       setQuotation(updated);
@@ -422,6 +446,62 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                     </Text>
                   </BlockStack>
 
+                  {editable ? (
+                    <BlockStack gap="300">
+                      <TextField
+                        autoComplete="off"
+                        label="Commercial Discount (%)"
+                        type="number"
+                        value={discountPercent}
+                        onChange={(val) => {
+                          setDiscountPercent(val);
+                          setHeaderDirty(true);
+                        }}
+                        prefix="%"
+                        placeholder="0"
+                        helpText="Global discount applied to equipment subtotal"
+                      />
+                      <TextField
+                        autoComplete="off"
+                        label="Global Delivery & Freight Fee"
+                        type="number"
+                        value={deliveryFee}
+                        onChange={(val) => {
+                          setDeliveryFee(val);
+                          setHeaderDirty(true);
+                        }}
+                        prefix={currency?.code ?? "AED"}
+                        placeholder="0.00"
+                        helpText="Global shipping and transport fee for entire quote"
+                      />
+                      <Select
+                        label="VAT / Sales Tax Rate"
+                        options={[
+                          { label: "5% Standard VAT (GCC)", value: "5" },
+                          { label: "0% Zero-Rated / Exempt", value: "0" },
+                          { label: "15% VAT", value: "15" },
+                        ]}
+                        value={vatPercent}
+                        onChange={(val) => {
+                          setVatPercent(val);
+                          setHeaderDirty(true);
+                        }}
+                      />
+                      {headerDirty ? (
+                        <Button
+                          fullWidth
+                          loading={savingHeader}
+                          onClick={() => void saveHeader()}
+                          variant="secondary"
+                        >
+                          Save Financial Details & Delivery Fee
+                        </Button>
+                      ) : null}
+                    </BlockStack>
+                  ) : null}
+
+                  <Divider />
+
                   <div className="quotation-summary-panel__rows">
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
@@ -429,21 +509,23 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                       </Text>
                       <Text as="span" variant="bodyMd" fontWeight="semibold">
                         {formatMoney(
-                          amountUntaxedNum,
+                          equipmentSubtotal,
                           currency?.code,
                           currency?.decimalPlaces,
                         )}
                       </Text>
                     </div>
 
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Commercial Discount (5%)
-                      </Text>
-                      <Text as="span" variant="bodyMd" tone="success">
-                        -{formatMoney(discountAmount, currency?.code)}
-                      </Text>
-                    </div>
+                    {discountAmount > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Commercial Discount ({discountPercent}%)
+                        </Text>
+                        <Text as="span" variant="bodyMd" tone="success">
+                          -{formatMoney(discountAmount, currency?.code)}
+                        </Text>
+                      </div>
+                    ) : null}
 
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
@@ -454,9 +536,20 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                       </Text>
                     </div>
 
+                    {deliveryFeeNum > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Delivery & Freight Fee
+                        </Text>
+                        <Text as="span" variant="bodyMd" fontWeight="semibold">
+                          +{formatMoney(deliveryFeeNum, currency?.code)}
+                        </Text>
+                      </div>
+                    ) : null}
+
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
-                        VAT / Sales Tax (+5%)
+                        VAT / Sales Tax (+{vatPercent}%)
                       </Text>
                       <Text as="span" variant="bodyMd" fontWeight="semibold">
                         +{formatMoney(vatAmount, currency?.code)}
@@ -484,9 +577,13 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                   {editable ? (
                     <Button
                       fullWidth
-                      onClick={() =>
-                        router.push(`/dashboard/sales/quotations/${quotation.id}`)
-                      }
+                      loading={savingHeader}
+                      onClick={async () => {
+                        if (headerDirty) {
+                          await saveHeader();
+                        }
+                        router.push(`/dashboard/sales/quotations/${quotation.id}`);
+                      }}
                       variant="primary"
                     >
                       Preview & Confirm Quotation
