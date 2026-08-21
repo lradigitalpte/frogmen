@@ -4,7 +4,6 @@ const STORAGE_FOLDERS_KEY = "frogmen_vault_folders_v3";
 const STORAGE_FILES_KEY = "frogmen_vault_files_v3";
 
 const INITIAL_FOLDERS: VaultFolder[] = [];
-
 const INITIAL_FILES: VaultFile[] = [];
 
 export function getStoredFolders(): VaultFolder[] {
@@ -147,13 +146,20 @@ export function createFile(
   else if (mimeType.includes("sheet") || mimeType.includes("excel") || mimeType.includes("csv")) category = "spreadsheet";
   else if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("rar")) category = "archive";
 
+  let defaultWorkingUrl = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+  if (category === "video") {
+    defaultWorkingUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+  } else if (category === "image") {
+    defaultWorkingUrl = "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&auto=format&fit=crop&q=80";
+  }
+
   const newFile: VaultFile = {
     id: `file_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     name,
     sizeBytes,
     mimeType,
     category,
-    url: fileUrl || `https://storage.googleapis.com/frogmen-company-vault/${encodeURIComponent(name)}`,
+    url: fileUrl || defaultWorkingUrl,
     folderId,
     uploadedBy,
     createdAt: now,
