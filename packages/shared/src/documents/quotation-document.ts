@@ -277,18 +277,18 @@ td{padding:9px 10px;border:1px solid #d3dbe7;vertical-align:top}
 .line-title{font-weight:700}
 .line-details{margin:6px 0 0;padding-left:16px;color:#5b6578;font-size:11px;font-weight:400;line-height:1.45}
 .line-details li{margin:1px 0} div.line-details{padding-left:0}
-.lower{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;align-items:start}
+.lower{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
 .notes{min-height:112px;padding:10px 12px;border:1px solid #b9c5d8;white-space:pre-wrap;background:#fbfcfe}
 .notes strong{display:block;color:#17275b;margin-bottom:8px}
 .notes[style]{min-height:0}
 .totals{width:100%;border:1px solid #d3dbe7}
 .row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;gap:16px;border-bottom:1px solid #edf1f6}
 .row:last-child{border-bottom:0}
-.row span:first-child{flex:1;color:#334155}
+.row span:first-child{flex:1;color:#334155;white-space:nowrap}
 .row span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
 .charge-scope{color:#687386;font-size:11px;font-weight:400}
 .grand{background:#f4f7fb;font-size:13px;font-weight:800;color:#17275b;align-items:center;padding:10px 12px}
-.grand span:first-child{color:#17275b;line-height:1.25}
+.grand span:first-child{color:#17275b;line-height:1.25;white-space:nowrap}
 .grand span:last-child{font-size:15px}
 .footer{margin-top:22px;color:#687386;font-size:10px;text-align:center}
 @media print{body{padding:6px 2px}}
@@ -386,9 +386,9 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     .line-details { margin: 6px 0 0; padding-left: 16px; color: #6b7280; font-size: 12px; font-weight: 400; line-height: 1.45; }
     .line-details li { margin: 1px 0; }
     div.line-details { padding-left: 0; }
-    .totals { margin-left: auto; width: 280px; }
+    .totals { margin-left: auto; width: 340px; }
     .totals-row { display: flex; justify-content: space-between; padding: 4px 0; gap: 12px; }
-    .totals-row span:first-child { flex: 1; }
+    .totals-row span:first-child { flex: 1; white-space: nowrap; }
     .charge-scope { color: #9ca3af; font-size: 11px; font-weight: 400; }
     .total-strong { font-size: 16px; font-weight: 800; color: var(--accent); }
     .terms { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; white-space: pre-wrap; }
