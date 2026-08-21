@@ -243,7 +243,7 @@ export function renderQuotationDocumentHtml(
       ? `<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>`
       : "";
     const officialGrandLabel = hasVat
-      ? "Total Amount<br />(Including VAT)"
+      ? "Total Amount (Incl. VAT)"
       : "Total Amount";
 
     return `<!DOCTYPE html>
