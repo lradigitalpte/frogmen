@@ -16,6 +16,7 @@ import { HealthModule } from "./health/health.module";
 import { MeModule } from "./me/me.module";
 import { SettingsModule } from "./settings/settings.module";
 import { InvoicesModule } from "./invoices/invoices.module";
+import { DeliveryNotesModule } from "./delivery-notes/delivery-notes.module";
 import { AccountingModule } from "./accounting/accounting.module";
 import { VendorsModule } from "./vendors/vendors.module";
 import { PurchaseOrdersModule } from "./purchase-orders/purchase-orders.module";
@@ -49,6 +50,7 @@ import { LeadsModule } from "./leads/leads.module";
     CurrenciesModule,
     SalesModule,
     InvoicesModule,
+    DeliveryNotesModule,
     AccountingModule,
     BankAccountsModule,
     ExpensesModule,

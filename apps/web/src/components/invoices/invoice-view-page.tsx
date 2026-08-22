@@ -30,6 +30,7 @@ import { AppPage } from "@/components/layout/page";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { RegisterPaymentModal } from "@/components/invoices/register-payment-modal";
+import { DeliveryNoteReviewModal } from "@/components/invoices/delivery-note-review-modal";
 import {
   confirmInvoice,
   cancelInvoice,
@@ -88,6 +89,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
 
   // PDF Preview Modal State
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [deliveryNoteOpen, setDeliveryNoteOpen] = useState(false);
   const [journalLines, setJournalLines] = useState<
     Awaited<ReturnType<typeof getInvoiceJournal>>["lines"]
   >([]);
@@ -147,6 +149,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
       const updated = await confirmInvoice(invoice.id);
       setInvoice(updated);
       setSuccessBanner(`Invoice ${invoice.number} confirmed & posted to accounting ledger.`);
+      setDeliveryNoteOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to confirm invoice");
     } finally {
@@ -360,7 +363,18 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
       title={`Customer Invoice ${invoice.number}`}
     >
       <BlockStack gap="500">
-        {successBanner ? <Banner tone="success">{successBanner}</Banner> : null}
+        {successBanner ? (
+          <Banner
+            tone="success"
+            action={
+              isPosted && !deliveryNoteOpen
+                ? { content: "Create delivery note", onAction: () => setDeliveryNoteOpen(true) }
+                : undefined
+            }
+          >
+            {successBanner}
+          </Banner>
+        ) : null}
         {error ? <Banner tone="critical">{error}</Banner> : null}
         {isCancelled ? (
           <Banner tone="warning">
@@ -399,6 +413,11 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
               {invoice.status === "posted" || invoice.status === "paid" ? (
                 <Button size="slim" onClick={() => setSendInvoiceOpen(true)}>
                   Send by email
+                </Button>
+              ) : null}
+              {isPosted ? (
+                <Button size="slim" onClick={() => setDeliveryNoteOpen(true)}>
+                  Delivery note
                 </Button>
               ) : null}
               <Button
@@ -925,6 +944,13 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
         quotationId={invoice.id}
         quotationNumber={invoice.number}
         title="Invoice PDF preview"
+      />
+
+      <DeliveryNoteReviewModal
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.number}
+        open={deliveryNoteOpen}
+        onClose={() => setDeliveryNoteOpen(false)}
       />
     </AppPage>
   );

@@ -1,8 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   currencies,
   customers,
+  deliveryNoteLines,
+  deliveryNotes,
   invoiceLines,
   invoices,
   products,
@@ -17,8 +19,10 @@ import {
 import {
   formatPostalAddressLines,
   renderQuotationDocumentHtml,
+  renderDeliveryNoteDocumentHtml,
   resolveDeliveryFee,
   roundMoney,
+  type DeliveryNoteDocumentData,
   type QuotationDocumentData,
 } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
@@ -443,6 +447,96 @@ export class DocumentRendererService {
   async renderPurchaseOrderPdf(organizationId: string, orderId: string) {
     return this.pdfService.renderHtmlToPdf(
       await this.renderPurchaseOrderHtml(organizationId, orderId),
+    );
+  }
+
+  async buildDeliveryNoteDocumentData(
+    organizationId: string,
+    deliveryNoteId: string,
+  ): Promise<DeliveryNoteDocumentData> {
+    const [header] = await this.db
+      .select({
+        note: deliveryNotes,
+        customerName: customers.name,
+        customerEmail: customers.email,
+        invoiceNumber: invoices.number,
+      })
+      .from(deliveryNotes)
+      .innerJoin(customers, eq(customers.id, deliveryNotes.customerId))
+      .innerJoin(invoices, eq(invoices.id, deliveryNotes.invoiceId))
+      .where(
+        and(
+          eq(deliveryNotes.id, deliveryNoteId),
+          eq(deliveryNotes.organizationId, organizationId),
+          isNull(deliveryNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!header) {
+      throw new NotFoundException("Delivery note not found");
+    }
+
+    const lines = await this.db
+      .select({
+        line: deliveryNoteLines,
+        productDescription: products.description,
+      })
+      .from(deliveryNoteLines)
+      .leftJoin(products, eq(products.id, deliveryNoteLines.productId))
+      .where(eq(deliveryNoteLines.deliveryNoteId, deliveryNoteId))
+      .orderBy(asc(deliveryNoteLines.lineNumber));
+
+    return {
+      number: header.note.number,
+      deliveryDate: header.note.deliveryDate,
+      invoiceNumber: header.invoiceNumber,
+      customerName: header.customerName,
+      customerEmail: header.customerEmail,
+      deliveryAddress: formatPostalAddressLines({
+        street1: header.note.deliveryStreet1,
+        street2: header.note.deliveryStreet2,
+        city: header.note.deliveryCity,
+        stateCode: header.note.deliveryStateCode,
+        zip: header.note.deliveryZip,
+        countryCode: header.note.deliveryCountryCode,
+      }),
+      receivedBy: header.note.receivedBy,
+      signedOn: header.note.signedOn?.toISOString() ?? null,
+      signatureImage: header.note.signatureImage,
+      lines: lines.map((row) => ({
+        description: row.line.description,
+        details: row.productDescription,
+        serialNumber: row.line.serialNumber,
+        quantity: row.line.quantity,
+      })),
+    };
+  }
+
+  async renderDeliveryNoteHtml(organizationId: string, deliveryNoteId: string) {
+    const [header] = await this.db
+      .select({ branchId: deliveryNotes.branchId })
+      .from(deliveryNotes)
+      .where(
+        and(
+          eq(deliveryNotes.id, deliveryNoteId),
+          eq(deliveryNotes.organizationId, organizationId),
+          isNull(deliveryNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const branding = await this.buildBranding(organizationId, header?.branchId);
+    const note = await this.buildDeliveryNoteDocumentData(
+      organizationId,
+      deliveryNoteId,
+    );
+    return renderDeliveryNoteDocumentHtml(branding, note);
+  }
+
+  async renderDeliveryNotePdf(organizationId: string, deliveryNoteId: string) {
+    return this.pdfService.renderHtmlToPdf(
+      await this.renderDeliveryNoteHtml(organizationId, deliveryNoteId),
     );
   }
 }

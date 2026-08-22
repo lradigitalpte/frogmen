@@ -232,6 +232,20 @@
       "when": 1785050300000,
       "tag": "0031_invoice_delivery_fee",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785050400000,
+      "tag": "0032_delivery_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785050500000,
+      "tag": "0033_delivery_note_blank_receipt",
+      "breakpoints": true
     }
   ]
 }

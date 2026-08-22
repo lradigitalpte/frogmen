@@ -3497,6 +3497,21 @@ textarea.Polaris-TextField__Input:focus {
 [data-theme="dark"] .document-preview-panel__header, [data-theme="dark"] .document-preview-panel__footer { border-color: #374151; background: #1f2933; }
 @media (max-width: 48rem) { .document-preview-panel__drawer { width: 100%; } }
 
+.delivery-note-preview__header { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
+.delivery-note-preview__logo { max-height: 64px; max-width: 180px; object-fit: contain; margin-bottom: 0.75rem; }
+.delivery-note-preview__logo-fallback { width: 56px; height: 56px; border-radius: 10px; background: #0f4c81; color: #fff; display: grid; place-items: center; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem; }
+.delivery-note-preview__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+.delivery-note-preview__signature { margin-top: 1rem; }
+.delivery-note-preview__signature img { max-width: 220px; max-height: 90px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.5rem; background: #fff; }
+.delivery-note-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.delivery-note-signature-canvas { width: 100%; max-width: 520px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; touch-action: none; cursor: crosshair; }
+.delivery-note-handwrite-line { display: inline-block; min-width: 180px; border-bottom: 1px solid #94a3b8; }
+.delivery-note-handwrite-signature { margin-top: 0.5rem; min-height: 72px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.75rem; background: #fff; }
+.delivery-note-handwrite-signature img { max-width: 220px; max-height: 72px; }
+@media (max-width: 48rem) {
+  .delivery-note-preview__grid, .delivery-note-form-grid { grid-template-columns: 1fr; }
+}
+
 .branch-create-panel__overlay {
   position: absolute;
   inset: 0;

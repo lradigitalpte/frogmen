@@ -1,5 +1,6 @@
 import {
   boolean,
+  char,
   date,
   integer,
   index,
@@ -373,6 +374,75 @@ export const invoicePayments = pgTable("invoice_payments", {
     .defaultNow(),
 });
 
+export const deliveryNoteStateEnum = pgEnum("delivery_note_state", [
+  "draft",
+  "approved",
+]);
+
+export const deliveryNotes = pgTable(
+  "delivery_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .default(sql`app_current_branch_id()`)
+      .references(() => branches.id),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    number: varchar("number", { length: 50 }).notNull(),
+    deliveryDate: date("delivery_date").notNull(),
+    state: deliveryNoteStateEnum("state").notNull().default("approved"),
+    deliveryStreet1: varchar("delivery_street1", { length: 255 }),
+    deliveryStreet2: varchar("delivery_street2", { length: 255 }),
+    deliveryCity: varchar("delivery_city", { length: 120 }),
+    deliveryZip: varchar("delivery_zip", { length: 30 }),
+    deliveryStateCode: varchar("delivery_state_code", { length: 10 }),
+    deliveryCountryCode: char("delivery_country_code", { length: 2 }),
+    receivedBy: varchar("received_by", { length: 200 }),
+    signatureImage: text("signature_image"),
+    signedOn: timestamp("signed_on", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("delivery_notes_org_branch_number_idx").on(
+      table.organizationId,
+      table.branchId,
+      table.number,
+    ),
+    index("delivery_notes_invoice_idx").on(table.invoiceId),
+  ],
+);
+
+export const deliveryNoteLines = pgTable("delivery_note_lines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryNoteId: uuid("delivery_note_id")
+    .notNull()
+    .references(() => deliveryNotes.id, { onDelete: "cascade" }),
+  invoiceLineId: uuid("invoice_line_id").references(() => invoiceLines.id),
+  lineNumber: integer("line_number").notNull(),
+  productId: uuid("product_id").references(() => products.id),
+  productUnitId: uuid("product_unit_id").references(() => productUnits.id),
+  description: varchar("description", { length: 500 }).notNull(),
+  serialNumber: varchar("serial_number", { length: 120 }),
+  quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const creditNotes = pgTable(
   "credit_notes",
   {
@@ -546,5 +616,7 @@ export const paymentReminderLogs = pgTable("payment_reminder_logs", {
 export type SalesOrder = typeof salesOrders.$inferSelect;
 export type SalesOrderLine = typeof salesOrderLines.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
+export type DeliveryNote = typeof deliveryNotes.$inferSelect;
+export type DeliveryNoteLine = typeof deliveryNoteLines.$inferSelect;
 export type PaymentTerm = typeof paymentTerms.$inferSelect;
 export type Deal = typeof deals.$inferSelect;
