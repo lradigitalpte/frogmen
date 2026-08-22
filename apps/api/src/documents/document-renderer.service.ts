@@ -29,6 +29,9 @@ import { DATABASE } from "../database/database.constants";
 import { SettingsService } from "../settings/settings.service";
 import { DocumentBankAccountsService } from "./document-bank-accounts.service";
 import { PdfService } from "./pdf.service";
+import {
+  resolveDeliveryNoteSerialEntries,
+} from "../delivery-notes/delivery-note-serials";
 
 @Injectable()
 export class DocumentRendererService {
@@ -487,6 +490,26 @@ export class DocumentRendererService {
       .where(eq(deliveryNoteLines.deliveryNoteId, deliveryNoteId))
       .orderBy(asc(deliveryNoteLines.lineNumber));
 
+    const mappedLines = await Promise.all(
+      lines.map(async (row) => {
+        const serialEntries = row.line.productUnitId
+          ? await resolveDeliveryNoteSerialEntries(this.db, organizationId, {
+              productUnitId: row.line.productUnitId,
+              productName: row.line.description,
+              serialNumber: row.line.serialNumber,
+            })
+          : [];
+
+        return {
+          description: row.line.description,
+          details: row.productDescription,
+          serialNumber: row.line.serialNumber,
+          serialEntries,
+          quantity: row.line.quantity,
+        };
+      }),
+    );
+
     return {
       number: header.note.number,
       deliveryDate: header.note.deliveryDate,
@@ -504,13 +527,121 @@ export class DocumentRendererService {
       receivedBy: header.note.receivedBy,
       signedOn: header.note.signedOn?.toISOString() ?? null,
       signatureImage: header.note.signatureImage,
-      lines: lines.map((row) => ({
-        description: row.line.description,
-        details: row.productDescription,
-        serialNumber: row.line.serialNumber,
-        quantity: row.line.quantity,
-      })),
+      lines: mappedLines,
     };
+  }
+
+  async buildDeliveryNotePreviewDocumentData(
+    organizationId: string,
+    invoiceId: string,
+  ): Promise<DeliveryNoteDocumentData> {
+    const [header] = await this.db
+      .select({
+        invoice: invoices,
+        customerName: customers.name,
+        customerEmail: customers.email,
+        customerStreet1: customers.street1,
+        customerStreet2: customers.street2,
+        customerCity: customers.city,
+        customerState: customers.stateCode,
+        customerZip: customers.zip,
+        customerCountry: customers.countryCode,
+      })
+      .from(invoices)
+      .innerJoin(customers, eq(customers.id, invoices.customerId))
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!header) {
+      throw new NotFoundException("Invoice not found");
+    }
+
+    const lines = await this.db
+      .select({
+        line: invoiceLines,
+        serialNumber: productUnits.serialNumber,
+        productDescription: products.description,
+      })
+      .from(invoiceLines)
+      .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
+      .leftJoin(products, eq(products.id, invoiceLines.productId))
+      .where(eq(invoiceLines.invoiceId, invoiceId))
+      .orderBy(asc(invoiceLines.lineNumber));
+
+    const mappedLines = await Promise.all(
+      lines.map(async (row) => {
+        const serialEntries = await resolveDeliveryNoteSerialEntries(
+          this.db,
+          organizationId,
+          {
+            productUnitId: row.line.productUnitId,
+            productName: row.line.description,
+            serialNumber: row.serialNumber ?? null,
+          },
+        );
+
+        return {
+          description: row.line.description,
+          details: row.productDescription,
+          serialNumber: row.serialNumber,
+          serialEntries,
+          quantity: row.line.quantity,
+        };
+      }),
+    );
+
+    return {
+      number: "DRAFT",
+      deliveryDate: new Date().toISOString().slice(0, 10),
+      invoiceNumber: header.invoice.number,
+      customerName: header.customerName,
+      customerEmail: header.customerEmail,
+      deliveryAddress: formatPostalAddressLines({
+        street1: header.customerStreet1,
+        street2: header.customerStreet2,
+        city: header.customerCity,
+        stateCode: header.customerState,
+        zip: header.customerZip,
+        countryCode: header.customerCountry,
+      }),
+      receivedBy: null,
+      signedOn: null,
+      signatureImage: null,
+      lines: mappedLines,
+    };
+  }
+
+  async renderDeliveryNotePreviewHtml(organizationId: string, invoiceId: string) {
+    const [header] = await this.db
+      .select({ branchId: invoices.branchId })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const branding = await this.buildBranding(organizationId, header?.branchId);
+    const note = await this.buildDeliveryNotePreviewDocumentData(
+      organizationId,
+      invoiceId,
+    );
+    return renderDeliveryNoteDocumentHtml(branding, note);
+  }
+
+  async renderDeliveryNotePreviewPdf(organizationId: string, invoiceId: string) {
+    return this.pdfService.renderHtmlToPdf(
+      await this.renderDeliveryNotePreviewHtml(organizationId, invoiceId),
+    );
   }
 
   async renderDeliveryNoteHtml(organizationId: string, deliveryNoteId: string) {

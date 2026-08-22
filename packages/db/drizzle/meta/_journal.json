@@ -246,6 +246,13 @@
       "when": 1785050500000,
       "tag": "0033_delivery_note_blank_receipt",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785050600000,
+      "tag": "0034_delivery_note_serial_text",
+      "breakpoints": true
     }
   ]
 }

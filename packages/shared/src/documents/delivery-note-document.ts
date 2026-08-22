@@ -9,6 +9,11 @@ export interface DeliveryNoteDocumentLine {
   description: string;
   details?: string | null;
   serialNumber?: string | null;
+  serialEntries?: Array<{
+    productName: string;
+    serialNumber: string;
+    isKit?: boolean;
+  }>;
   quantity: string;
 }
 
@@ -31,6 +36,28 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function renderSerialEntriesHtml(
+  entries?: Array<{ productName: string; serialNumber: string; isKit?: boolean }>,
+  fallback?: string | null,
+): string {
+  if (entries?.length) {
+    return entries
+      .map(
+        (entry) => `<div class="serial-entry${entry.isKit ? " serial-entry--kit" : ""}">${escapeHtml(entry.productName)} · ${escapeHtml(entry.serialNumber)}</div>`,
+      )
+      .join("");
+  }
+
+  if (fallback?.trim()) {
+    return fallback
+      .split("\n")
+      .map((line) => `<div class="serial-entry">${escapeHtml(line.trim())}</div>`)
+      .join("");
+  }
+
+  return "—";
 }
 
 export function renderDeliveryNoteDocumentHtml(
@@ -60,7 +87,7 @@ export function renderDeliveryNoteDocumentHtml(
         <td class="sn">${index + 1}</td>
         <td>${renderLineItemDescriptionHtml(line.description, line.details, "bullets")}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
-        <td>${escapeHtml(line.serialNumber?.trim() || "—")}</td>
+        <td class="serials">${renderSerialEntriesHtml(line.serialEntries, line.serialNumber)}</td>
       </tr>`,
     )
     .join("");
@@ -98,6 +125,9 @@ export function renderDeliveryNoteDocumentHtml(
     th { background: #0f4c81; color: #fff; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
     td.sn, th.sn { width: 42px; text-align: center; }
     td.num, th.num { width: 80px; text-align: right; white-space: nowrap; }
+    td.serials, th.serials { min-width: 220px; }
+    .serial-entry { margin-bottom: 4px; line-height: 1.35; }
+    .serial-entry--kit { font-weight: 600; }
     .signature-block { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .signature-box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; min-height: 120px; background: #fff; }
     .signature-box--empty { min-height: 90px; }

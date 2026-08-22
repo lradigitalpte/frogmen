@@ -436,7 +436,7 @@ export const deliveryNoteLines = pgTable("delivery_note_lines", {
   productId: uuid("product_id").references(() => products.id),
   productUnitId: uuid("product_unit_id").references(() => productUnits.id),
   description: varchar("description", { length: 500 }).notNull(),
-  serialNumber: varchar("serial_number", { length: 120 }),
+  serialNumber: text("serial_number"),
   quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

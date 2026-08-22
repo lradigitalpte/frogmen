@@ -16,8 +16,10 @@ import { formatQuantity } from "@/lib/format-quantity";
 import {
   approveDeliveryNote,
   getDeliveryNoteDocumentPdfUrl,
+  getDeliveryNotePreviewPdfUrl,
   previewDeliveryNote,
   type DeliveryNote,
+  type DeliveryNoteLine,
 } from "@/lib/delivery-notes-api";
 
 interface DeliveryNoteReviewModalProps {
@@ -81,9 +83,40 @@ export function DeliveryNoteReviewModal({
     }
   }
 
-  function handleOpenPdf() {
-    if (!note?.id) return;
-    window.open(getDeliveryNoteDocumentPdfUrl(note.id), "_blank", "noopener,noreferrer");
+  function handlePreviewPdf() {
+    const url = isApproved && note?.id
+      ? getDeliveryNoteDocumentPdfUrl(note.id)
+      : getDeliveryNotePreviewPdfUrl(invoiceId);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function handlePrint() {
+    handlePreviewPdf();
+  }
+
+  function renderSerialEntries(line: DeliveryNoteLine) {
+    if (line.serialEntries?.length) {
+      return (
+        <BlockStack gap="050">
+          {line.serialEntries.map((entry) => (
+            <Text
+              key={`${entry.productName}-${entry.serialNumber}`}
+              as="span"
+              variant="bodySm"
+              fontWeight={entry.isKit ? "semibold" : "regular"}
+            >
+              {entry.productName} · {entry.serialNumber}
+            </Text>
+          ))}
+        </BlockStack>
+      );
+    }
+
+    if (line.serialNumber?.trim()) {
+      return <Text as="span">{line.serialNumber}</Text>;
+    }
+
+    return <Text as="span" tone="subdued">—</Text>;
   }
 
   if (!open) return null;
@@ -258,7 +291,7 @@ export function DeliveryNoteReviewModal({
                           <td style={{ textAlign: "right" }}>
                             {formatQuantity(line.quantity)}
                           </td>
-                          <td>{line.serialNumber ?? "—"}</td>
+                          <td>{renderSerialEntries(line)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -272,9 +305,14 @@ export function DeliveryNoteReviewModal({
         <footer className="document-preview-panel__footer">
           <InlineStack gap="200">
             <Button onClick={onClose}>Close</Button>
+            {note ? (
+              <Button onClick={handlePreviewPdf}>
+                Preview PDF
+              </Button>
+            ) : null}
             {isApproved ? (
-              <Button variant="primary" onClick={handleOpenPdf}>
-                Open PDF / Print
+              <Button variant="primary" onClick={handlePrint}>
+                Print
               </Button>
             ) : (
               <Button variant="primary" loading={saving} onClick={() => void handleApprove()}>

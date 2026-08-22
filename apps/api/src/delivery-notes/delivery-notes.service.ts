@@ -19,6 +19,13 @@ import { formatPostalAddressLines } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { SettingsService } from "../settings/settings.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
+import {
+  formatDeliveryNoteSerialEntries,
+  resolveDeliveryNoteSerialEntries,
+  type DeliveryNoteSerialEntry,
+} from "./delivery-note-serials";
+
+export type { DeliveryNoteSerialEntry };
 
 export interface ApproveDeliveryNoteInput {
   deliveryDate?: string;
@@ -79,17 +86,32 @@ export class DeliveryNotesService {
         profile.phone ? `Phone: ${profile.phone}` : null,
         profile.email ? `Email: ${profile.email}` : null,
       ].filter((line): line is string => Boolean(line)),
-      lines: context.lines.map((row, index) => ({
-        id: null,
-        lineNumber: index + 1,
-        invoiceLineId: row.line.id,
-        description: row.line.description,
-        productDescription: row.productDescription ?? null,
-        serialNumber: row.serialNumber ?? null,
-        quantity: Number(row.line.quantity),
-        productId: row.line.productId,
-        productUnitId: row.line.productUnitId,
-      })),
+      lines: await Promise.all(
+        context.lines.map(async (row, index) => {
+          const serialEntries = await resolveDeliveryNoteSerialEntries(
+            this.db,
+            organizationId,
+            {
+              productUnitId: row.line.productUnitId,
+              productName: row.line.description,
+              serialNumber: row.serialNumber ?? null,
+            },
+          );
+
+          return {
+            id: null,
+            lineNumber: index + 1,
+            invoiceLineId: row.line.id,
+            description: row.line.description,
+            productDescription: row.productDescription ?? null,
+            serialNumber: row.serialNumber ?? null,
+            serialEntries,
+            quantity: Number(row.line.quantity),
+            productId: row.line.productId,
+            productUnitId: row.line.productUnitId,
+          };
+        }),
+      ),
     };
   }
 
@@ -143,16 +165,30 @@ export class DeliveryNotesService {
       .returning();
 
     await this.db.insert(deliveryNoteLines).values(
-      context.lines.map((row, index) => ({
-        deliveryNoteId: note.id,
-        invoiceLineId: row.line.id,
-        lineNumber: index + 1,
-        productId: row.line.productId,
-        productUnitId: row.line.productUnitId,
-        description: row.line.description,
-        serialNumber: row.serialNumber ?? null,
-        quantity: row.line.quantity,
-      })),
+      await Promise.all(
+        context.lines.map(async (row, index) => {
+          const serialEntries = await resolveDeliveryNoteSerialEntries(
+            this.db,
+            organizationId,
+            {
+              productUnitId: row.line.productUnitId,
+              productName: row.line.description,
+              serialNumber: row.serialNumber ?? null,
+            },
+          );
+
+          return {
+            deliveryNoteId: note.id,
+            invoiceLineId: row.line.id,
+            lineNumber: index + 1,
+            productId: row.line.productId,
+            productUnitId: row.line.productUnitId,
+            description: row.line.description,
+            serialNumber: formatDeliveryNoteSerialEntries(serialEntries),
+            quantity: row.line.quantity,
+          };
+        }),
+      ),
     );
 
     return this.getById(organizationId, note.id);
@@ -248,17 +284,37 @@ export class DeliveryNotesService {
         profile.phone ? `Phone: ${profile.phone}` : null,
         profile.email ? `Email: ${profile.email}` : null,
       ].filter((line): line is string => Boolean(line)),
-      lines: lines.map((row) => ({
-        id: row.line.id,
-        lineNumber: row.line.lineNumber,
-        invoiceLineId: row.line.invoiceLineId,
-        description: row.line.description,
-        productDescription: row.productDescription ?? null,
-        serialNumber: row.line.serialNumber ?? null,
-        quantity: Number(row.line.quantity),
-        productId: row.line.productId,
-        productUnitId: row.line.productUnitId,
-      })),
+      lines: await Promise.all(
+        lines.map(async (row) => {
+          const serialEntries = row.line.productUnitId
+            ? await resolveDeliveryNoteSerialEntries(this.db, organizationId, {
+                productUnitId: row.line.productUnitId,
+                productName: row.line.description,
+                serialNumber: row.line.serialNumber,
+              })
+            : row.line.serialNumber
+              ? [
+                  {
+                    productName: row.line.description,
+                    serialNumber: row.line.serialNumber,
+                  },
+                ]
+              : [];
+
+          return {
+            id: row.line.id,
+            lineNumber: row.line.lineNumber,
+            invoiceLineId: row.line.invoiceLineId,
+            description: row.line.description,
+            productDescription: row.productDescription ?? null,
+            serialNumber: row.line.serialNumber,
+            serialEntries,
+            quantity: Number(row.line.quantity),
+            productId: row.line.productId,
+            productUnitId: row.line.productUnitId,
+          };
+        }),
+      ),
       createdAt: header.note.createdAt.toISOString(),
     };
   }

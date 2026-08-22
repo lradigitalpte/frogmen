@@ -74,7 +74,10 @@ export class DeliveryNotesController {
 @Controller("v1/invoices/:invoiceId/delivery-notes")
 @RequireActiveOrg()
 export class InvoiceDeliveryNotesController {
-  constructor(private readonly deliveryNotesService: DeliveryNotesService) {}
+  constructor(
+    private readonly deliveryNotesService: DeliveryNotesService,
+    private readonly documentRenderer: DocumentRendererService,
+  ) {}
 
   private orgId(session: UserSession) {
     const organizationId = session.session.activeOrganizationId;
@@ -98,6 +101,39 @@ export class InvoiceDeliveryNotesController {
     @Param("invoiceId") invoiceId: string,
   ) {
     return this.deliveryNotesService.preview(this.orgId(session), invoiceId);
+  }
+
+  @Get("preview/document.html")
+  @Header("Content-Type", "text/html; charset=utf-8")
+  async previewDocumentHtml(
+    @Session() session: UserSession,
+    @Param("invoiceId") invoiceId: string,
+    @Res() res: Response,
+  ) {
+    res.send(
+      await this.documentRenderer.renderDeliveryNotePreviewHtml(
+        this.orgId(session),
+        invoiceId,
+      ),
+    );
+  }
+
+  @Get("preview/document.pdf")
+  async previewDocumentPdf(
+    @Session() session: UserSession,
+    @Param("invoiceId") invoiceId: string,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.documentRenderer.renderDeliveryNotePreviewPdf(
+      this.orgId(session),
+      invoiceId,
+    );
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="delivery-note-preview-${invoiceId}.pdf"`,
+    );
+    res.send(pdf);
   }
 
   @Post()

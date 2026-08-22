@@ -7,6 +7,11 @@ export interface DeliveryNoteLine {
   description: string;
   productDescription?: string | null;
   serialNumber?: string | null;
+  serialEntries?: Array<{
+    productName: string;
+    serialNumber: string;
+    isKit?: boolean;
+  }>;
   quantity: number;
   productId?: string | null;
   productUnitId?: string | null;
@@ -81,4 +86,19 @@ export function getDeliveryNoteDocumentHtml(id: string) {
 
 export function getDeliveryNoteDocumentPdfUrl(id: string) {
   return `/api/v1/delivery-notes/${id}/document.pdf`;
+}
+
+export function getDeliveryNotePreviewPdfUrl(invoiceId: string) {
+  return `/api/v1/invoices/${invoiceId}/delivery-notes/preview/document.pdf`;
+}
+
+export function getDeliveryNotePreviewHtml(invoiceId: string) {
+  return fetch(`/api/v1/invoices/${invoiceId}/delivery-notes/preview/document.html`, {
+    credentials: "include",
+  }).then(async (response) => {
+    if (!response.ok) {
+      throw new Error("Failed to load delivery note preview");
+    }
+    return response.text();
+  });
 }
