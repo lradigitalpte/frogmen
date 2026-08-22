@@ -45,6 +45,7 @@ import {
 } from "@/lib/invoices-api";
 import { getInvoiceJournal } from "@/lib/accounting-api";
 import { useToast } from "@/components/providers/toast-provider";
+import { resolveDeliveryFee } from "@/lib/line-item-utils";
 
 interface InvoiceViewPageProps {
   invoiceId: string;
@@ -331,6 +332,11 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   const canPay = isPosted && !isPaid;
 
   const rawSubtotal = invoice.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
+  const deliveryFee = resolveDeliveryFee(
+    rawSubtotal,
+    invoice.deliveryFeeAmount,
+    invoice.deliveryFeePercent,
+  );
 
   return (
     <AppPage
@@ -598,12 +604,34 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                 <InlineStack align="end">
                   <div style={{ width: "340px" }}>
                     <div className="quotation-summary-panel__rows">
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued">Untaxed Amount</Text>
-                        <Text as="span" fontWeight="semibold">
-                          {fmt(rawSubtotal)}
-                        </Text>
-                      </div>
+                      {deliveryFee > 0 ? (
+                        <>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">Line net</Text>
+                            <Text as="span" fontWeight="semibold">
+                              {fmt(rawSubtotal)}
+                            </Text>
+                          </div>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">
+                              Delivery fee
+                              {invoice.deliveryFeePercent
+                                ? ` (${invoice.deliveryFeePercent}%)`
+                                : ""}
+                            </Text>
+                            <Text as="span" fontWeight="semibold">
+                              +{fmt(deliveryFee)}
+                            </Text>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="quotation-summary-row">
+                          <Text as="span" tone="subdued">Untaxed Amount</Text>
+                          <Text as="span" fontWeight="semibold">
+                            {fmt(rawSubtotal)}
+                          </Text>
+                        </div>
+                      )}
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued">Tax (5%)</Text>
                         <Text as="span" fontWeight="semibold">

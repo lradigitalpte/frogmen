@@ -15,6 +15,7 @@ import {
   inArray,
   isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
@@ -1101,6 +1102,13 @@ export class InvoicesService {
       "INV-",
     );
 
+    const deliveryFeeFields = await this.resolveDeliveryFeeFromSalesOrder(
+      organizationId,
+      salesOrderId,
+      order.deliveryFeeAmount,
+      order.deliveryFeePercent,
+    );
+
     const [invoice] = await this.db
       .insert(invoices)
       .values({
@@ -1118,6 +1126,8 @@ export class InvoicesService {
         internalReference:
           input.internalReference ?? order.internalReference ?? null,
         notes: input.notes ?? order.notes ?? null,
+        deliveryFeeAmount: deliveryFeeFields.deliveryFeeAmount,
+        deliveryFeePercent: deliveryFeeFields.deliveryFeePercent,
         state: "draft",
         paymentState: "unpaid",
       })
@@ -1167,6 +1177,61 @@ export class InvoicesService {
     }
   }
 
+  private async resolveDeliveryFeeFromSalesOrder(
+    organizationId: string,
+    salesOrderId: string,
+    deliveryFeeAmount: string | null,
+    deliveryFeePercent: string | null,
+  ): Promise<{
+    deliveryFeeAmount: string | null;
+    deliveryFeePercent: string | null;
+  }> {
+    const hasFee =
+      (deliveryFeeAmount != null && Number(deliveryFeeAmount) > 0) ||
+      (deliveryFeePercent != null && Number(deliveryFeePercent) > 0);
+
+    if (!hasFee) {
+      return { deliveryFeeAmount: null, deliveryFeePercent: null };
+    }
+
+    // Only put the SO delivery fee on the first non-cancelled invoice.
+    const priorInvoices = await this.db
+      .select({
+        deliveryFeeAmount: invoices.deliveryFeeAmount,
+        deliveryFeePercent: invoices.deliveryFeePercent,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          eq(invoices.salesOrderId, salesOrderId),
+          isNull(invoices.deletedAt),
+          ne(invoices.state, "cancelled"),
+        ),
+      );
+
+    const alreadyCharged = priorInvoices.some(
+      (row) =>
+        (row.deliveryFeeAmount != null && Number(row.deliveryFeeAmount) > 0) ||
+        (row.deliveryFeePercent != null && Number(row.deliveryFeePercent) > 0),
+    );
+
+    if (alreadyCharged) {
+      return { deliveryFeeAmount: null, deliveryFeePercent: null };
+    }
+
+    return {
+      deliveryFeeAmount:
+        deliveryFeeAmount != null && Number(deliveryFeeAmount) > 0
+          ? deliveryFeeAmount
+          : null,
+      deliveryFeePercent:
+        deliveryFeePercent != null && Number(deliveryFeePercent) > 0
+          ? deliveryFeePercent
+          : null,
+    };
+  }
+
   private async recomputeInvoiceTotals(
     invoiceId: string,
     exchangeRate: number,
@@ -1176,6 +1241,15 @@ export class InvoicesService {
       .from(invoiceLines)
       .where(eq(invoiceLines.invoiceId, invoiceId));
 
+    const [feeRow] = await this.db
+      .select({
+        deliveryFeeAmount: invoices.deliveryFeeAmount,
+        deliveryFeePercent: invoices.deliveryFeePercent,
+      })
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1);
+
     const totals = sumDocumentAmounts(
       lines.map((line) => ({
         priceSubtotal: Number(line.priceSubtotal),
@@ -1183,6 +1257,8 @@ export class InvoicesService {
         priceTotal: Number(line.priceTotal),
       })),
       exchangeRate,
+      feeRow?.deliveryFeeAmount,
+      feeRow?.deliveryFeePercent,
     );
 
     await this.db
@@ -1526,6 +1602,10 @@ export class InvoicesService {
       currencyCode: row.currencyCode,
       exchangeRate: row.exchangeRate ? Number(row.exchangeRate) : null,
       exchangeRateLockedAt: row.exchangeRateLockedAt?.toISOString() ?? null,
+      deliveryFeeAmount:
+        row.deliveryFeeAmount != null ? Number(row.deliveryFeeAmount) : null,
+      deliveryFeePercent:
+        row.deliveryFeePercent != null ? Number(row.deliveryFeePercent) : null,
       amountUntaxed: Number(row.amountUntaxed),
       amountTax: Number(row.amountTax),
       amountTotal: Number(row.amountTotal),

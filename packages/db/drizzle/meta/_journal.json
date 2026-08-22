@@ -225,6 +225,13 @@
       "when": 1785050200000,
       "tag": "0030_quotation_signature_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785050300000,
+      "tag": "0031_invoice_delivery_fee",
+      "breakpoints": true
     }
   ]
 }

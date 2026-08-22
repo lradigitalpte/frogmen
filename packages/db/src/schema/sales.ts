@@ -264,6 +264,8 @@ export const invoices = pgTable(
     internalReference: varchar("internal_reference", { length: 100 }),
     notes: text("notes"),
     internalNotes: text("internal_notes"),
+    deliveryFeeAmount: numeric("delivery_fee_amount", { precision: 18, scale: 2 }),
+    deliveryFeePercent: numeric("delivery_fee_percent", { precision: 8, scale: 4 }),
     amountUntaxed: numeric("amount_untaxed", { precision: 18, scale: 2 })
       .notNull()
       .default("0"),

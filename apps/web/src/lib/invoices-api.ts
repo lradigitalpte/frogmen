@@ -33,6 +33,8 @@ export interface Invoice {
   currencyId: string;
   currencyCode?: string | null;
   exchangeRate?: number | null;
+  deliveryFeeAmount?: number | null;
+  deliveryFeePercent?: number | null;
   amountUntaxed: number;
   amountTax: number;
   amountTotal: number;

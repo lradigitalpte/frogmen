@@ -230,6 +230,17 @@ export class DocumentRendererService {
       .leftJoin(products, eq(products.id, invoiceLines.productId))
       .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
       .where(eq(invoiceLines.invoiceId, invoiceId));
+
+    const lineNetSubtotal = lines.reduce(
+      (sum, row) => sum + Number(row.line.priceSubtotal),
+      0,
+    );
+    const deliveryFee = resolveDeliveryFee(
+      lineNetSubtotal,
+      header.invoice.deliveryFeeAmount,
+      header.invoice.deliveryFeePercent,
+    );
+
     return {
       documentType: "invoice",
       number: header.invoice.number,
@@ -249,6 +260,9 @@ export class DocumentRendererService {
         countryCode: header.customerCountry,
       }),
       notes: header.invoice.notes,
+      lineNetSubtotal: String(lineNetSubtotal),
+      deliveryFee: deliveryFee > 0 ? String(deliveryFee) : null,
+      deliveryFeePercent: header.invoice.deliveryFeePercent,
       amountUntaxed: header.invoice.amountUntaxed,
       amountTax: header.invoice.amountTax,
       amountTotal: header.invoice.amountTotal,

@@ -38,6 +38,7 @@ import {
   clampQuantity,
   getMaxAllowedQuantity,
   parseSellingPrice,
+  resolveDeliveryFee,
   sumStockQuantity,
 } from "@/lib/line-item-utils";
 import { listProducts, listProductUnits, getProductStock } from "@/lib/products-api";
@@ -115,6 +116,8 @@ export function CreateInvoicePage() {
   const [error, setError] = useState<string | null>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
+  const [deliveryFeeAmount, setDeliveryFeeAmount] = useState<number | null>(null);
+  const [deliveryFeePercent, setDeliveryFeePercent] = useState<number | null>(null);
 
   const {
     documentCurrencyCode,
@@ -248,6 +251,16 @@ export function CreateInvoicePage() {
         setCustomerEmail(q.customerEmail || "");
         setQuotationNumber(q.number);
         setDocumentCurrencyId(q.currencyId);
+        setDeliveryFeeAmount(
+          q.deliveryFeeAmount != null && q.deliveryFeeAmount !== ""
+            ? Number(q.deliveryFeeAmount)
+            : null,
+        );
+        setDeliveryFeePercent(
+          q.deliveryFeePercent != null && q.deliveryFeePercent !== ""
+            ? Number(q.deliveryFeePercent)
+            : null,
+        );
         if (q.customerReference) setPoReference(q.customerReference);
         if (q.notes) setNotes(q.notes);
         if (q.quoteDate) setInvoiceDate(q.quoteDate);
@@ -389,6 +402,11 @@ export function CreateInvoicePage() {
 
   const netSubtotal = rawSubtotal - totalDiscount;
 
+  const deliveryFee = useMemo(
+    () => resolveDeliveryFee(netSubtotal, deliveryFeeAmount, deliveryFeePercent),
+    [netSubtotal, deliveryFeeAmount, deliveryFeePercent],
+  );
+
   const totalTax = useMemo(() => {
     return lines.reduce((sum, l) => {
       const lineNet = l.quantity * l.unitPrice * (1 - l.discountPercent / 100);
@@ -396,7 +414,7 @@ export function CreateInvoicePage() {
     }, 0);
   }, [lines]);
 
-  const grandTotal = netSubtotal + totalTax;
+  const grandTotal = netSubtotal + deliveryFee + totalTax;
 
   function updateLine(lineId: string, field: keyof ConfiguredInvoiceLine, val: string | number) {
     setQuantityWarning(null);
@@ -750,6 +768,15 @@ export function CreateInvoicePage() {
                       <Text as="span" tone="subdued">Discount</Text>
                       <Text as="span" tone="success">-{fmt(totalDiscount)}</Text>
                     </div>
+                    {deliveryFee > 0 ? (
+                      <div className="quotation-summary-row">
+                        <Text as="span" tone="subdued">
+                          Delivery fee
+                          {deliveryFeePercent ? ` (${deliveryFeePercent}%)` : ""}
+                        </Text>
+                        <Text as="span" fontWeight="semibold">+{fmt(deliveryFee)}</Text>
+                      </div>
+                    ) : null}
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued">VAT</Text>
                       <Text as="span" fontWeight="semibold">+{fmt(totalTax)}</Text>
