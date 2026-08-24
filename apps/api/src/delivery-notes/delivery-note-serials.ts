@@ -19,19 +19,24 @@ export async function resolveDeliveryNoteSerialEntries(
   const entries: DeliveryNoteSerialEntry[] = [];
 
   if (input.productUnitId) {
-    let mainSerial = input.serialNumber?.trim() ?? "";
-    if (!mainSerial) {
-      const [unit] = await db
-        .select({ serialNumber: productUnits.serialNumber })
-        .from(productUnits)
-        .where(
-          and(
-            eq(productUnits.id, input.productUnitId),
-            eq(productUnits.organizationId, organizationId),
-          ),
-        )
-        .limit(1);
-      mainSerial = unit?.serialNumber?.trim() ?? "";
+    let mainSerial = "";
+    const [unit] = await db
+      .select({ serialNumber: productUnits.serialNumber })
+      .from(productUnits)
+      .where(
+        and(
+          eq(productUnits.id, input.productUnitId),
+          eq(productUnits.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    mainSerial = unit?.serialNumber?.trim() ?? "";
+
+    if (!mainSerial && input.serialNumber?.trim()) {
+      const firstLine = input.serialNumber.trim().split("\n")[0]?.trim() ?? "";
+      const splitIndex = firstLine.indexOf(" · ");
+      mainSerial = splitIndex !== -1 ? firstLine.slice(splitIndex + 3).trim() : firstLine;
     }
 
     if (mainSerial) {
@@ -68,10 +73,26 @@ export async function resolveDeliveryNoteSerialEntries(
   }
 
   if (input.serialNumber?.trim()) {
-    entries.push({
-      productName: input.productName,
-      serialNumber: input.serialNumber.trim(),
-    });
+    const lines = input.serialNumber
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    for (const [index, line] of lines.entries()) {
+      const splitIndex = line.indexOf(" · ");
+      if (splitIndex !== -1) {
+        entries.push({
+          productName: line.slice(0, splitIndex).trim(),
+          serialNumber: line.slice(splitIndex + 3).trim(),
+          isKit: index === 0 && lines.length > 1,
+        });
+      } else {
+        entries.push({
+          productName: input.productName,
+          serialNumber: line,
+        });
+      }
+    }
   }
 
   return entries;

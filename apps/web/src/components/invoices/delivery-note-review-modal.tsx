@@ -4,7 +4,6 @@ import {
   Banner,
   BlockStack,
   Button,
-  Divider,
   InlineStack,
   Spinner,
   Text,
@@ -98,22 +97,89 @@ export function DeliveryNoteReviewModal({
     if (line.serialEntries?.length) {
       return (
         <BlockStack gap="050">
-          {line.serialEntries.map((entry) => (
-            <Text
-              key={`${entry.productName}-${entry.serialNumber}`}
-              as="span"
-              variant="bodySm"
-              fontWeight={entry.isKit ? "semibold" : "regular"}
+          {line.serialEntries.map((entry, idx) => (
+            <div
+              key={`${entry.productName}-${entry.serialNumber}-${idx}`}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: "8px",
+                padding: "2px 0",
+                borderBottom:
+                  idx < line.serialEntries!.length - 1
+                    ? "1px dashed #e5e7eb"
+                    : "none",
+              }}
             >
-              {entry.productName} · {entry.serialNumber}
-            </Text>
+              <Text
+                as="span"
+                variant="bodySm"
+                fontWeight={entry.isKit ? "semibold" : "regular"}
+                tone={entry.isKit ? undefined : "subdued"}
+              >
+                {entry.productName}
+              </Text>
+              <span
+                style={{
+                  fontFamily: "Consolas, monospace",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {entry.serialNumber}
+              </span>
+            </div>
           ))}
         </BlockStack>
       );
     }
 
     if (line.serialNumber?.trim()) {
-      return <Text as="span">{line.serialNumber}</Text>;
+      const lines = line.serialNumber
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      return (
+        <BlockStack gap="050">
+          {lines.map((l, idx) => {
+            const splitIndex = l.indexOf(" · ");
+            const name = splitIndex !== -1 ? l.slice(0, splitIndex).trim() : null;
+            const code = splitIndex !== -1 ? l.slice(splitIndex + 3).trim() : l;
+            return (
+              <div
+                key={`${l}-${idx}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  gap: "8px",
+                  padding: "2px 0",
+                  borderBottom: idx < lines.length - 1 ? "1px dashed #e5e7eb" : "none",
+                }}
+              >
+                {name ? (
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    {name}
+                  </Text>
+                ) : null}
+                <span
+                  style={{
+                    fontFamily: "Consolas, monospace",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {code}
+                </span>
+              </div>
+            );
+          })}
+        </BlockStack>
+      );
     }
 
     return <Text as="span" tone="subdued">—</Text>;
@@ -184,7 +250,7 @@ export function DeliveryNoteReviewModal({
                 </Banner>
               )}
 
-              <div className="delivery-note-preview card card-padded">
+              <div className="delivery-note-preview card">
                 <div className="delivery-note-preview__header">
                   <div>
                     {note.companyLogoUrl ? (
@@ -215,62 +281,102 @@ export function DeliveryNoteReviewModal({
                       Delivery Note
                     </Text>
                     <Text as="p" tone="subdued" variant="bodySm">
-                      {note.number ?? "Pending approval"}
-                    </Text>
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      Date: {note.deliveryDate}
-                    </Text>
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      Invoice: {note.invoiceNumber}
+                      Goods dispatch record
                     </Text>
                   </div>
                 </div>
 
-                <Divider />
-
-                <div className="delivery-note-preview__grid">
-                  <BlockStack gap="100">
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      Deliver to
-                    </Text>
-                    <Text as="p" fontWeight="semibold">
-                      {note.customerName}
-                    </Text>
-                    {note.customerEmail ? (
-                      <Text as="p" tone="subdued" variant="bodySm">
-                        {note.customerEmail}
-                      </Text>
-                    ) : null}
-                    {deliveryAddressPreview.map((line) => (
-                      <Text key={line} as="p" variant="bodySm">
-                        {line}
-                      </Text>
-                    ))}
-                  </BlockStack>
-                  <BlockStack gap="100">
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      Receipt (filled on delivery)
-                    </Text>
-                    <Text as="p" variant="bodySm">
-                      Received by:{" "}
-                      <span className="delivery-note-handwrite-line">
-                        {note.receivedBy?.trim() || "\u00a0"}
-                      </span>
-                    </Text>
-                    <div className="delivery-note-handwrite-signature">
+                <div className="delivery-note-preview__body">
+                  <div className="delivery-note-preview__refs">
+                    <BlockStack gap="050">
                       <Text as="span" tone="subdued" variant="bodySm">
-                        Signature
+                        Delivery note
                       </Text>
-                      {note.signatureImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img alt="Receiver signature" src={note.signatureImage} />
-                      ) : null}
-                    </div>
-                  </BlockStack>
-                </div>
+                      <Text as="p" fontWeight="semibold">
+                        {note.number ?? "Pending approval"}
+                      </Text>
+                    </BlockStack>
+                    <BlockStack gap="050">
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        Delivery date
+                      </Text>
+                      <Text as="p" fontWeight="semibold">
+                        {note.deliveryDate}
+                      </Text>
+                    </BlockStack>
+                    <BlockStack gap="050">
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        Invoice reference
+                      </Text>
+                      <Text as="p" fontWeight="semibold">
+                        {note.invoiceNumber}
+                      </Text>
+                    </BlockStack>
+                  </div>
 
-                <div className="frogmen-recent-table-wrapper" style={{ marginTop: 16 }}>
-                  <table className="frogmen-recent-table">
+                  <div className="delivery-note-preview__grid">
+                    <div className="delivery-note-preview__ship-to">
+                      <BlockStack gap="100">
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Ship to
+                        </Text>
+                        <Text as="p" fontWeight="semibold">
+                          {note.customerName}
+                        </Text>
+                        {note.customerEmail ? (
+                          <Text as="p" tone="subdued" variant="bodySm">
+                            {note.customerEmail}
+                          </Text>
+                        ) : null}
+                        {deliveryAddressPreview.map((line) => (
+                          <Text key={line} as="p" variant="bodySm">
+                            {line}
+                          </Text>
+                        ))}
+                      </BlockStack>
+                    </div>
+                    <BlockStack gap="100">
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        Receipt (filled on delivery)
+                      </Text>
+                      <Text as="p" variant="bodySm">
+                        Received by:{" "}
+                        <span className="delivery-note-handwrite-line">
+                          {note.receivedBy?.trim() || "\u00a0"}
+                        </span>
+                      </Text>
+                      <div className="delivery-note-handwrite-signature" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                        <div>
+                          <Text as="span" tone="subdued" variant="bodySm">
+                            Signature
+                          </Text>
+                          {note.signatureImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img alt="Receiver signature" src={note.signatureImage} />
+                          ) : null}
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <Text as="span" tone="subdued" variant="bodySm">
+                            Company Stamp
+                          </Text>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            alt="Company Stamp"
+                            src="/unnamed8.jpg"
+                            style={{ maxHeight: 60, width: "auto", objectFit: "contain", marginTop: 4, display: "block" }}
+                          />
+                        </div>
+                      </div>
+                    </BlockStack>
+                  </div>
+
+                  <div className="frogmen-recent-table-wrapper" style={{ marginTop: 16 }}>
+                  <table className="frogmen-recent-table" style={{ tableLayout: "fixed", width: "100%" }}>
+                    <colgroup>
+                      <col style={{ width: "58%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "32%" }} />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>Description</th>
@@ -296,6 +402,7 @@ export function DeliveryNoteReviewModal({
                       ))}
                     </tbody>
                   </table>
+                </div>
                 </div>
               </div>
             </BlockStack>

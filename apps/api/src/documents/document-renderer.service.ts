@@ -492,13 +492,15 @@ export class DocumentRendererService {
 
     const mappedLines = await Promise.all(
       lines.map(async (row) => {
-        const serialEntries = row.line.productUnitId
-          ? await resolveDeliveryNoteSerialEntries(this.db, organizationId, {
-              productUnitId: row.line.productUnitId,
-              productName: row.line.description,
-              serialNumber: row.line.serialNumber,
-            })
-          : [];
+        const serialEntries = await resolveDeliveryNoteSerialEntries(
+          this.db,
+          organizationId,
+          {
+            productUnitId: row.line.productUnitId,
+            productName: row.line.description,
+            serialNumber: row.line.serialNumber,
+          },
+        );
 
         return {
           description: row.line.description,

@@ -12,6 +12,7 @@ export * from "./pricing/customer-price-adjustment";
 export * from "./format-quantity";
 export * from "./documents/document-payment-details";
 export * from "./documents/line-item-details";
+export * from "./documents/company-stamp";
 export * from "./documents/quotation-document";
 export * from "./documents/delivery-note-document";
 export * from "./documents/inspection-report-document";

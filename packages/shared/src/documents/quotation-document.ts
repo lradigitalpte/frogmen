@@ -63,6 +63,7 @@ export interface QuotationDocumentData {
 export interface OrganizationBranding {
   name: string;
   logoUrl: string | null;
+  stampUrl?: string | null;
   companyProfile: Required<CompanyProfileSettings>;
   documentTemplates: Required<DocumentTemplateSettings>;
   documentBankAccounts?: DocumentBankAccount[];
@@ -149,6 +150,15 @@ export function renderQuotationDocumentHtml(
   const vatLabel = formatVatLabel(quotation.lines);
   const trnLabel = formatTrnLabel(profile.taxId);
 
+  const paymentDetailsHtml = showPaymentDetails
+    ? renderDocumentPaymentDetailsHtml({
+        companyName: branding.name,
+        documentTemplates: templates,
+        documentBankAccounts: branding.documentBankAccounts,
+        className: "terms",
+      })
+    : "";
+
   const lineRows = quotation.lines
     .map(
       (line, index) => `
@@ -222,13 +232,6 @@ export function renderQuotationDocumentHtml(
         : !isPurchaseOrder && quotation.otherCharges
           ? `<div class="row"><span>Other charges</span><span>${money(quotation.otherCharges)}</span></div>`
           : "";
-    const paymentDetailsHtml = showPaymentDetails
-      ? renderDocumentPaymentDetailsHtml({
-          companyName: branding.name,
-          documentTemplates: templates,
-          documentBankAccounts: branding.documentBankAccounts,
-        })
-      : "";
 
     const officialLogo = branding.logoUrl
       ? `<img class="brand-logo" src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.name)}" />`
@@ -314,15 +317,6 @@ ${officialVatRow}
 ${paymentDetailsHtml}
 ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}</body></html>`;
   }
-
-  const paymentDetailsHtml = showPaymentDetails
-    ? renderDocumentPaymentDetailsHtml({
-        companyName: branding.name,
-        documentTemplates: templates,
-        documentBankAccounts: branding.documentBankAccounts,
-        className: "terms",
-      })
-    : "";
 
   const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
   const deliveryFeeLabel = quotation.deliveryFeePercent
