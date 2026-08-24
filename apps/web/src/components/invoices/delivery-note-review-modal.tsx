@@ -206,13 +206,15 @@ export function DeliveryNoteReviewModal({
         ].filter(Boolean);
 
   return (
-    <div className="document-preview-panel" role="dialog" aria-modal="true">
-      <button
-        className="document-preview-panel__overlay"
-        type="button"
-        aria-label="Close delivery note"
-        onClick={onClose}
-      />
+    <>
+      {!showEmailModal ? (
+        <div className="document-preview-panel" role="dialog" aria-modal="true">
+          <button
+            className="document-preview-panel__overlay"
+            type="button"
+            aria-label="Close delivery note"
+            onClick={onClose}
+          />
       <aside className="document-preview-panel__drawer" style={{ width: "min(56rem, calc(100vw - 2rem))" }}>
         <header className="document-preview-panel__header">
           <div>
@@ -475,40 +477,42 @@ export function DeliveryNoteReviewModal({
           </InlineStack>
         </footer>
       </aside>
-
-      {isApproved && note?.id ? (
-        <SendDocumentEmailModal
-          documentType="delivery_note"
-          loading={sendingEmail}
-          open={showEmailModal}
-          pdfLabel={note.number ? `Delivery-Note-${note.number}.pdf` : undefined}
-          placeholders={{
-            customerName: note.customerName || "",
-            number: note.number || "",
-            companyName: note.companyName || "",
-          }}
-          recipient={note.customerEmail || ""}
-          title="Send Delivery Note Email"
-          onClose={() => setShowEmailModal(false)}
-          onSend={async (input) => {
-            if (!note.id) return;
-            setSendingEmail(true);
-            setError(null);
-            setEmailSuccess(null);
-            try {
-              await sendDeliveryNoteEmail(note.id, input);
-              setShowEmailModal(false);
-              setEmailSuccess(
-                `Delivery Note #${note.number} email sent to ${input.recipientEmail}!`,
-              );
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Failed to send email");
-            } finally {
-              setSendingEmail(false);
-            }
-          }}
-        />
-      ) : null}
     </div>
+  ) : null}
+
+  {isApproved && note?.id ? (
+    <SendDocumentEmailModal
+      documentType="delivery_note"
+      loading={sendingEmail}
+      open={showEmailModal}
+      pdfLabel={note.number ? `Delivery-Note-${note.number}.pdf` : undefined}
+      placeholders={{
+        customerName: note.customerName || "",
+        number: note.number || "",
+        companyName: note.companyName || "",
+      }}
+      recipient={note.customerEmail || ""}
+      title="Send Delivery Note Email"
+      onClose={() => setShowEmailModal(false)}
+      onSend={async (input) => {
+        if (!note.id) return;
+        setSendingEmail(true);
+        setError(null);
+        setEmailSuccess(null);
+        try {
+          await sendDeliveryNoteEmail(note.id, input);
+          setShowEmailModal(false);
+          setEmailSuccess(
+            `Delivery Note #${note.number} email sent to ${input.recipientEmail}!`,
+          );
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to send email");
+        } finally {
+          setSendingEmail(false);
+        }
+      }}
+    />
+  ) : null}
+</>
   );
 }
