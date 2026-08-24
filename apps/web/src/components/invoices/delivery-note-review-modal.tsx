@@ -357,9 +357,9 @@ export function DeliveryNoteReviewModal({
                   <div className="frogmen-recent-table-wrapper" style={{ marginTop: 16 }}>
                   <table className="frogmen-recent-table" style={{ tableLayout: "fixed", width: "100%" }}>
                     <colgroup>
-                      <col style={{ width: "58%" }} />
+                      <col style={{ width: "45%" }} />
                       <col style={{ width: "10%" }} />
-                      <col style={{ width: "32%" }} />
+                      <col style={{ width: "45%" }} />
                     </colgroup>
                     <thead>
                       <tr>

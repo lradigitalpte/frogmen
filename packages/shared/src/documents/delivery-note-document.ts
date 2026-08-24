@@ -287,15 +287,15 @@ export function renderDeliveryNoteDocumentHtml(
       border-collapse: collapse;
       table-layout: fixed;
     }
-    col.col-sn { width: 32px; }
-    col.col-qty { width: 44px; }
-    col.col-serials { width: 190px; }
+    col.col-sn { width: 36px; }
+    col.col-qty { width: 48px; }
+    col.col-serials { width: 300px; }
     th {
-      padding: 9px 12px;
+      padding: 10px 14px;
       text-align: left;
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #374151;
       background: #f3f4f6;
@@ -303,43 +303,43 @@ export function renderDeliveryNoteDocumentHtml(
       border-bottom: 2px solid #111827;
     }
     td {
-      padding: 10px 12px;
+      padding: 12px 14px;
       border-bottom: 1px solid #e5e7eb;
       vertical-align: top;
     }
     tr:last-child td { border-bottom: 0; }
     tr { page-break-inside: avoid; break-inside: avoid; }
-    .sn { text-align: center; color: #6b7280; font-weight: 700; }
-    .num { text-align: center; font-weight: 700; }
-    .line-title { font-weight: 700; color: #111827; }
+    .sn { text-align: center; color: #6b7280; font-weight: 700; font-size: 12px; }
+    .num { text-align: center; font-weight: 700; font-size: 12px; }
+    .line-title { font-weight: 700; color: #111827; font-size: 13px; }
     .line-details {
       margin: 4px 0 0;
-      padding-left: 14px;
-      color: #6b7280;
-      font-size: 10.5px;
-      line-height: 1.35;
+      padding-left: 16px;
+      color: #4b5563;
+      font-size: 11.5px;
+      line-height: 1.4;
     }
-    .line-details li { margin: 1px 0; }
+    .line-details li { margin: 2px 0; }
     div.line-details { padding-left: 0; }
     .serial-entry {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: 12px;
       align-items: baseline;
-      padding: 3px 0;
+      padding: 4px 0;
       border-bottom: 1px dashed #e5e7eb;
     }
     .serial-entry:last-child { border-bottom: 0; }
-    .serial-name { color: #4b5563; font-size: 10px; }
-    .serial-entry--kit .serial-name { color: #111827; font-weight: 700; font-size: 10.5px; }
+    .serial-name { color: #374151; font-size: 11.5px; font-weight: 600; }
+    .serial-entry--kit .serial-name { color: #111827; font-weight: 800; font-size: 12px; }
     .serial-code {
       font-family: Consolas, "Courier New", monospace;
-      font-size: 10px;
+      font-size: 11.5px;
       font-weight: 700;
       color: #111827;
       white-space: nowrap;
     }
-    .serial-empty { color: #9ca3af; }
+    .serial-empty { color: #9ca3af; font-size: 12px; }
     .acceptance {
       display: grid;
       grid-template-columns: 165px 1fr;
