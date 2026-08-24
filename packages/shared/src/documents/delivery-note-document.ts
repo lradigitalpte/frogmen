@@ -342,7 +342,7 @@ export function renderDeliveryNoteDocumentHtml(
     .serial-empty { color: #9ca3af; }
     .acceptance {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 165px 1fr;
       gap: 16px;
       margin-top: 14px;
       border-top: 2px solid #111827;
@@ -388,7 +388,7 @@ export function renderDeliveryNoteDocumentHtml(
       background: #fff;
     }
     .signature-box {
-      min-height: 60px;
+      min-height: 64px;
       border: 2px dashed #9ca3af;
       border-radius: 4px;
       background: #fff;
@@ -398,22 +398,22 @@ export function renderDeliveryNoteDocumentHtml(
     }
     .signature-box img {
       max-width: 100%;
-      max-height: 56px;
+      max-height: 60px;
       object-fit: contain;
     }
     .stamp-placeholder-box {
-      width: 100px;
-      height: 62px;
-      border: 2px dashed #cbd5e1;
-      border-radius: 4px;
+      width: 130px;
+      height: 64px;
+      border: 2px dashed #94a3b8;
+      border-radius: 6px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       text-align: center;
-      color: #94a3b8;
-      font-size: 8.5px;
-      font-weight: 700;
+      color: #475569;
+      font-size: 9px;
+      font-weight: 800;
       letter-spacing: 0.05em;
       text-transform: uppercase;
       background: #ffffff;
@@ -423,11 +423,14 @@ export function renderDeliveryNoteDocumentHtml(
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="brand-header">
-      <div class="brand-info">
-        <h1 class="brand-name">${escapeHtml(branding.name)}</h1>
-        <div class="sender-meta">${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div class="brand-row">
+        ${logoHtml}
+        <div>
+          <div class="sender-name">${escapeHtml(branding.name)}</div>
+          <div class="sender-meta">${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
+        </div>
       </div>
       <div class="doc-stamp">
         <h1>Delivery Note</h1>
@@ -487,20 +490,10 @@ export function renderDeliveryNoteDocumentHtml(
     </div>
 
     <div class="acceptance">
-      <div class="accept-card">
-        <div class="accept-card-title">Delivered / Issued by (${escapeHtml(branding.name)})</div>
-        <div class="accept-row">
-          <div class="accept-box-flex">
-            <div class="accept-label">Authorized Signature</div>
-            <div class="signature-box" style="height: 62px; min-height: 62px; color: #9ca3af; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
-              Signature & Date
-            </div>
-          </div>
-          <div style="text-align: center;">
-            <div class="accept-label" style="margin-bottom: 4px;">Supplier Stamp</div>
-            <img src="${stampUrl}" alt="Supplier Stamp" style="max-height: 62px; width: auto; max-width: 100px; object-fit: contain; display: block;" />
-          </div>
-        </div>
+      <div class="accept-card" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+        <div class="accept-card-title" style="width: 100%;">Delivered / Issued by</div>
+        <div class="accept-label" style="margin-bottom: 6px;">Supplier Stamp</div>
+        <img src="${stampUrl}" alt="Supplier Stamp" style="max-height: 72px; width: auto; max-width: 110px; object-fit: contain; display: block;" />
       </div>
 
       <div class="accept-card">
@@ -512,12 +505,12 @@ export function renderDeliveryNoteDocumentHtml(
         <div class="accept-row">
           <div class="accept-box-flex">
             <div class="accept-label">Receiver Signature</div>
-            <div class="signature-box" style="height: 62px; min-height: 62px;">${signatureHtml}</div>
+            <div class="signature-box" style="height: 64px; min-height: 64px;">${signatureHtml}</div>
           </div>
           <div style="text-align: center;">
-            <div class="accept-label" style="margin-bottom: 4px;">Receiver Stamp</div>
+            <div class="accept-label" style="margin-bottom: 6px;">Receiver Stamp</div>
             <div class="stamp-placeholder-box">
-              <span>Receiver</span>
+              <span>Customer</span>
               <span>Stamp</span>
             </div>
           </div>

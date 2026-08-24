@@ -386,34 +386,22 @@ export function DeliveryNoteReviewModal({
                   </table>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 20 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "165px 1fr", gap: 16, marginTop: 20 }}>
                   {/* ISSUED BY / SUPPLIER */}
-                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", background: "#f8fafc" }}>
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", background: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
                     <Text as="p" fontWeight="bold" variant="bodySm">
-                      Delivered / Issued by ({note.companyName})
+                      Delivered by
                     </Text>
-                    <div style={{ borderTop: "1px solid #e2e8f0", margin: "8px 0 12px" }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <Text as="span" tone="subdued" variant="bodySm">
-                          Authorized Signature
-                        </Text>
-                        <div style={{ height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 11, marginTop: 4 }}>
-                          Signature & Date
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <Text as="span" tone="subdued" variant="bodySm">
-                          Supplier Stamp
-                        </Text>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          alt="Supplier Stamp"
-                          src="/unnamed8.jpg"
-                          style={{ maxHeight: 56, width: "auto", objectFit: "contain", marginTop: 4, display: "block" }}
-                        />
-                      </div>
-                    </div>
+                    <div style={{ borderTop: "1px solid #e2e8f0", margin: "6px 0 10px", width: "100%" }} />
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Supplier Stamp
+                    </Text>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt="Supplier Stamp"
+                      src="/unnamed8.jpg"
+                      style={{ maxHeight: 68, width: "auto", objectFit: "contain", marginTop: 4, display: "block" }}
+                    />
                   </div>
 
                   {/* RECEIVED BY / CUSTOMER */}
@@ -435,10 +423,10 @@ export function DeliveryNoteReviewModal({
                         <Text as="span" tone="subdued" variant="bodySm">
                           Receiver Signature
                         </Text>
-                        <div style={{ height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 4 }}>
+                        <div style={{ height: 60, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 4 }}>
                           {note.signatureImage ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img alt="Receiver signature" src={note.signatureImage} style={{ maxHeight: 50, width: "auto", objectFit: "contain" }} />
+                            <img alt="Receiver signature" src={note.signatureImage} style={{ maxHeight: 54, width: "auto", objectFit: "contain" }} />
                           ) : (
                             <span style={{ color: "#94a3b8", fontSize: 11 }}>Signature & Date</span>
                           )}
@@ -448,8 +436,8 @@ export function DeliveryNoteReviewModal({
                         <Text as="span" tone="subdued" variant="bodySm">
                           Receiver Stamp
                         </Text>
-                        <div style={{ width: 90, height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 10, fontWeight: 600, marginTop: 4 }}>
-                          <span>Receiver</span>
+                        <div style={{ width: 130, height: 60, border: "2px dashed #94a3b8", borderRadius: 6, background: "#ffffff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 10, fontWeight: 700, marginTop: 4 }}>
+                          <span>Customer</span>
                           <span>Stamp</span>
                         </div>
                       </div>
