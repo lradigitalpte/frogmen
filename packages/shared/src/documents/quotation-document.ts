@@ -395,7 +395,12 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
       <div>
         <h1 class="company-name">${escapeHtml(branding.name)}</h1>
         ${profile.tagline ? `<p class="tagline">${escapeHtml(profile.tagline)}</p>` : ""}
-        ${addressLine ? `<p class="tagline">${escapeHtml(addressLine)}</p>` : ""}
+        ${profile.address ? `<p class="tagline">${escapeHtml(profile.address)}</p>` : ""}
+        ${profile.city || country ? `<p class="tagline">${escapeHtml([profile.city, country].filter(Boolean).join(", "))}</p>` : ""}
+        ${trnLabel ? `<p class="tagline">${escapeHtml(trnLabel)}</p>` : ""}
+        ${profile.phone ? `<p class="tagline">Phone: ${escapeHtml(profile.phone)}</p>` : ""}
+        ${profile.email ? `<p class="tagline">Email: ${escapeHtml(profile.email)}</p>` : ""}
+        ${profile.website ? `<p class="tagline">Website: ${escapeHtml(profile.website)}</p>` : ""}
       </div>
     </div>
     <div class="doc-meta">

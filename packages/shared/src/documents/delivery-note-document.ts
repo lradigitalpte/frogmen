@@ -396,7 +396,7 @@ export function renderDeliveryNoteDocumentHtml(
         ${logoHtml}
         <div>
           <div class="sender-name">${escapeHtml(branding.name)}</div>
-          <div class="sender-meta">${companyLines.map((line) => escapeHtml(line)).join(" · ")}</div>
+          <div class="sender-meta">${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
         </div>
       </div>
       <div class="doc-stamp">

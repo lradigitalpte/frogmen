@@ -391,10 +391,13 @@ export default function PublicQuotationPage({
                   <div className="public-quote-brand__name">
                     {data.branding.companyName}
                   </div>
-                  <div className="public-quote-brand__meta">
-                    {[data.branding.phone, data.branding.email]
-                      .filter(Boolean)
-                      .join(" · ")}
+                  <div className="public-quote-brand__meta" style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "2px" }}>
+                    {companyAddress.map((line, idx) => (
+                      <div key={idx}>{line}</div>
+                    ))}
+                    {trnLabel ? <div>{trnLabel}</div> : null}
+                    {data.branding.phone ? <div>Phone: {data.branding.phone}</div> : null}
+                    {data.branding.email ? <div>Email: {data.branding.email}</div> : null}
                   </div>
                 </div>
               </div>
