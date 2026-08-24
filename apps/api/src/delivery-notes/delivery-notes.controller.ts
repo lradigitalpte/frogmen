@@ -69,6 +69,20 @@ export class DeliveryNotesController {
     );
     res.send(pdf);
   }
+
+  @Post(":id/send-email")
+  sendEmail(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { recipientEmail: string; subject: string; body: string },
+  ) {
+    return this.deliveryNotesService.sendEmail(
+      this.orgId(session),
+      id,
+      session.user.id,
+      body,
+    );
+  }
 }
 
 @Controller("v1/invoices/:invoiceId/delivery-notes")

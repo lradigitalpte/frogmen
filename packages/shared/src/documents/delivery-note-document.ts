@@ -342,31 +342,53 @@ export function renderDeliveryNoteDocumentHtml(
     .serial-empty { color: #9ca3af; }
     .acceptance {
       display: grid;
-      grid-template-columns: 1fr 1fr 140px;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 14px;
       border-top: 2px solid #111827;
+      padding-top: 14px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .accept-card {
       background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px 14px;
     }
-    .accept-field {
-      padding: 16px 20px;
+    .accept-card-title {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #111827;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 6px;
+      margin-bottom: 10px;
     }
-    .accept-field + .accept-field {
-      border-left: 1px solid #e5e7eb;
+    .accept-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .accept-box-flex {
+      flex: 1;
     }
     .accept-label {
       font-size: 9px;
       font-weight: 800;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #374151;
-      margin-bottom: 10px;
+      color: #4b5563;
+      margin-bottom: 6px;
     }
     .handwrite-line {
-      min-height: 34px;
+      min-height: 26px;
       border-bottom: 2px solid #111827;
       background: #fff;
     }
     .signature-box {
-      min-height: 72px;
+      min-height: 60px;
       border: 2px dashed #9ca3af;
       border-radius: 4px;
       background: #fff;
@@ -376,28 +398,36 @@ export function renderDeliveryNoteDocumentHtml(
     }
     .signature-box img {
       max-width: 100%;
-      max-height: 68px;
+      max-height: 56px;
       object-fit: contain;
     }
-    .footer {
-      padding: 8px 20px 12px;
+    .stamp-placeholder-box {
+      width: 100px;
+      height: 62px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       text-align: center;
-      font-size: 9px;
-      color: #9ca3af;
-      letter-spacing: 0.04em;
+      color: #94a3b8;
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
+      background: #ffffff;
+      padding: 4px;
     }
+    .footer { margin-top: 14px; color: #6b7280; font-size: 11px; page-break-inside: avoid; break-inside: avoid; }
   </style>
 </head>
 <body>
-  <div class="sheet">
-    <div class="sheet-head">
-      <div class="brand-row">
-        ${logoHtml}
-        <div>
-          <div class="sender-name">${escapeHtml(branding.name)}</div>
-          <div class="sender-meta">${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
-        </div>
+  <div class="page">
+    <div class="brand-header">
+      <div class="brand-info">
+        <h1 class="brand-name">${escapeHtml(branding.name)}</h1>
+        <div class="sender-meta">${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
       </div>
       <div class="doc-stamp">
         <h1>Delivery Note</h1>
@@ -408,15 +438,15 @@ export function renderDeliveryNoteDocumentHtml(
 
     <div class="refs">
       <div class="ref">
-        <div class="ref-label">Delivery note</div>
-        <div class="ref-value">${escapeHtml(documentNumber)}</div>
+        <div class="ref-label">Delivery Note #</div>
+        <div class="ref-value">${escapeHtml(note.number ?? "Pending approval")}</div>
       </div>
       <div class="ref">
-        <div class="ref-label">Delivery date</div>
-        <div class="ref-value">${escapeHtml(formatDocumentDate(note.deliveryDate))}</div>
+        <div class="ref-label">Delivery Date</div>
+        <div class="ref-value">${escapeHtml(note.deliveryDate)}</div>
       </div>
       <div class="ref">
-        <div class="ref-label">Invoice reference</div>
+        <div class="ref-label">Invoice Ref</div>
         <div class="ref-value">${escapeHtml(note.invoiceNumber)}</div>
       </div>
     </div>
@@ -457,17 +487,41 @@ export function renderDeliveryNoteDocumentHtml(
     </div>
 
     <div class="acceptance">
-      <div class="accept-field">
-        <div class="accept-label">Received by (print name)</div>
-        <div class="handwrite-line">${receivedByHtml}</div>
+      <div class="accept-card">
+        <div class="accept-card-title">Delivered / Issued by (${escapeHtml(branding.name)})</div>
+        <div class="accept-row">
+          <div class="accept-box-flex">
+            <div class="accept-label">Authorized Signature</div>
+            <div class="signature-box" style="height: 62px; min-height: 62px; color: #9ca3af; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
+              Signature & Date
+            </div>
+          </div>
+          <div style="text-align: center;">
+            <div class="accept-label" style="margin-bottom: 4px;">Supplier Stamp</div>
+            <img src="${stampUrl}" alt="Supplier Stamp" style="max-height: 62px; width: auto; max-width: 100px; object-fit: contain; display: block;" />
+          </div>
+        </div>
       </div>
-      <div class="accept-field">
-        <div class="accept-label">Signature</div>
-        <div class="signature-box">${signatureHtml}</div>
-      </div>
-      <div class="accept-field" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <div class="accept-label" style="margin-bottom: 6px;">Company Stamp</div>
-        <img src="${stampUrl}" alt="Official Stamp" style="max-height: 68px; width: auto; object-fit: contain;" />
+
+      <div class="accept-card">
+        <div class="accept-card-title">Received & Accepted by (${escapeHtml(note.customerName)})</div>
+        <div style="margin-bottom: 8px;">
+          <div class="accept-label">Received by (Print Name)</div>
+          <div class="handwrite-line">${receivedByHtml}</div>
+        </div>
+        <div class="accept-row">
+          <div class="accept-box-flex">
+            <div class="accept-label">Receiver Signature</div>
+            <div class="signature-box" style="height: 62px; min-height: 62px;">${signatureHtml}</div>
+          </div>
+          <div style="text-align: center;">
+            <div class="accept-label" style="margin-bottom: 4px;">Receiver Stamp</div>
+            <div class="stamp-placeholder-box">
+              <span>Receiver</span>
+              <span>Stamp</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

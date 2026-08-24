@@ -11,12 +11,14 @@ import {
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LineItemDescription } from "@/components/sales/line-item-description";
+import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { formatQuantity } from "@/lib/format-quantity";
 import {
   approveDeliveryNote,
   getDeliveryNoteDocumentPdfUrl,
   getDeliveryNotePreviewPdfUrl,
   previewDeliveryNote,
+  sendDeliveryNoteEmail,
   type DeliveryNote,
   type DeliveryNoteLine,
 } from "@/lib/delivery-notes-api";
@@ -40,6 +42,9 @@ export function DeliveryNoteReviewModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<DeliveryNote | null>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
 
   const isApproved = note?.state === "approved" && Boolean(note.id);
 
@@ -47,6 +52,7 @@ export function DeliveryNoteReviewModal({
     if (!invoiceId) return;
     setLoading(true);
     setError(null);
+    setEmailSuccess(null);
     try {
       const preview = await previewDeliveryNote(invoiceId);
       setNote(preview);
@@ -238,9 +244,10 @@ export function DeliveryNoteReviewModal({
           ) : note ? (
             <BlockStack gap="500">
               {error ? <Banner tone="critical">{error}</Banner> : null}
+              {emailSuccess ? <Banner tone="success">{emailSuccess}</Banner> : null}
               {isApproved ? (
                 <Banner tone="success">
-                  Delivery note {note.number} is approved. You can open or print the PDF.
+                  Delivery note {note.number} is approved. You can open, print, or email the PDF.
                 </Banner>
               ) : (
                 <Banner tone="info">
@@ -337,36 +344,11 @@ export function DeliveryNoteReviewModal({
                     </div>
                     <BlockStack gap="100">
                       <Text as="span" tone="subdued" variant="bodySm">
-                        Receipt (filled on delivery)
+                        Handover & Acceptance
                       </Text>
-                      <Text as="p" variant="bodySm">
-                        Received by:{" "}
-                        <span className="delivery-note-handwrite-line">
-                          {note.receivedBy?.trim() || "\u00a0"}
-                        </span>
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        Verify items and serial numbers before handover. The receiver signs & stamps below to confirm delivery.
                       </Text>
-                      <div className="delivery-note-handwrite-signature" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-                        <div>
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            Signature
-                          </Text>
-                          {note.signatureImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img alt="Receiver signature" src={note.signatureImage} />
-                          ) : null}
-                        </div>
-                        <div style={{ textAlign: "center" }}>
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            Company Stamp
-                          </Text>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            alt="Company Stamp"
-                            src="/unnamed8.jpg"
-                            style={{ maxHeight: 60, width: "auto", objectFit: "contain", marginTop: 4, display: "block" }}
-                          />
-                        </div>
-                      </div>
                     </BlockStack>
                   </div>
 
@@ -403,6 +385,77 @@ export function DeliveryNoteReviewModal({
                     </tbody>
                   </table>
                 </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 20 }}>
+                  {/* ISSUED BY / SUPPLIER */}
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", background: "#f8fafc" }}>
+                    <Text as="p" fontWeight="bold" variant="bodySm">
+                      Delivered / Issued by ({note.companyName})
+                    </Text>
+                    <div style={{ borderTop: "1px solid #e2e8f0", margin: "8px 0 12px" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Authorized Signature
+                        </Text>
+                        <div style={{ height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 11, marginTop: 4 }}>
+                          Signature & Date
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Supplier Stamp
+                        </Text>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          alt="Supplier Stamp"
+                          src="/unnamed8.jpg"
+                          style={{ maxHeight: 56, width: "auto", objectFit: "contain", marginTop: 4, display: "block" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RECEIVED BY / CUSTOMER */}
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", background: "#f8fafc" }}>
+                    <Text as="p" fontWeight="bold" variant="bodySm">
+                      Received & Accepted by ({note.customerName})
+                    </Text>
+                    <div style={{ borderTop: "1px solid #e2e8f0", margin: "8px 0 12px" }} />
+                    <div style={{ marginBottom: 8 }}>
+                      <Text as="span" tone="subdued" variant="bodySm">
+                        Received by (Print Name):{" "}
+                        <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {note.receivedBy?.trim() || "________________________"}
+                        </span>
+                      </Text>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Receiver Signature
+                        </Text>
+                        <div style={{ height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 4 }}>
+                          {note.signatureImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img alt="Receiver signature" src={note.signatureImage} style={{ maxHeight: 50, width: "auto", objectFit: "contain" }} />
+                          ) : (
+                            <span style={{ color: "#94a3b8", fontSize: 11 }}>Signature & Date</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <Text as="span" tone="subdued" variant="bodySm">
+                          Receiver Stamp
+                        </Text>
+                        <div style={{ width: 90, height: 56, border: "2px dashed #cbd5e1", borderRadius: 6, background: "#ffffff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 10, fontWeight: 600, marginTop: 4 }}>
+                          <span>Receiver</span>
+                          <span>Stamp</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 </div>
               </div>
             </BlockStack>
@@ -418,9 +471,14 @@ export function DeliveryNoteReviewModal({
               </Button>
             ) : null}
             {isApproved ? (
-              <Button variant="primary" onClick={handlePrint}>
-                Print
-              </Button>
+              <>
+                <Button onClick={() => setShowEmailModal(true)}>
+                  Send email
+                </Button>
+                <Button variant="primary" onClick={handlePrint}>
+                  Print
+                </Button>
+              </>
             ) : (
               <Button variant="primary" loading={saving} onClick={() => void handleApprove()}>
                 Confirm delivery note
@@ -429,6 +487,40 @@ export function DeliveryNoteReviewModal({
           </InlineStack>
         </footer>
       </aside>
+
+      {isApproved && note?.id ? (
+        <SendDocumentEmailModal
+          documentType="delivery_note"
+          loading={sendingEmail}
+          open={showEmailModal}
+          pdfLabel={note.number ? `Delivery-Note-${note.number}.pdf` : undefined}
+          placeholders={{
+            customerName: note.customerName || "",
+            number: note.number || "",
+            companyName: note.companyName || "",
+          }}
+          recipient={note.customerEmail || ""}
+          title="Send Delivery Note Email"
+          onClose={() => setShowEmailModal(false)}
+          onSend={async (input) => {
+            if (!note.id) return;
+            setSendingEmail(true);
+            setError(null);
+            setEmailSuccess(null);
+            try {
+              await sendDeliveryNoteEmail(note.id, input);
+              setShowEmailModal(false);
+              setEmailSuccess(
+                `Delivery Note #${note.number} email sent to ${input.recipientEmail}!`,
+              );
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to send email");
+            } finally {
+              setSendingEmail(false);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

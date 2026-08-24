@@ -102,3 +102,16 @@ export function getDeliveryNotePreviewHtml(invoiceId: string) {
     return response.text();
   });
 }
+
+export function sendDeliveryNoteEmail(
+  id: string,
+  input: { recipientEmail: string; subject: string; body: string },
+) {
+  return apiFetch<{ delivered: boolean; mode: string }>(
+    `/api/v1/delivery-notes/${id}/send-email`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}

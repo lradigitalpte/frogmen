@@ -17,6 +17,8 @@ import {
 } from "@frog1/db";
 import { formatPostalAddressLines } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
+import { DocumentRendererService } from "../documents/document-renderer.service";
+import { MailService } from "../mail/mail.service";
 import { SettingsService } from "../settings/settings.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import {
@@ -36,6 +38,8 @@ export class DeliveryNotesService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     private readonly settingsService: SettingsService,
+    private readonly mailService: MailService,
+    private readonly documentRenderer: DocumentRendererService,
   ) {}
 
   async preview(organizationId: string, invoiceId: string) {
@@ -394,5 +398,47 @@ export class DeliveryNotesService {
       receivedBy: row.receivedBy ?? null,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  async sendEmail(
+    organizationId: string,
+    id: string,
+    userId: string,
+    input: { recipientEmail: string; subject: string; body: string },
+  ) {
+    const note = await this.getById(organizationId, id);
+    if (!note || note.state !== "approved" || !note.id) {
+      throw new BadRequestException("Delivery note must be approved before sending email");
+    }
+
+    const recipientEmail = input.recipientEmail.trim();
+    if (!recipientEmail) {
+      throw new BadRequestException("Recipient email is required");
+    }
+
+    const branding = await this.settingsService.getOrganizationBranding(organizationId);
+    const pdfBuffer = await this.documentRenderer.renderDeliveryNotePdf(organizationId, note.id);
+
+    const docNumber = note.number || "DeliveryNote";
+    const filename = `Delivery-Note-${docNumber}.pdf`;
+
+    const result = await this.mailService.sendBrandedMail({
+      to: recipientEmail,
+      replyTo: branding.companyProfile.replyToEmail || branding.companyProfile.email,
+      brandName: branding.name,
+      logoUrl: branding.logoUrl,
+      subject: input.subject.trim() || `Delivery Note #${docNumber} - ${branding.name}`,
+      title: `Delivery Note #${docNumber}`,
+      bodyText: input.body.trim() || `Please find attached Delivery Note #${docNumber} for your records.`,
+      attachments: [
+        {
+          filename,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    return result;
   }
 }

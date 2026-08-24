@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
+import { MailModule } from "../mail/mail.module";
 import { SettingsModule } from "../settings/settings.module";
 import {
   DeliveryNotesController,
@@ -9,7 +10,7 @@ import {
 import { DeliveryNotesService } from "./delivery-notes.service";
 
 @Module({
-  imports: [DatabaseModule, DocumentsModule, SettingsModule],
+  imports: [DatabaseModule, DocumentsModule, MailModule, SettingsModule],
   controllers: [DeliveryNotesController, InvoiceDeliveryNotesController],
   providers: [DeliveryNotesService],
   exports: [DeliveryNotesService],
