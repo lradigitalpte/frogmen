@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CurrencyConversionError } from "./errors";
 import { requireRate } from "./require-rate";
-import { convertAmount, roundMoney, sumDocumentAmounts } from "./money";
+import { allocateFixedDiscount, convertAmount, roundMoney, sumDocumentAmounts } from "./money";
 import { computeOutstandingInBase } from "./outstanding";
 import { convertPaymentToInvoiceAmount } from "./payments";
 
@@ -17,6 +17,21 @@ describe("convertAmount", () => {
   it("multiplies amount by rate and rounds", () => {
     expect(convertAmount(200, 3.17)).toBe(634);
     expect(convertAmount(100, 0.333333)).toBe(33.33);
+  });
+});
+
+describe("allocateFixedDiscount", () => {
+  it("applies a fixed discount once across all lines", () => {
+    expect(allocateFixedDiscount([600, 400], 200)).toEqual([120, 80]);
+  });
+
+  it("preserves the exact discount through cent rounding", () => {
+    const allocated = allocateFixedDiscount([10, 10, 10], 10);
+    expect(allocated.reduce((sum, amount) => sum + amount, 0)).toBe(10);
+  });
+
+  it("caps the discount at the quotation gross", () => {
+    expect(allocateFixedDiscount([50, 25], 100)).toEqual([50, 25]);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { DeleteIcon } from "@shopify/polaris-icons";
+import { groupSerializedLines } from "@frog1/shared";
 import { useCallback, useState } from "react";
 import type { QuotationLine } from "@/lib/quotations-api";
 import {
@@ -75,6 +76,7 @@ export function QuotationLinesTable({
   const [drafts, setDrafts] = useState<Record<string, EditableLineState>>({});
   const [savingLineId, setSavingLineId] = useState<string | null>(null);
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
+  const [showIndividualLines, setShowIndividualLines] = useState(false);
 
   const getDraft = useCallback(
     (line: QuotationLine) => drafts[line.id] ?? lineToState(line),
@@ -150,6 +152,7 @@ export function QuotationLinesTable({
   }
 
   const resourceName = { singular: "line", plural: "lines" };
+  const displayLines = groupSerializedLines(lines);
 
   const rowMarkup = lines.map((line, index) => {
     const draft = getDraft(line);
@@ -307,21 +310,77 @@ export function QuotationLinesTable({
   });
 
   return (
-    <IndexTable
-      headings={[
-        { title: "Description" },
-        { title: "Qty" },
-        { title: "Price" },
-        { title: "Discount" },
-        { title: "Tax %" },
-        { title: "Subtotal", alignment: "end" },
-        { title: "" },
-      ]}
-      itemCount={lines.length}
-      resourceName={resourceName}
-      selectable={false}
-    >
-      {rowMarkup}
-    </IndexTable>
+    <BlockStack gap="300">
+      <div className="quotation-grouped-lines">
+        {displayLines.map((line) => (
+          <div className="quotation-grouped-line" key={line.id}>
+            <div className="quotation-grouped-line__description">
+              <Text as="p" fontWeight="semibold">
+                {line.description}
+              </Text>
+              {line.productDescription ? (
+                <LineItemDescription
+                  boldTitle={false}
+                  details={line.productDescription}
+                  title=""
+                />
+              ) : null}
+              {line.serialNumbers.length > 0 ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  S/N: {line.serialNumbers.join(", ")}
+                </Text>
+              ) : null}
+            </div>
+            <div className="quotation-grouped-line__metric">
+              <Text as="span" tone="subdued" variant="bodySm">Qty</Text>
+              <Text as="span" fontWeight="semibold">{line.quantity}</Text>
+            </div>
+            <div className="quotation-grouped-line__metric">
+              <Text as="span" tone="subdued" variant="bodySm">Unit price</Text>
+              <Text as="span" fontWeight="semibold">
+                {formatMoney(line.unitPrice, currencyCode, decimalPlaces)}
+              </Text>
+            </div>
+            <div className="quotation-grouped-line__metric">
+              <Text as="span" tone="subdued" variant="bodySm">Subtotal</Text>
+              <Text as="span" fontWeight="semibold">
+                {formatMoney(line.priceSubtotal, currencyCode, decimalPlaces)}
+              </Text>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!disabled ? (
+        <InlineStack align="start">
+          <Button onClick={() => setShowIndividualLines((current) => !current)}>
+            {showIndividualLines
+              ? "Hide individual unit editor"
+              : `Edit individual units (${lines.length})`}
+          </Button>
+        </InlineStack>
+      ) : null}
+
+      {disabled || showIndividualLines ? (
+        <div className="quotation-lines-editor-scroll">
+          <IndexTable
+            headings={[
+              { title: "Description" },
+              { title: "Qty" },
+              { title: "Price" },
+              { title: "Discount" },
+              { title: "Tax %" },
+              { title: "Subtotal", alignment: "end" },
+              { title: "" },
+            ]}
+            itemCount={lines.length}
+            resourceName={resourceName}
+            selectable={false}
+          >
+            {rowMarkup}
+          </IndexTable>
+        </div>
+      ) : null}
+    </BlockStack>
   );
 }

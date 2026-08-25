@@ -17,7 +17,12 @@ import {
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { pricingAdjustmentHelpText, pricingAdjustmentLabel } from "@frog1/shared";
+import {
+  allocateFixedDiscount,
+  groupSerializedLines,
+  pricingAdjustmentHelpText,
+  pricingAdjustmentLabel,
+} from "@frog1/shared";
 import { AppPage } from "@/components/layout/page";
 import { useToast } from "@/components/providers/toast-provider";
 import { AddProductLineModal } from "@/components/sales/add-product-line-modal";
@@ -116,7 +121,14 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         const amount = Number(firstLine.discountAmount ?? 0);
         if (amount > 0) {
           setDiscountMode("amount");
-          setDiscountValue(String(amount));
+          setDiscountValue(
+            String(
+              quotationResult.lines?.reduce(
+                (sum, line) => sum + Number(line.discountAmount ?? 0),
+                0,
+              ) ?? amount,
+            ),
+          );
         } else {
           setDiscountMode("percent");
           setDiscountValue(firstLine.discountPercent ?? "0");
@@ -174,6 +186,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
   );
 
   const lineCount = quotation?.lines?.length ?? 0;
+  const groupedLineCount = groupSerializedLines(quotation?.lines ?? []).length;
 
   // Dynamic Financial Calculations based on actual lines & user inputs
   const equipmentSubtotal = useMemo(() => {
@@ -227,11 +240,18 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
       });
 
       const parsedDiscount = Math.max(0, parseFloat(discountValue) || 0);
+      const fixedAllocations = allocateFixedDiscount(
+        (updated.lines ?? []).map(
+          (line) => Number(line.quantity) * Number(line.unitPrice),
+        ),
+        parsedDiscount,
+      );
       let withDiscount = updated;
-      for (const line of updated.lines ?? []) {
+      for (const [index, line] of (updated.lines ?? []).entries()) {
         withDiscount = await updateQuotationLine(quotation.id, line.id, {
           discountPercent: discountMode === "percent" ? parsedDiscount : 0,
-          discountAmount: discountMode === "amount" ? parsedDiscount : 0,
+          discountAmount:
+            discountMode === "amount" ? fixedAllocations[index] : 0,
         });
       }
 
@@ -435,7 +455,9 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                     <Text as="p" tone="subdued">
                       {lineCount === 0
                         ? "Add diving gear, ROV spares, or service line items."
-                        : `${lineCount} line item${lineCount === 1 ? "" : "s"}`}
+                        : groupedLineCount === lineCount
+                          ? `${lineCount} line item${lineCount === 1 ? "" : "s"}`
+                          : `${groupedLineCount} products · ${lineCount} serialized units`}
                     </Text>
                     <Checkbox
                       checked={priceAdjustmentEnabled}
@@ -491,7 +513,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                           setDiscountMode(val as "percent" | "amount");
                           setHeaderDirty(true);
                         }}
-                        helpText="Applies the same discount to all quotation lines"
+                        helpText="Percent applies to each line; a fixed amount is distributed once across the quotation"
                       />
                       <TextField
                         autoComplete="off"

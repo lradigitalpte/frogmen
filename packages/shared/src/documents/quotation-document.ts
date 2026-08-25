@@ -9,6 +9,7 @@ import {
   renderDocumentPaymentDetailsHtml,
 } from "./document-payment-details";
 import { renderLineItemDescriptionHtml } from "./line-item-details";
+import { groupSerializedLines } from "./group-serialized-lines";
 
 export type { DocumentBankAccount } from "./document-payment-details";
 
@@ -172,12 +173,13 @@ export function renderQuotationDocumentHtml(
       })
     : "";
 
-  const lineRows = quotation.lines
+  const groupedLines = groupSerializedLines(quotation.lines);
+  const lineRows = groupedLines
     .map(
       (line, index) => `
       <tr>
         <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
-        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}${line.serialNumbers.length ? `<div class="line-serials">S/N: ${line.serialNumbers.map(escapeHtml).join(", ")}</div>` : ""}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(formatDocumentDiscount(line, quotation.currencySymbol, quotation.decimalPlaces))}</td>
@@ -199,10 +201,10 @@ export function renderQuotationDocumentHtml(
         maximumFractionDigits: quotation.decimalPlaces,
       }) : "0.00"}`;
     };
-    const officialRows = quotation.lines.map((line, index) => `
+    const officialRows = groupedLines.map((line, index) => `
       <tr>
         <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
-        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}${line.serialNumbers.length ? `<div class="line-serials">S/N: ${line.serialNumbers.map(escapeHtml).join(", ")}</div>` : ""}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
         <td class="num">${money(line.priceSubtotal)}</td>

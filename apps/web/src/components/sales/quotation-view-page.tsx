@@ -18,6 +18,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { useRouter, useSearchParams } from "next/navigation";
+import { groupSerializedLines } from "@frog1/shared";
 import { useEffect, useMemo, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
@@ -178,6 +179,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   }, [quotationId]);
 
   const lines = quotation?.lines ?? [];
+  const displayLines = useMemo(() => groupSerializedLines(lines), [lines]);
   const currencyCode = currency?.code ?? "USD";
   const decimalPlaces = currency?.decimalPlaces ?? 2;
 
@@ -564,13 +566,13 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                           <th style={{ width: "34%" }}>Description</th>
                           <th style={{ width: "10%" }}>Quantity</th>
                           <th style={{ width: "14%", textAlign: "right" }}>Unit Price</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>Disc. %</th>
+                          <th style={{ width: "10%", textAlign: "right" }}>Discount</th>
                           <th style={{ width: "10%", textAlign: "right" }}>Tax %</th>
                           <th style={{ width: "16%", textAlign: "right" }}>Subtotal</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {lines.map((line) => (
+                        {displayLines.map((line) => (
                           <tr key={line.id}>
                             <td>
                               <BlockStack gap="050">
@@ -579,18 +581,19 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                                   productId={line.productId}
                                   title={line.description}
                                 />
-                                {line.serialNumber ? (
+                                {line.serialNumbers.length > 0 ? (
                                   <Text as="span" tone="subdued" variant="bodySm">
                                     SN:{" "}
-                                    {line.productUnitId ? (
-                                      <Link
-                                        url={`/dashboard/inventory/units/${line.productUnitId}`}
-                                      >
-                                        {line.serialNumber}
-                                      </Link>
-                                    ) : (
-                                      line.serialNumber
-                                    )}
+                                    {line.sourceLines.map((sourceLine, index) => (
+                                      <span key={sourceLine.id}>
+                                        {index > 0 ? ", " : ""}
+                                        {sourceLine.productUnitId ? (
+                                          <Link url={`/dashboard/inventory/units/${sourceLine.productUnitId}`}>
+                                            {sourceLine.serialNumber}
+                                          </Link>
+                                        ) : sourceLine.serialNumber}
+                                      </span>
+                                    ))}
                                   </Text>
                                 ) : line.productUnitId ? (
                                   <Text as="span" tone="subdued" variant="bodySm">

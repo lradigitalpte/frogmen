@@ -57,6 +57,39 @@ export function resolveLineDiscount(
   return 0;
 }
 
+/** Distribute one document-level fixed discount across line gross amounts. */
+export function allocateFixedDiscount(
+  grossAmounts: number[],
+  requestedDiscount: number,
+): number[] {
+  const grossCents = grossAmounts.map((gross) =>
+    Math.max(0, Math.round((Number.isFinite(gross) ? gross : 0) * 100)),
+  );
+  const totalGrossCents = grossCents.reduce((sum, gross) => sum + gross, 0);
+  const discountCents = Math.min(
+    totalGrossCents,
+    Math.max(0, Math.round((Number.isFinite(requestedDiscount) ? requestedDiscount : 0) * 100)),
+  );
+
+  if (totalGrossCents === 0 || discountCents === 0) {
+    return grossCents.map(() => 0);
+  }
+
+  const shares = grossCents.map((gross, index) => {
+    const exact = (discountCents * gross) / totalGrossCents;
+    return { index, cents: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let remaining = discountCents - shares.reduce((sum, share) => sum + share.cents, 0);
+
+  for (const share of [...shares].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) {
+    if (remaining === 0) break;
+    share.cents += 1;
+    remaining -= 1;
+  }
+
+  return shares.sort((a, b) => a.index - b.index).map((share) => share.cents / 100);
+}
+
 export function sumDocumentAmounts(
   lines: Array<{
     priceSubtotal: number;

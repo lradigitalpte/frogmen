@@ -1,4 +1,5 @@
 import {
+  allocateFixedDiscount,
   applyPriceAdjustment,
   resolveLineDiscount,
   type SalesPricingSettings,
@@ -29,6 +30,34 @@ export function formatDiscountLabel(
   }
 
   return `${Number(discountPercent) || 0}%`;
+}
+
+export function applyGlobalDiscountToLines<
+  T extends {
+    quantity: number;
+    unitPrice: number;
+    discountPercent?: number;
+    discountAmount?: number;
+  },
+>(lines: T[], mode: DiscountMode, value: number): T[] {
+  const discount = Math.max(0, Number.isFinite(value) ? value : 0);
+  if (mode === "percent") {
+    return lines.map((line) => ({
+      ...line,
+      discountPercent: discount,
+      discountAmount: 0,
+    }));
+  }
+
+  const allocations = allocateFixedDiscount(
+    lines.map((line) => line.quantity * line.unitPrice),
+    discount,
+  );
+  return lines.map((line, index) => ({
+    ...line,
+    discountPercent: 0,
+    discountAmount: allocations[index],
+  }));
 }
 
 export interface PricedLineItem {

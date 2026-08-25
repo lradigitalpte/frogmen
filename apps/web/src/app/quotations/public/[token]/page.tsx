@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import {
   formatCountryLabel,
   formatDocumentDate,
+  groupSerializedLines,
   formatPostalAddressLines,
   formatProductDetailsInline,
   formatTrnLabel,
@@ -366,7 +367,8 @@ export default function PublicQuotationPage({
   const validityDateLabel = formatDocumentDate(data.validityDate);
   const trnLabel = formatTrnLabel(data.branding.taxId);
   const vatLabel = formatVatLabel(data.lines);
-  const showSerialColumn = data.lines.some((line) =>
+  const displayLines = groupSerializedLines(data.lines);
+  const showSerialColumn = displayLines.some((line) =>
     Boolean(line.serialNumber?.trim()),
   );
 
@@ -492,7 +494,7 @@ export default function PublicQuotationPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {data.lines.map((line) => {
+                      {displayLines.map((line) => {
                         const items = productDetailsLines(
                           line.description,
                           line.productDescription,
@@ -523,7 +525,7 @@ export default function PublicQuotationPage({
                           </td>
                           {showSerialColumn ? (
                             <td data-label="S/N">
-                              {line.serialNumber?.trim() || "—"}
+                              {line.serialNumbers.join(", ") || "—"}
                             </td>
                           ) : null}
                           <td data-label="Quantity">{formatQuantity(line.quantity)}</td>

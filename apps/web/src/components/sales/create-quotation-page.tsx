@@ -34,6 +34,7 @@ import {
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
 import {
+  applyGlobalDiscountToLines,
   applyPricingToLines,
   computeLineFinancialSummary,
   computeLineTotal,
@@ -229,13 +230,7 @@ export function CreateQuotationPage() {
     setGlobalDiscountMode(mode);
     setGlobalDiscountValue(valueStr);
     const value = Math.max(0, parseFloat(valueStr) || 0);
-    setLines((prev) =>
-      prev.map((line) =>
-        mode === "percent"
-          ? { ...line, discountPercent: value, discountAmount: 0 }
-          : { ...line, discountPercent: 0, discountAmount: value },
-      ),
-    );
+    setLines((prev) => applyGlobalDiscountToLines(prev, mode, value));
   }
 
   function applyGlobalVat(vatPctStr: string) {
@@ -444,7 +439,13 @@ export function CreateQuotationPage() {
       salesPricing,
     );
 
-    setLines((prev) => [...prev, pricedLine]);
+    setLines((prev) =>
+      applyGlobalDiscountToLines(
+        [...prev, pricedLine],
+        globalDiscountMode,
+        parseFloat(globalDiscountValue) || 0,
+      ),
+    );
     setEditingLineId(pricedLine.id);
     setSelectedProduct(null);
     setSelectedUnitId("");
@@ -598,12 +599,22 @@ export function CreateQuotationPage() {
   function saveLine(updated: ConfiguredLineItem) {
     setQuantityWarning(null);
     setLines((prev) =>
-      prev.map((line) => (line.id === updated.id ? updated : line)),
+      applyGlobalDiscountToLines(
+        prev.map((line) => (line.id === updated.id ? updated : line)),
+        globalDiscountMode,
+        parseFloat(globalDiscountValue) || 0,
+      ),
     );
   }
 
   function removeLine(lineId: string) {
-    setLines((prev) => prev.filter((l) => l.id !== lineId));
+    setLines((prev) =>
+      applyGlobalDiscountToLines(
+        prev.filter((line) => line.id !== lineId),
+        globalDiscountMode,
+        parseFloat(globalDiscountValue) || 0,
+      ),
+    );
   }
 
   // Create quotation as draft, then open workspace for send / confirm / invoice
@@ -1052,7 +1063,7 @@ export function CreateQuotationPage() {
                           globalDiscountValue,
                         )
                       }
-                      helpText="Applies the same discount to all quotation lines"
+                      helpText="Percent applies to each line; a fixed amount is distributed once across the quotation"
                     />
                     <TextField
                       autoComplete="off"
@@ -1244,7 +1255,7 @@ export function CreateQuotationPage() {
                           <th style={{ width: "20%" }}>Serial Number</th>
                           <th style={{ width: "8%", textAlign: "right" }}>Qty</th>
                           <th style={{ width: "15%", textAlign: "right" }}>Unit Price ({displayCurrency?.code ?? " "})</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>Disc (%)</th>
+                          <th style={{ width: "10%", textAlign: "right" }}>Discount</th>
                           <th style={{ width: "10%", textAlign: "right" }}>VAT (%)</th>
                           <th style={{ width: "12%", textAlign: "right" }}>Total</th>
                         </tr>

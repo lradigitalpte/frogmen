@@ -323,6 +323,61 @@ html:not([data-theme="dark"]) .Polaris-ShadowBevel {
   min-width: 4.75rem;
 }
 
+.quotation-grouped-lines {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--p-color-border-secondary);
+  border-radius: var(--p-border-radius-300);
+}
+
+.quotation-grouped-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(6.5rem, auto));
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem;
+  background: var(--p-color-bg-surface);
+}
+
+.quotation-grouped-line + .quotation-grouped-line {
+  border-top: 1px solid var(--p-color-border-secondary);
+}
+
+.quotation-grouped-line__description {
+  min-width: 0;
+}
+
+.quotation-grouped-line__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: right;
+}
+
+.quotation-lines-editor-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.quotation-lines-editor-scroll .Polaris-IndexTable {
+  min-width: 70rem;
+}
+
+@media (max-width: 52rem) {
+  .quotation-grouped-line {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .quotation-grouped-line__description {
+    grid-column: 1 / -1;
+  }
+
+  .quotation-grouped-line__metric {
+    text-align: left;
+  }
+}
+
 .frogmen-pipeline-stepper {
   display: inline-flex;
   align-items: center;
