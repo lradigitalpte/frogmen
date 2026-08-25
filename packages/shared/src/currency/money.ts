@@ -31,6 +31,32 @@ export function resolveDeliveryFee(
   return 0;
 }
 
+/** Fixed amount wins when > 0; otherwise percent of gross. */
+export function resolveLineDiscount(
+  gross: number,
+  discountAmount?: string | number | null,
+  discountPercent?: string | number | null,
+): number {
+  const amount =
+    discountAmount != null && discountAmount !== ""
+      ? Number(discountAmount)
+      : 0;
+  const percent =
+    discountPercent != null && discountPercent !== ""
+      ? Number(discountPercent)
+      : 0;
+
+  if (Number.isFinite(amount) && amount > 0) {
+    return roundMoney(Math.min(Math.max(gross, 0), amount));
+  }
+
+  if (Number.isFinite(percent) && percent > 0) {
+    return roundMoney(gross * (percent / 100));
+  }
+
+  return 0;
+}
+
 export function sumDocumentAmounts(
   lines: Array<{
     priceSubtotal: number;

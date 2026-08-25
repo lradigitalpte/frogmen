@@ -25,7 +25,7 @@ import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { LineItemDescription } from "@/components/sales/line-item-description";
 import { formatQuantity } from "@/lib/format-quantity";
-import { resolveDeliveryFee } from "@/lib/line-item-utils";
+import { formatDiscountLabel, resolveDeliveryFee } from "@/lib/line-item-utils";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
 import {
@@ -603,7 +603,13 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                             <td style={{ textAlign: "right" }}>
                               {formatMoney(line.unitPrice, currencyCode, decimalPlaces)}
                             </td>
-                            <td style={{ textAlign: "right" }}>{line.discountPercent}%</td>
+                            <td style={{ textAlign: "right" }}>
+                              {formatDiscountLabel(
+                                line.discountAmount,
+                                line.discountPercent,
+                                currencyCode,
+                              )}
+                            </td>
                             <td style={{ textAlign: "right" }}>{line.taxRatePercent}%</td>
                             <td style={{ textAlign: "right" }} className="frogmen-font-bold">
                               {formatMoney(line.priceSubtotal, currencyCode, decimalPlaces)}

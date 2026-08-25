@@ -58,6 +58,10 @@ import {
 } from "@/components/sales/edit-configured-line-modal";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { useToast } from "@/components/providers/toast-provider";
+import {
+  formatDiscountLabel,
+  type DiscountMode,
+} from "@/lib/line-item-utils";
 
 function buildDeliveryFeePayload(mode: DeliveryFeeMode, value: string) {
   if (mode === "none") {
@@ -215,18 +219,22 @@ export function CreateQuotationPage() {
   const [documentCurrencyError, setDocumentCurrencyError] = useState<string | null>(null);
   const prevCurrencyIdRef = useRef<string | null>(null);
 
-  // Global Commercial Discount (%) & Global VAT Rate (%)
-  const [globalDiscountPercent, setGlobalDiscountPercent] = useState<string>("0");
+  // Global Commercial Discount (percent or fixed amount) & Global VAT Rate (%)
+  const [globalDiscountMode, setGlobalDiscountMode] =
+    useState<DiscountMode>("percent");
+  const [globalDiscountValue, setGlobalDiscountValue] = useState<string>("0");
   const [globalVatPercent, setGlobalVatPercent] = useState<string>("5");
 
-  function applyGlobalDiscount(discountPctStr: string) {
-    setGlobalDiscountPercent(discountPctStr);
-    const pct = Math.max(0, parseFloat(discountPctStr) || 0);
+  function applyGlobalDiscount(mode: DiscountMode, valueStr: string) {
+    setGlobalDiscountMode(mode);
+    setGlobalDiscountValue(valueStr);
+    const value = Math.max(0, parseFloat(valueStr) || 0);
     setLines((prev) =>
-      prev.map((line) => ({
-        ...line,
-        discountPercent: pct,
-      })),
+      prev.map((line) =>
+        mode === "percent"
+          ? { ...line, discountPercent: value, discountAmount: 0 }
+          : { ...line, discountPercent: 0, discountAmount: value },
+      ),
     );
   }
 
@@ -417,7 +425,14 @@ export function CreateQuotationPage() {
       baseUnitPrice,
       unitPrice: baseUnitPrice,
       unitCost,
-      discountPercent: parseFloat(globalDiscountPercent) || 0,
+      discountPercent:
+        globalDiscountMode === "percent"
+          ? parseFloat(globalDiscountValue) || 0
+          : 0,
+      discountAmount:
+        globalDiscountMode === "amount"
+          ? parseFloat(globalDiscountValue) || 0
+          : 0,
       taxRatePercent: parseFloat(globalVatPercent) || salesPricing.defaultVatRatePercent || 5,
       availableQuantity: selectedAvailableQuantity,
     };
@@ -485,6 +500,7 @@ export function CreateQuotationPage() {
                 baseUnitPrice: convertAmount(line.baseUnitPrice, rate),
                 unitPrice: convertAmount(line.unitPrice, rate),
                 unitCost: convertAmount(line.unitCost, rate),
+                discountAmount: convertAmount(line.discountAmount || 0, rate),
               })),
         );
         setDocumentCurrencyError(null);
@@ -634,6 +650,7 @@ export function CreateQuotationPage() {
           quantity: line.quantity,
           unitPrice: line.unitPrice,
           discountPercent: line.discountPercent,
+          discountAmount: line.discountAmount,
           taxRatePercent: line.taxRatePercent,
         });
       }
@@ -1022,15 +1039,39 @@ export function CreateQuotationPage() {
                   </Text>
 
                   <BlockStack gap="300">
+                    <Select
+                      label="Global Commercial Discount"
+                      options={[
+                        { label: "Percent (%)", value: "percent" },
+                        { label: "Fixed amount", value: "amount" },
+                      ]}
+                      value={globalDiscountMode}
+                      onChange={(value) =>
+                        applyGlobalDiscount(
+                          value as DiscountMode,
+                          globalDiscountValue,
+                        )
+                      }
+                      helpText="Applies the same discount to all quotation lines"
+                    />
                     <TextField
                       autoComplete="off"
-                      label="Global Commercial Discount (%)"
+                      label={
+                        globalDiscountMode === "percent"
+                          ? "Discount percent"
+                          : "Discount amount"
+                      }
                       type="number"
-                      value={globalDiscountPercent}
-                      onChange={applyGlobalDiscount}
-                      prefix="%"
+                      value={globalDiscountValue}
+                      onChange={(value) =>
+                        applyGlobalDiscount(globalDiscountMode, value)
+                      }
+                      prefix={
+                        globalDiscountMode === "percent"
+                          ? "%"
+                          : (displayCurrency?.code ?? "AED")
+                      }
                       placeholder="0"
-                      helpText="Applies discount across all quotation lines"
                     />
                     <TextField
                       autoComplete="off"
@@ -1241,7 +1282,13 @@ export function CreateQuotationPage() {
                                   ) : null}
                                 </BlockStack>
                               </td>
-                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">{item.discountPercent}%</td>
+                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">
+                                {formatDiscountLabel(
+                                  item.discountAmount,
+                                  item.discountPercent,
+                                  displayCurrency?.code,
+                                )}
+                              </td>
                               <td style={{ textAlign: "right" }} className="frogmen-text-muted">{item.taxRatePercent}%</td>
                               <td style={{ textAlign: "right" }} className="frogmen-font-bold">
                                 {fmt(lineTotal)}

@@ -1,8 +1,35 @@
 import {
   applyPriceAdjustment,
+  resolveLineDiscount,
   type SalesPricingSettings,
 } from "@frog1/shared";
 import type { ProductStock } from "@/types/product";
+
+export type DiscountMode = "percent" | "amount";
+
+export function inferDiscountMode(
+  discountAmount?: number | string | null,
+  discountPercent?: number | string | null,
+): DiscountMode {
+  const amount = Number(discountAmount);
+  if (Number.isFinite(amount) && amount > 0) {
+    return "amount";
+  }
+  return "percent";
+}
+
+export function formatDiscountLabel(
+  discountAmount?: number | string | null,
+  discountPercent?: number | string | null,
+  currencyCode?: string,
+): string {
+  if (inferDiscountMode(discountAmount, discountPercent) === "amount") {
+    const amount = Number(discountAmount) || 0;
+    return currencyCode ? `${currencyCode} ${amount}` : String(amount);
+  }
+
+  return `${Number(discountPercent) || 0}%`;
+}
 
 export interface PricedLineItem {
   id: string;
@@ -164,16 +191,30 @@ export function resolveDeliveryFee(
   return 0;
 }
 
+export function computeLineDiscountAmount<
+  T extends {
+    quantity: number;
+    unitPrice: number;
+    discountPercent?: number;
+    discountAmount?: number;
+  },
+>(line: T): number {
+  return resolveLineDiscount(
+    line.quantity * line.unitPrice,
+    line.discountAmount,
+    line.discountPercent,
+  );
+}
+
 export function computeLineNetRevenue<
   T extends {
     quantity: number;
     unitPrice: number;
-    discountPercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
   },
 >(line: T): number {
-  return (
-    line.quantity * line.unitPrice * (1 - line.discountPercent / 100)
-  );
+  return line.quantity * line.unitPrice - computeLineDiscountAmount(line);
 }
 
 export function computeLineCost<
@@ -189,7 +230,8 @@ export function computeLineProfit<
   T extends {
     quantity: number;
     unitPrice: number;
-    discountPercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
     unitCost?: number;
   },
 >(line: T): number {
@@ -200,7 +242,8 @@ export function computeLineMarginPercent<
   T extends {
     quantity: number;
     unitPrice: number;
-    discountPercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
     unitCost?: number;
   },
 >(line: T): number | null {
@@ -228,7 +271,8 @@ export function computeLineFinancialSummary<
     quantity: number;
     baseUnitPrice: number;
     unitPrice: number;
-    discountPercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
     taxRatePercent: number;
     unitCost?: number;
   },
@@ -252,16 +296,14 @@ export function computeLineFinancialSummary<
   const pricingAdjustmentTotal = catalogSubtotal - lineSubtotal;
 
   const totalDiscount = lines.reduce(
-    (sum, item) =>
-      sum + item.quantity * item.unitPrice * (item.discountPercent / 100),
+    (sum, item) => sum + computeLineDiscountAmount(item),
     0,
   );
 
   const netSubtotal = lineSubtotal - totalDiscount;
 
   const totalVat = lines.reduce((sum, item) => {
-    const itemNet =
-      item.quantity * item.unitPrice * (1 - item.discountPercent / 100);
+    const itemNet = computeLineNetRevenue(item);
     return sum + itemNet * (item.taxRatePercent / 100);
   }, 0);
 
@@ -294,14 +336,10 @@ export function computeLineTotal<
   T extends {
     quantity: number;
     unitPrice: number;
-    discountPercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
     taxRatePercent: number;
   },
 >(line: T): number {
-  return (
-    line.quantity *
-    line.unitPrice *
-    (1 - line.discountPercent / 100) *
-    (1 + line.taxRatePercent / 100)
-  );
+  return computeLineNetRevenue(line) * (1 + line.taxRatePercent / 100);
 }

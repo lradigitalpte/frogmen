@@ -1,6 +1,6 @@
 export { CurrencyConversionError } from "./errors";
 export { requireRate } from "./require-rate";
-export { roundMoney, convertAmount, sumDocumentAmounts, resolveDeliveryFee, computeLandedUnitCost, buildPoLandedUnitCostsByLineId, sumPurchaseOrderAdditionalCharges, suggestSellingPrice } from "./money";
+export { roundMoney, convertAmount, sumDocumentAmounts, resolveDeliveryFee, resolveLineDiscount, computeLandedUnitCost, buildPoLandedUnitCostsByLineId, sumPurchaseOrderAdditionalCharges, suggestSellingPrice } from "./money";
 export type {
   PurchaseOrderLineForLandedCost,
   PurchaseOrderChargesForLandedCost,

@@ -32,6 +32,7 @@ interface QuotationLine {
   unitPrice: string;
   priceSubtotal: string;
   discountPercent: string;
+  discountAmount?: string;
   taxRatePercent: string;
 }
 

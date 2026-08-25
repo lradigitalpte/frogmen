@@ -78,6 +78,7 @@ export interface AddInvoiceLineInput {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
 }
 
@@ -1057,6 +1058,7 @@ export class InvoicesService {
         quantity: remainingQty,
         unitPrice: Number(line.unitPrice),
         discountPercent: Number(line.discountPercent),
+        discountAmount: Number(line.discountAmount ?? 0),
         taxRatePercent: Number(line.taxRatePercent),
       };
     });
@@ -1156,6 +1158,7 @@ export class InvoicesService {
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         discountPercent: line.discountPercent ?? 0,
+        discountAmount: line.discountAmount ?? 0,
         taxRatePercent: line.taxRatePercent ?? 0,
       });
 
@@ -1169,6 +1172,7 @@ export class InvoicesService {
         quantity: String(line.quantity),
         unitPrice: String(line.unitPrice),
         discountPercent: String(line.discountPercent ?? 0),
+        discountAmount: String(line.discountAmount ?? 0),
         taxRatePercent: String(line.taxRatePercent ?? 0),
         priceSubtotal: String(amounts.priceSubtotal),
         priceTax: String(amounts.priceTax),
@@ -1648,6 +1652,7 @@ export class InvoicesService {
         quantity: Number(line.quantity),
         unitPrice: Number(line.unitPrice),
         discountPercent: Number(line.discountPercent),
+        discountAmount: Number(line.discountAmount ?? 0),
         taxRatePercent: Number(line.taxRatePercent),
         lineTotal: Number(line.priceTotal),
         costAmountBase: Number(line.costAmountBase ?? 0),

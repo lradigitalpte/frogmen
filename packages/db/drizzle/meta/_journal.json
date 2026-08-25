@@ -253,6 +253,13 @@
       "when": 1785050600000,
       "tag": "0034_delivery_note_serial_text",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785050700000,
+      "tag": "0035_line_discount_amount",
+      "breakpoints": true
     }
   ]
 }

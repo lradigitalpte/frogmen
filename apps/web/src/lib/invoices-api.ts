@@ -13,6 +13,7 @@ export interface InvoiceLine {
   quantity: number;
   unitPrice: number;
   discountPercent: number;
+  discountAmount?: number;
   taxRatePercent: number;
   lineTotal: number;
 }

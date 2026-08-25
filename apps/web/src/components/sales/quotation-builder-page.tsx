@@ -80,8 +80,11 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
   const [reconvertFromId, setReconvertFromId] = useState("");
   const [reconverting, setReconverting] = useState(false);
 
-  // Editable Financial Summary Controls: Discount %, Delivery Fee (AED), VAT Rate %
-  const [discountPercent, setDiscountPercent] = useState<string>("5");
+  // Editable Financial Summary Controls: Discount (percent or amount), Delivery Fee, VAT
+  const [discountMode, setDiscountMode] = useState<"percent" | "amount">(
+    "percent",
+  );
+  const [discountValue, setDiscountValue] = useState<string>("0");
   const [deliveryFee, setDeliveryFee] = useState<string>("0");
   const [vatPercent, setVatPercent] = useState<string>("5");
 
@@ -108,6 +111,20 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
 
       setQuotation(quotationResult);
       setDeliveryFee(quotationResult.deliveryFeeAmount ?? "0");
+      const firstLine = quotationResult.lines?.[0];
+      if (firstLine) {
+        const amount = Number(firstLine.discountAmount ?? 0);
+        if (amount > 0) {
+          setDiscountMode("amount");
+          setDiscountValue(String(amount));
+        } else {
+          setDiscountMode("percent");
+          setDiscountValue(firstLine.discountPercent ?? "0");
+        }
+      } else {
+        setDiscountMode("percent");
+        setDiscountValue("0");
+      }
       setHeader({
         customer,
         currencyId: quotationResult.currencyId,
@@ -170,8 +187,14 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
     }, 0);
   }, [quotation?.lines, quotation?.amountUntaxed]);
 
-  const discountRateNum = parseFloat(discountPercent) || 0;
-  const discountAmount = equipmentSubtotal * (discountRateNum / 100);
+  const discountRateNum =
+    discountMode === "percent" ? parseFloat(discountValue) || 0 : 0;
+  const discountFixedNum =
+    discountMode === "amount" ? Math.max(0, parseFloat(discountValue) || 0) : 0;
+  const discountAmount =
+    discountFixedNum > 0
+      ? Math.min(equipmentSubtotal, discountFixedNum)
+      : equipmentSubtotal * (discountRateNum / 100);
   const netSubtotal = Math.max(0, equipmentSubtotal - discountAmount);
 
   const deliveryFeeNum = Math.max(0, parseFloat(deliveryFee) || 0);
@@ -203,7 +226,16 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         deliveryFeeAmount: deliveryFeeNum,
       });
 
-      setQuotation(updated);
+      const parsedDiscount = Math.max(0, parseFloat(discountValue) || 0);
+      let withDiscount = updated;
+      for (const line of updated.lines ?? []) {
+        withDiscount = await updateQuotationLine(quotation.id, line.id, {
+          discountPercent: discountMode === "percent" ? parsedDiscount : 0,
+          discountAmount: discountMode === "amount" ? parsedDiscount : 0,
+        });
+      }
+
+      setQuotation(withDiscount);
       setHeader((current) =>
         current
           ? {
@@ -448,18 +480,38 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
 
                   {editable ? (
                     <BlockStack gap="300">
-                      <TextField
-                        autoComplete="off"
-                        label="Commercial Discount (%)"
-                        type="number"
-                        value={discountPercent}
+                      <Select
+                        label="Commercial Discount"
+                        options={[
+                          { label: "Percent (%)", value: "percent" },
+                          { label: "Fixed amount", value: "amount" },
+                        ]}
+                        value={discountMode}
                         onChange={(val) => {
-                          setDiscountPercent(val);
+                          setDiscountMode(val as "percent" | "amount");
                           setHeaderDirty(true);
                         }}
-                        prefix="%"
+                        helpText="Applies the same discount to all quotation lines"
+                      />
+                      <TextField
+                        autoComplete="off"
+                        label={
+                          discountMode === "percent"
+                            ? "Discount percent"
+                            : "Discount amount"
+                        }
+                        type="number"
+                        value={discountValue}
+                        onChange={(val) => {
+                          setDiscountValue(val);
+                          setHeaderDirty(true);
+                        }}
+                        prefix={
+                          discountMode === "percent"
+                            ? "%"
+                            : (currency?.code ?? "AED")
+                        }
                         placeholder="0"
-                        helpText="Global discount applied to equipment subtotal"
                       />
                       <TextField
                         autoComplete="off"
@@ -519,7 +571,11 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                     {discountAmount > 0 ? (
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued" variant="bodySm">
-                          Commercial Discount ({discountPercent}%)
+                          Commercial Discount (
+                          {discountMode === "percent"
+                            ? `${discountValue}%`
+                            : (currency?.code ?? "")}
+                          )
                         </Text>
                         <Text as="span" variant="bodyMd" tone="success">
                           -{formatMoney(discountAmount, currency?.code)}

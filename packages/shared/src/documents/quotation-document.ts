@@ -19,6 +19,7 @@ export interface QuotationDocumentLine {
   quantity: string;
   unitPrice: string;
   discountPercent: string;
+  discountAmount?: string;
   taxRatePercent: string;
   priceSubtotal: string;
 }
@@ -121,6 +122,18 @@ export function formatVatLabel(
   return `VAT (${pretty}%)`;
 }
 
+export function formatDocumentDiscount(
+  line: { discountPercent?: string | number | null; discountAmount?: string | number | null },
+  currencySymbol: string,
+  decimalPlaces: number,
+): string {
+  const amount = Number(line.discountAmount);
+  if (Number.isFinite(amount) && amount > 0) {
+    return formatDocumentMoney(amount, currencySymbol, decimalPlaces);
+  }
+  return `${Number(line.discountPercent) || 0}%`;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -167,7 +180,7 @@ export function renderQuotationDocumentHtml(
         <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
-        <td class="num">${escapeHtml(line.discountPercent)}%</td>
+        <td class="num">${escapeHtml(formatDocumentDiscount(line, quotation.currencySymbol, quotation.decimalPlaces))}</td>
         <td class="num">${escapeHtml(line.taxRatePercent)}%</td>
         <td class="num">${formatDocumentMoney(line.priceSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</td>
       </tr>`,

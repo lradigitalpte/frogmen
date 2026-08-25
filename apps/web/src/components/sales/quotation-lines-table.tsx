@@ -6,12 +6,18 @@ import {
   EmptyState,
   IndexTable,
   InlineStack,
+  Select,
   Text,
   TextField,
 } from "@shopify/polaris";
 import { DeleteIcon } from "@shopify/polaris-icons";
 import { useCallback, useState } from "react";
 import type { QuotationLine } from "@/lib/quotations-api";
+import {
+  formatDiscountLabel,
+  inferDiscountMode,
+  type DiscountMode,
+} from "@/lib/line-item-utils";
 import { formatMoney } from "./format-money";
 import { LineItemDescription } from "./line-item-description";
 
@@ -27,6 +33,7 @@ interface QuotationLinesTableProps {
       quantity?: number;
       unitPrice?: number;
       discountPercent?: number;
+      discountAmount?: number;
       taxRatePercent?: number;
     },
   ) => Promise<void>;
@@ -37,16 +44,22 @@ interface EditableLineState {
   description: string;
   quantity: string;
   unitPrice: string;
-  discountPercent: string;
+  discountMode: DiscountMode;
+  discountValue: string;
   taxRatePercent: string;
 }
 
 function lineToState(line: QuotationLine): EditableLineState {
+  const mode = inferDiscountMode(line.discountAmount, line.discountPercent);
   return {
     description: line.description,
     quantity: line.quantity,
     unitPrice: line.unitPrice,
-    discountPercent: line.discountPercent,
+    discountMode: mode,
+    discountValue:
+      mode === "amount"
+        ? String(line.discountAmount ?? "0")
+        : line.discountPercent,
     taxRatePercent: line.taxRatePercent,
   };
 }
@@ -86,13 +99,15 @@ export function QuotationLinesTable({
   async function saveLine(line: QuotationLine) {
     const draft = getDraft(line);
     setSavingLineId(line.id);
+    const parsed = Math.max(0, Number(draft.discountValue) || 0);
 
     try {
       await onUpdateLine(line.id, {
         description: draft.description,
         quantity: Number(draft.quantity),
         unitPrice: Number(draft.unitPrice),
-        discountPercent: Number(draft.discountPercent),
+        discountPercent: draft.discountMode === "percent" ? parsed : 0,
+        discountAmount: draft.discountMode === "amount" ? parsed : 0,
         taxRatePercent: Number(draft.taxRatePercent),
       });
 
@@ -139,11 +154,17 @@ export function QuotationLinesTable({
   const rowMarkup = lines.map((line, index) => {
     const draft = getDraft(line);
     const isSerial = line.productUnitId !== null;
+    const savedMode = inferDiscountMode(line.discountAmount, line.discountPercent);
+    const savedValue =
+      savedMode === "amount"
+        ? String(line.discountAmount ?? "0")
+        : line.discountPercent;
     const dirty =
       draft.description !== line.description ||
       draft.quantity !== line.quantity ||
       draft.unitPrice !== line.unitPrice ||
-      draft.discountPercent !== line.discountPercent ||
+      draft.discountMode !== savedMode ||
+      draft.discountValue !== savedValue ||
       draft.taxRatePercent !== line.taxRatePercent;
 
     return (
@@ -197,17 +218,34 @@ export function QuotationLinesTable({
         </IndexTable.Cell>
         <IndexTable.Cell>
           <div className="quotation-line-field quotation-line-field--narrow">
-            <TextField
-              autoComplete="off"
-              disabled={disabled}
-              label="Discount"
-              labelHidden
-              onChange={(value) =>
-                updateDraft(line.id, { discountPercent: value })
-              }
-              type="number"
-              value={draft.discountPercent}
-            />
+            <BlockStack gap="100">
+              <Select
+                disabled={disabled}
+                label="Discount type"
+                labelHidden
+                options={[
+                  { label: "%", value: "percent" },
+                  { label: currencyCode, value: "amount" },
+                ]}
+                value={draft.discountMode}
+                onChange={(value) =>
+                  updateDraft(line.id, {
+                    discountMode: value as DiscountMode,
+                  })
+                }
+              />
+              <TextField
+                autoComplete="off"
+                disabled={disabled}
+                label="Discount"
+                labelHidden
+                onChange={(value) =>
+                  updateDraft(line.id, { discountValue: value })
+                }
+                type="number"
+                value={draft.discountValue}
+              />
+            </BlockStack>
           </div>
         </IndexTable.Cell>
         <IndexTable.Cell>
@@ -217,36 +255,49 @@ export function QuotationLinesTable({
               disabled={disabled}
               label="Tax"
               labelHidden
-              onChange={(value) => updateDraft(line.id, { taxRatePercent: value })}
+              onChange={(value) =>
+                updateDraft(line.id, { taxRatePercent: value })
+              }
               type="number"
               value={draft.taxRatePercent}
             />
           </div>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <Text as="span" alignment="end" fontWeight="semibold" numeric>
-            {formatMoney(line.priceTotal, currencyCode, decimalPlaces)}
+          <Text as="span" alignment="end" numeric>
+            {formatMoney(line.priceSubtotal, currencyCode, decimalPlaces)}
           </Text>
+          {!dirty ? (
+            <Text as="p" tone="subdued" variant="bodySm">
+              Disc{" "}
+              {formatDiscountLabel(
+                line.discountAmount,
+                line.discountPercent,
+                currencyCode,
+              )}
+            </Text>
+          ) : null}
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <InlineStack gap="200" align="end">
+          <InlineStack gap="200" wrap={false}>
             {dirty && !disabled ? (
               <Button
                 loading={savingLineId === line.id}
                 onClick={() => void saveLine(line)}
                 size="slim"
+                variant="primary"
               >
                 Save
               </Button>
             ) : null}
             {!disabled ? (
               <Button
+                accessibilityLabel="Delete line"
                 icon={DeleteIcon}
                 loading={deletingLineId === line.id}
                 onClick={() => void removeLine(line.id)}
                 tone="critical"
                 variant="plain"
-                accessibilityLabel="Delete line"
               />
             ) : null}
           </InlineStack>
@@ -256,23 +307,21 @@ export function QuotationLinesTable({
   });
 
   return (
-    <div className="app-index-surface quotation-lines-table">
-      <IndexTable
-        headings={[
-          { title: "Description" },
-          { title: "Qty" },
-          { title: "Unit price" },
-          { title: "Disc. %" },
-          { title: "Tax %" },
-          { title: "Total", alignment: "end" },
-          { title: "" },
-        ]}
-        itemCount={lines.length}
-        resourceName={resourceName}
-        selectable={false}
-      >
-        {rowMarkup}
-      </IndexTable>
-    </div>
+    <IndexTable
+      headings={[
+        { title: "Description" },
+        { title: "Qty" },
+        { title: "Price" },
+        { title: "Discount" },
+        { title: "Tax %" },
+        { title: "Subtotal", alignment: "end" },
+        { title: "" },
+      ]}
+      itemCount={lines.length}
+      resourceName={resourceName}
+      selectable={false}
+    >
+      {rowMarkup}
+    </IndexTable>
   );
 }

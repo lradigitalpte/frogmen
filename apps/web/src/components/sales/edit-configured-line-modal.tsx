@@ -16,10 +16,13 @@ import { useProductDocumentCurrency } from "@/hooks/use-product-document-currenc
 import {
   clampQuantity,
   computeLineMarginPercent,
+  computeLineNetRevenue,
   computeLineProfit,
   computeLineTotal,
   formatMarginPercent,
   getMaxAllowedQuantity,
+  inferDiscountMode,
+  type DiscountMode,
 } from "@/lib/line-item-utils";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { useSalesPricing } from "@/hooks/use-sales-pricing";
@@ -61,21 +64,45 @@ export function EditConfiguredLineModal({
   );
 
   const [draft, setDraft] = useState<ConfiguredLineItem | null>(line);
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("percent");
+  const [discountValue, setDiscountValue] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && line) {
       setDraft({ ...line });
+      const mode = inferDiscountMode(line.discountAmount, line.discountPercent);
+      setDiscountMode(mode);
+      setDiscountValue(
+        String(
+          mode === "amount"
+            ? line.discountAmount || 0
+            : line.discountPercent || 0,
+        ),
+      );
       setError(null);
     }
   }, [open, line]);
 
-  const previewLine = draft ?? line;
+  const previewLine = useMemo(() => {
+    if (!draft) return null;
+    const parsed = Math.max(0, Number(discountValue) || 0);
+    return {
+      ...draft,
+      discountPercent: discountMode === "percent" ? parsed : 0,
+      discountAmount: discountMode === "amount" ? parsed : 0,
+    };
+  }, [draft, discountMode, discountValue]);
+
   const lineTotal = previewLine ? computeLineTotal(previewLine) : 0;
   const lineProfit = previewLine ? computeLineProfit(previewLine) : 0;
   const lineMargin = previewLine ? computeLineMarginPercent(previewLine) : null;
   const netUnitRevenue = previewLine
-    ? previewLine.unitPrice * (1 - previewLine.discountPercent / 100)
+    ? computeLineNetRevenue({
+        ...previewLine,
+        quantity: 1,
+        unitPrice: previewLine.unitPrice,
+      })
     : 0;
   const sellsBelowCost = Boolean(
     previewLine && previewLine.unitCost > netUnitRevenue,
@@ -131,11 +158,13 @@ export function EditConfiguredLineModal({
       return;
     }
 
+    const parsedDiscount = Math.max(0, Number(discountValue) || 0);
     const next: ConfiguredLineItem = {
       ...draft,
       unitPrice,
       quantity,
-      discountPercent: Number(draft.discountPercent) || 0,
+      discountPercent: discountMode === "percent" ? parsedDiscount : 0,
+      discountAmount: discountMode === "amount" ? parsedDiscount : 0,
       taxRatePercent: Number(draft.taxRatePercent) || 0,
     };
 
@@ -253,17 +282,31 @@ export function EditConfiguredLineModal({
               value={String(draft.unitCost)}
               onChange={() => undefined}
             />
-            <InlineGrid columns={deliveryFee ? 3 : 2} gap="400">
+            <InlineGrid columns={2} gap="400">
+              <Select
+                label="Discount type"
+                options={[
+                  { label: "Percent (%)", value: "percent" },
+                  { label: "Fixed amount", value: "amount" },
+                ]}
+                value={discountMode}
+                onChange={(value) => setDiscountMode(value as DiscountMode)}
+              />
               <TextField
                 autoComplete="off"
-                label="Discount (%)"
-                suffix="%"
-                type="number"
-                value={String(draft.discountPercent)}
-                onChange={(value) =>
-                  updateField("discountPercent", Number(value) || 0)
+                label={
+                  discountMode === "percent"
+                    ? "Discount (%)"
+                    : "Discount amount"
                 }
+                prefix={discountMode === "amount" ? pricePrefix : undefined}
+                suffix={discountMode === "percent" ? "%" : undefined}
+                type="number"
+                value={discountValue}
+                onChange={setDiscountValue}
               />
+            </InlineGrid>
+            <InlineGrid columns={deliveryFee ? 2 : 1} gap="400">
               <Select
                 label="VAT (%)"
                 options={vatRates.map((rate) => ({

@@ -15,6 +15,7 @@ export interface QuotationLine {
   quantity: string;
   unitPrice: string;
   discountPercent: string;
+  discountAmount?: string;
   taxRatePercent: string;
   priceSubtotal: string;
   priceTax: string;
@@ -145,6 +146,7 @@ export interface AddQuotationLineInput {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
 }
@@ -154,6 +156,7 @@ export interface UpdateQuotationLineInput {
   quantity?: number;
   unitPrice?: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
 }

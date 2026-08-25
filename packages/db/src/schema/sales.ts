@@ -210,6 +210,9 @@ export const salesOrderLines = pgTable("sales_order_lines", {
   discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
     .notNull()
     .default("0"),
+  discountAmount: numeric("discount_amount", { precision: 18, scale: 2 })
+    .notNull()
+    .default("0"),
   taxRatePercent: numeric("tax_rate_percent", { precision: 5, scale: 2 })
     .notNull()
     .default("0"),
@@ -326,6 +329,9 @@ export const invoiceLines = pgTable("invoice_lines", {
   quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
   unitPrice: numeric("unit_price", { precision: 18, scale: 2 }).notNull(),
   discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+    .notNull()
+    .default("0"),
+  discountAmount: numeric("discount_amount", { precision: 18, scale: 2 })
     .notNull()
     .default("0"),
   taxRatePercent: numeric("tax_rate_percent", { precision: 5, scale: 2 })

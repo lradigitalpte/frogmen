@@ -86,7 +86,10 @@ export function AddProductLineModal({
   const [selectedUnit, setSelectedUnit] = useState<ProductUnit | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("5");
+  const [discountMode, setDiscountMode] = useState<"percent" | "amount">(
+    "percent",
+  );
+  const [discountValue, setDiscountValue] = useState("5");
   const [taxRatePercent, setTaxRatePercent] = useState(
     String(resolvedDefaultTaxRate),
   );
@@ -168,7 +171,8 @@ export function AddProductLineModal({
     setUnits([]);
     setQuantity("1");
     setUnitPrice("");
-    setDiscountPercent("5");
+    setDiscountMode("percent");
+    setDiscountValue("5");
     setTaxRatePercent(String(resolvedDefaultTaxRate));
     setDescription("");
     setProductStock(null);
@@ -331,11 +335,16 @@ export function AddProductLineModal({
   // Real-time Line Calculation Preview
   const lineQty = selectedProduct?.trackSerial ? 1 : Number(quantity) || 1;
   const linePrice = Number(unitPrice) || 0;
-  const lineDiscPct = Number(discountPercent) || 0;
+  const lineDiscValue = Math.max(0, Number(discountValue) || 0);
+  const lineDiscPct = discountMode === "percent" ? lineDiscValue : 0;
+  const lineDiscAmtFixed = discountMode === "amount" ? lineDiscValue : 0;
   const lineTaxPct = Number(taxRatePercent) || 0;
 
   const subtotalBeforeDisc = lineQty * linePrice;
-  const discountAmt = subtotalBeforeDisc * (lineDiscPct / 100);
+  const discountAmt =
+    lineDiscAmtFixed > 0
+      ? Math.min(subtotalBeforeDisc, lineDiscAmtFixed)
+      : subtotalBeforeDisc * (lineDiscPct / 100);
   const netSubtotal = subtotalBeforeDisc - discountAmt;
   const taxAmt = netSubtotal * (lineTaxPct / 100);
   const calculatedTotal = netSubtotal + taxAmt;
@@ -383,6 +392,7 @@ export function AddProductLineModal({
         quantity: lineQty,
         unitPrice: linePrice,
         discountPercent: lineDiscPct,
+        discountAmount: lineDiscAmtFixed,
         taxRatePercent: lineTaxPct,
         warrantyPolicyId: warrantyPolicyId || null,
       });
@@ -401,6 +411,7 @@ export function AddProductLineModal({
           quantity: 1,
           unitPrice: Number(applyAdjustedUnitPrice(converted.unitPrice)),
           discountPercent: lineDiscPct,
+          discountAmount: lineDiscAmtFixed,
           taxRatePercent: lineTaxPct,
           warrantyPolicyId: childProduct.defaultWarrantyPolicyId ?? null,
         });
@@ -711,13 +722,30 @@ export function AddProductLineModal({
                 </FormLayout.Group>
 
                 <FormLayout.Group>
+                  <Select
+                    label="Discount type"
+                    onChange={(value) =>
+                      setDiscountMode(value as "percent" | "amount")
+                    }
+                    options={[
+                      { label: "Percent (%)", value: "percent" },
+                      { label: "Fixed amount", value: "amount" },
+                    ]}
+                    value={discountMode}
+                  />
                   <TextField
                     autoComplete="off"
-                    label="Discount (%)"
-                    onChange={setDiscountPercent}
+                    label={
+                      discountMode === "percent"
+                        ? "Discount (%)"
+                        : `Discount (${documentCurrencyCode})`
+                    }
+                    onChange={setDiscountValue}
+                    prefix={discountMode === "amount" ? pricePrefix : undefined}
+                    suffix={discountMode === "percent" ? "%" : undefined}
                     type="number"
-                    value={discountPercent}
-                    helpText="Apply commercial discount rate"
+                    value={discountValue}
+                    helpText="Apply commercial discount as percent or fixed amount"
                   />
                   <Select
                     label="VAT / Tax Rate (%)"
@@ -749,7 +777,13 @@ export function AddProductLineModal({
                     <Text as="p" fontWeight="semibold">{fmt(subtotalBeforeDisc)}</Text>
                   </div>
                   <div>
-                    <Text as="span" tone="subdued" variant="bodySm">Discount ({lineDiscPct}%):</Text>
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Discount (
+                      {discountMode === "percent"
+                        ? `${lineDiscPct}%`
+                        : documentCurrencyCode}
+                      ):
+                    </Text>
                     <Text as="p" tone="success">-{fmt(discountAmt)}</Text>
                   </div>
                   <div>

@@ -103,6 +103,7 @@ export interface UpdateQuotationLineInput {
   quantity?: number;
   unitPrice?: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
 }
@@ -115,6 +116,7 @@ export interface AddQuotationLineInput {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
 }
@@ -545,6 +547,7 @@ export class QuotationsService {
       quantity: input.quantity,
       unitPrice: input.unitPrice,
       discountPercent: input.discountPercent ?? 0,
+      discountAmount: input.discountAmount ?? 0,
       taxRatePercent: input.taxRatePercent ?? 0,
     });
 
@@ -567,6 +570,7 @@ export class QuotationsService {
       quantity: String(input.quantity),
       unitPrice: String(input.unitPrice),
       discountPercent: String(input.discountPercent ?? 0),
+      discountAmount: String(input.discountAmount ?? 0),
       taxRatePercent: String(input.taxRatePercent ?? 0),
       priceSubtotal: String(amounts.priceSubtotal),
       priceTax: String(amounts.priceTax),
@@ -723,6 +727,10 @@ export class QuotationsService {
       input.discountPercent !== undefined
         ? input.discountPercent
         : Number(line.discountPercent);
+    const discountAmount =
+      input.discountAmount !== undefined
+        ? input.discountAmount
+        : Number(line.discountAmount ?? 0);
     const taxRatePercent =
       input.taxRatePercent !== undefined
         ? input.taxRatePercent
@@ -753,6 +761,7 @@ export class QuotationsService {
       quantity,
       unitPrice,
       discountPercent,
+      discountAmount,
       taxRatePercent,
     });
 
@@ -766,6 +775,7 @@ export class QuotationsService {
         quantity: String(quantity),
         unitPrice: String(unitPrice),
         discountPercent: String(discountPercent),
+        discountAmount: String(discountAmount),
         taxRatePercent: String(taxRatePercent),
         priceSubtotal: String(amounts.priceSubtotal),
         priceTax: String(amounts.priceTax),
@@ -1448,10 +1458,12 @@ export class QuotationsService {
 
     for (const line of lines) {
       const unitPrice = roundMoney(Number(line.unitPrice) * rate);
+      const discountAmount = roundMoney(Number(line.discountAmount ?? 0) * rate);
       const amounts = calculateLineAmounts({
         quantity: Number(line.quantity),
         unitPrice,
         discountPercent: Number(line.discountPercent),
+        discountAmount,
         taxRatePercent: Number(line.taxRatePercent),
       });
 
@@ -1459,6 +1471,7 @@ export class QuotationsService {
         .update(salesOrderLines)
         .set({
           unitPrice: String(unitPrice),
+          discountAmount: String(discountAmount),
           priceSubtotal: String(amounts.priceSubtotal),
           priceTax: String(amounts.priceTax),
           priceTotal: String(amounts.priceTotal),
@@ -1712,6 +1725,7 @@ export class QuotationsService {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           discountPercent: l.discountPercent,
+          discountAmount: l.discountAmount ?? "0",
           taxRatePercent: l.taxRatePercent,
           priceSubtotal: l.priceSubtotal,
           priceTax: l.priceTax,
@@ -1937,6 +1951,7 @@ export class QuotationsService {
         unitPrice: salesOrderLines.unitPrice,
         priceSubtotal: salesOrderLines.priceSubtotal,
         discountPercent: salesOrderLines.discountPercent,
+        discountAmount: salesOrderLines.discountAmount,
         taxRatePercent: salesOrderLines.taxRatePercent,
       })
       .from(salesOrderLines)
