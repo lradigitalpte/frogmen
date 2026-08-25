@@ -120,14 +120,17 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
       if (firstLine) {
         const amount = Number(firstLine.discountAmount ?? 0);
         if (amount > 0) {
+          const fixedAmounts = (quotationResult.lines ?? []).map((line) =>
+            Number(line.discountAmount ?? 0),
+          );
+          const isLegacyRepeatedFixedDiscount = fixedAmounts.every(
+            (lineAmount) => Math.abs(lineAmount - amount) < 0.005,
+          );
           setDiscountMode("amount");
           setDiscountValue(
-            String(
-              quotationResult.lines?.reduce(
-                (sum, line) => sum + Number(line.discountAmount ?? 0),
-                0,
-              ) ?? amount,
-            ),
+            String(isLegacyRepeatedFixedDiscount
+              ? amount
+              : fixedAmounts.reduce((sum, lineAmount) => sum + lineAmount, 0)),
           );
         } else {
           setDiscountMode("percent");
@@ -472,7 +475,9 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                     <Button onClick={() => setProductModalOpen(true)} variant="primary">
                       + Add Product Line
                     </Button>
-                  ) : null}
+                  ) : (
+                    <Badge tone="attention">Sent quotation · revise to edit products</Badge>
+                  )}
                 </InlineStack>
 
                 <QuotationLinesTable

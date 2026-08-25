@@ -174,6 +174,15 @@ export function renderQuotationDocumentHtml(
     : "";
 
   const groupedLines = groupSerializedLines(quotation.lines);
+  const grossSubtotal = quotation.lines.reduce(
+    (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice),
+    0,
+  );
+  const lineNetValue = quotation.lines.reduce(
+    (sum, line) => sum + Number(line.priceSubtotal),
+    0,
+  );
+  const totalDiscount = Math.max(0, grossSubtotal - lineNetValue);
   const lineRows = groupedLines
     .map(
       (line, index) => `
@@ -236,6 +245,9 @@ export function renderQuotationDocumentHtml(
         : "Delivery fee";
     const deliveryFeeRow = quotation.deliveryFee
       ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
+      : "";
+    const discountRows = totalDiscount > 0
+      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>Commercial discount</span><span>-${money(totalDiscount)}</span></div>`
       : "";
     const otherChargesRow =
       !isPurchaseOrder && quotation.additionalChargeLines?.length
@@ -323,7 +335,7 @@ tr{page-break-inside:avoid;break-inside:avoid}
 <thead><tr><th style="text-align:center;width:44px;">S/N</th><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead>
 <tbody>${officialRows}</tbody></table>
 <div class="lower"><div class="notes"><strong>${isPurchaseOrder ? "Vendor terms" : "Notes"}</strong>${escapeHtml(notes)}</div><div class="totals">
-<div class="row"><span>Sub Total</span><span>${money(subTotalValue)}</span></div>
+${discountRows}<div class="row"><span>Net subtotal</span><span>${money(subTotalValue)}</span></div>
 ${deliveryFeeRow}
 ${otherChargesRow}
 ${officialVatRow}
@@ -341,6 +353,9 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
       : "Delivery fee";
   const deliveryFeeRow = quotation.deliveryFee
     ? `<div class="totals-row"><span class="muted">${escapeHtml(deliveryFeeLabel)}</span><span>+${formatDocumentMoney(quotation.deliveryFee, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
+    : "";
+  const discountRows = totalDiscount > 0
+    ? `<div class="totals-row"><span class="muted">Gross subtotal</span><span>${formatDocumentMoney(grossSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div><div class="totals-row"><span class="muted">Commercial discount</span><span>-${formatDocumentMoney(totalDiscount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";
   const additionalChargeRows =
     !isPurchaseOrder && quotation.additionalChargeLines?.length
@@ -459,7 +474,7 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   </table>
 
   <div class="totals">
-    <div class="totals-row"><span class="muted">${quotation.deliveryFee ? "Subtotal" : "Untaxed amount"}</span><span>${formatDocumentMoney(subTotalValue, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
+    ${discountRows}<div class="totals-row"><span class="muted">${totalDiscount > 0 ? "Net subtotal" : quotation.deliveryFee ? "Subtotal" : "Untaxed amount"}</span><span>${formatDocumentMoney(subTotalValue, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
     ${deliveryFeeRow}
 ${additionalChargeRows}${otherChargesRow}
     ${stdHasVat ? `<div class="totals-row"><span class="muted">${escapeHtml(vatLabel)}</span><span>+${formatDocumentMoney(quotation.amountTax, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>` : ""}

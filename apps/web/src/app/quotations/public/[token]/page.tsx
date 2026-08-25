@@ -342,6 +342,11 @@ export default function PublicQuotationPage({
     (sum, line) => sum + Number(line.priceSubtotal ?? 0),
     0,
   );
+  const lineGrossSubtotal = data.lines.reduce(
+    (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice),
+    0,
+  );
+  const totalDiscount = Math.max(0, lineGrossSubtotal - lineNetSubtotal);
   const deliveryFee = resolveDeliveryFee(
     lineNetSubtotal,
     data.deliveryFeeAmount,
@@ -548,6 +553,18 @@ export default function PublicQuotationPage({
 
               <aside className="public-quote-totals">
                 <div className="public-quote-totals__title">Price summary</div>
+                {totalDiscount > 0 ? (
+                  <>
+                    <div className="public-quote-totals__row">
+                      <span>Gross subtotal</span>
+                      <span>{fmt(lineGrossSubtotal)}</span>
+                    </div>
+                    <div className="public-quote-totals__row">
+                      <span>Commercial discount</span>
+                      <span>-{fmt(totalDiscount)}</span>
+                    </div>
+                  </>
+                ) : null}
                 {deliveryFee > 0 ? (
                   <>
                     <div className="public-quote-totals__row">

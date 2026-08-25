@@ -352,14 +352,23 @@ export function QuotationLinesTable({
       </div>
 
       {!disabled ? (
-        <InlineStack align="start">
-          <Button onClick={() => setShowIndividualLines((current) => !current)}>
-            {showIndividualLines
-              ? "Hide individual unit editor"
-              : `Edit individual units (${lines.length})`}
-          </Button>
-        </InlineStack>
-      ) : null}
+        <BlockStack gap="100">
+          <InlineStack align="start">
+            <Button onClick={() => setShowIndividualLines((current) => !current)}>
+              {showIndividualLines
+                ? "Hide product and serial editor"
+                : `Manage products and serial units (${lines.length})`}
+            </Button>
+          </InlineStack>
+          <Text as="p" tone="subdued" variant="bodySm">
+            Expand to edit or remove an individual serialized unit. Removing one unit does not remove the other serial numbers in its product group.
+          </Text>
+        </BlockStack>
+      ) : (
+        <Text as="p" tone="subdued" variant="bodySm">
+          Product lines are locked because this quotation was sent. Use Revise Quote from the quotation page to create an editable draft.
+        </Text>
+      )}
 
       {disabled || showIndividualLines ? (
         <div className="quotation-lines-editor-scroll">

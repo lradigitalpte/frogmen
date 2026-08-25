@@ -192,6 +192,14 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
       lines.reduce((sum, line) => sum + Number(line.priceSubtotal ?? 0), 0),
     [lines],
   );
+  const lineGrossSubtotal = useMemo(
+    () => lines.reduce(
+      (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice),
+      0,
+    ),
+    [lines],
+  );
+  const totalDiscount = Math.max(0, lineGrossSubtotal - lineNetSubtotal);
 
   const deliveryFee = useMemo(
     () =>
@@ -629,6 +637,22 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                 <InlineStack align="end">
                   <div style={{ width: "360px" }}>
                     <div className="quotation-summary-panel__rows">
+                      {totalDiscount > 0 ? (
+                        <>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">Gross subtotal</Text>
+                            <Text as="span" fontWeight="semibold">
+                              {formatMoney(lineGrossSubtotal, currencyCode, decimalPlaces)}
+                            </Text>
+                          </div>
+                          <div className="quotation-summary-row">
+                            <Text as="span" tone="subdued">Commercial discount</Text>
+                            <Text as="span" fontWeight="semibold" tone="success">
+                              -{formatMoney(totalDiscount, currencyCode, decimalPlaces)}
+                            </Text>
+                          </div>
+                        </>
+                      ) : null}
                       {deliveryFee > 0 ? (
                         <>
                           <div className="quotation-summary-row">
