@@ -347,6 +347,9 @@ export default function PublicQuotationPage({
     0,
   );
   const totalDiscount = Math.max(0, lineGrossSubtotal - lineNetSubtotal);
+  const totalDiscountPercent = lineGrossSubtotal > 0
+    ? Number(((totalDiscount / lineGrossSubtotal) * 100).toFixed(2))
+    : 0;
   const deliveryFee = resolveDeliveryFee(
     lineNetSubtotal,
     data.deliveryFeeAmount,
@@ -560,7 +563,7 @@ export default function PublicQuotationPage({
                       <span>{fmt(lineGrossSubtotal)}</span>
                     </div>
                     <div className="public-quote-totals__row">
-                      <span>Commercial discount</span>
+                      <span>Commercial discount ({totalDiscountPercent}%)</span>
                       <span>-{fmt(totalDiscount)}</span>
                     </div>
                   </>

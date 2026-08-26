@@ -200,6 +200,9 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
     [lines],
   );
   const totalDiscount = Math.max(0, lineGrossSubtotal - lineNetSubtotal);
+  const totalDiscountPercent = lineGrossSubtotal > 0
+    ? Number(((totalDiscount / lineGrossSubtotal) * 100).toFixed(2))
+    : 0;
 
   const deliveryFee = useMemo(
     () =>
@@ -650,7 +653,9 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                             </Text>
                           </div>
                           <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">Commercial discount</Text>
+                            <Text as="span" tone="subdued">
+                              Commercial discount ({totalDiscountPercent}%)
+                            </Text>
                             <Text as="span" fontWeight="semibold" tone="success">
                               -{formatMoney(totalDiscount, currencyCode, decimalPlaces)}
                             </Text>

@@ -183,6 +183,10 @@ export function renderQuotationDocumentHtml(
     0,
   );
   const totalDiscount = Math.max(0, grossSubtotal - lineNetValue);
+  const totalDiscountPercent = grossSubtotal > 0
+    ? (totalDiscount / grossSubtotal) * 100
+    : 0;
+  const totalDiscountLabel = Number(totalDiscountPercent.toFixed(2)).toString();
   const lineRows = groupedLines
     .map(
       (line, index) => `
@@ -193,7 +197,7 @@ export function renderQuotationDocumentHtml(
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(formatDocumentDiscount(line, quotation.currencySymbol, quotation.decimalPlaces))}</td>
         <td class="num">${escapeHtml(line.taxRatePercent)}%</td>
-        <td class="num">${formatDocumentMoney(line.priceSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</td>
+        <td class="num">${formatDocumentMoney(Number(line.quantity) * Number(line.unitPrice), quotation.currencySymbol, quotation.decimalPlaces)}</td>
       </tr>`,
     )
     .join("");
@@ -216,7 +220,7 @@ export function renderQuotationDocumentHtml(
         <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
-        <td class="num">${money(line.priceSubtotal)}</td>
+        <td class="num">${money(Number(line.quantity) * Number(line.unitPrice))}</td>
       </tr>`).join("");
     const notes = (quotation.notes || [
       templates.defaultPaymentTerms && `Payment terms: ${templates.defaultPaymentTerms}`,
@@ -247,7 +251,7 @@ export function renderQuotationDocumentHtml(
       ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
       : "";
     const discountRows = totalDiscount > 0
-      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>Commercial discount</span><span>-${money(totalDiscount)}</span></div>`
+      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>Commercial discount (${escapeHtml(totalDiscountLabel)}%)</span><span>-${money(totalDiscount)}</span></div>`
       : "";
     const otherChargesRow =
       !isPurchaseOrder && quotation.additionalChargeLines?.length
@@ -355,7 +359,7 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     ? `<div class="totals-row"><span class="muted">${escapeHtml(deliveryFeeLabel)}</span><span>+${formatDocumentMoney(quotation.deliveryFee, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";
   const discountRows = totalDiscount > 0
-    ? `<div class="totals-row"><span class="muted">Gross subtotal</span><span>${formatDocumentMoney(grossSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div><div class="totals-row"><span class="muted">Commercial discount</span><span>-${formatDocumentMoney(totalDiscount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
+    ? `<div class="totals-row"><span class="muted">Gross subtotal</span><span>${formatDocumentMoney(grossSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div><div class="totals-row"><span class="muted">Commercial discount (${escapeHtml(totalDiscountLabel)}%)</span><span>-${formatDocumentMoney(totalDiscount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";
   const additionalChargeRows =
     !isPurchaseOrder && quotation.additionalChargeLines?.length
