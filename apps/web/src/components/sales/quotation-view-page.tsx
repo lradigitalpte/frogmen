@@ -623,7 +623,11 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                             </td>
                             <td style={{ textAlign: "right" }}>{line.taxRatePercent}%</td>
                             <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                              {formatMoney(line.priceSubtotal, currencyCode, decimalPlaces)}
+                              {formatMoney(
+                                Number(line.quantity) * Number(line.unitPrice),
+                                currencyCode,
+                                decimalPlaces,
+                              )}
                             </td>
                           </tr>
                         ))}

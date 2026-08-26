@@ -188,7 +188,7 @@ export function renderQuotationDocumentHtml(
       (line, index) => `
       <tr>
         <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
-        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}${line.serialNumbers.length ? `<div class="line-serials">S/N: ${line.serialNumbers.map(escapeHtml).join(", ")}</div>` : ""}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${formatDocumentMoney(line.unitPrice, quotation.currencySymbol, quotation.decimalPlaces)}</td>
         <td class="num">${escapeHtml(formatDocumentDiscount(line, quotation.currencySymbol, quotation.decimalPlaces))}</td>
@@ -213,7 +213,7 @@ export function renderQuotationDocumentHtml(
     const officialRows = groupedLines.map((line, index) => `
       <tr>
         <td class="sn" style="text-align: center; font-weight: bold;">${index + 1}</td>
-        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}${line.serialNumbers.length ? `<div class="line-serials">S/N: ${line.serialNumbers.map(escapeHtml).join(", ")}</div>` : ""}</td>
+        <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
         <td class="num">${money(line.priceSubtotal)}</td>
