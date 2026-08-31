@@ -103,17 +103,16 @@ export function renderDeliveryNoteDocumentHtml(
     ? `<img class="brand-logo" src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.name)}" />`
     : `<div class="brand-fallback">${escapeHtml(branding.name.charAt(0).toUpperCase())}</div>`;
 
+  const deliveryContactLines = [
+    note.customerPhone ? `Phone: ${note.customerPhone}` : null,
+    note.customerEmail ? `Email: ${note.customerEmail}` : null,
+  ].filter((l): l is string => Boolean(l));
+
   const deliveryAddressHtml = note.deliveryAddress.length
-    ? note.deliveryAddress.map((line) => `<div>${escapeHtml(line)}</div>`).join("")
-    : (() => {
-        const fb = [
-          note.customerPhone ? `Phone: ${note.customerPhone}` : null,
-          note.customerEmail ? `Email: ${note.customerEmail}` : null,
-        ].filter(Boolean);
-        return fb.length
-          ? fb.map((l) => `<div class="muted">${escapeHtml(l as string)}</div>`).join("")
-          : `<div class="muted">No delivery address on file</div>`;
-      })();
+    ? [...note.deliveryAddress, ...deliveryContactLines].map((line) => `<div>${escapeHtml(line)}</div>`).join("")
+    : deliveryContactLines.length
+      ? deliveryContactLines.map((l) => `<div class="muted">${escapeHtml(l)}</div>`).join("")
+      : `<div class="muted">No delivery address on file</div>`;
 
   const lineRows = note.lines
     .map(

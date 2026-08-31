@@ -239,14 +239,14 @@ export function renderQuotationDocumentHtml(
       profile.email && `Email: ${profile.email}`,
       profile.website && `Website: ${profile.website}`,
     ].filter((line): line is string => Boolean(line));
-    const customerContactFallback = [
+    const customerContactLines = [
       quotation.customerPhone ? `Phone: ${quotation.customerPhone}` : null,
       quotation.customerEmail ? `Email: ${quotation.customerEmail}` : null,
     ].filter((l): l is string => Boolean(l));
     const customerLines = quotation.customerAddress.length
-      ? quotation.customerAddress
-      : customerContactFallback.length
-        ? customerContactFallback
+      ? [...quotation.customerAddress, ...customerContactLines]
+      : customerContactLines.length
+        ? customerContactLines
         : ["No billing address provided"];
     const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
     const deliveryFeeLabel = quotation.deliveryFeePercent
@@ -383,15 +383,15 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   const stdVatNum = Number(quotation.amountTax ?? 0);
   const stdHasVat = Number.isFinite(stdVatNum) && stdVatNum > 0;
 
-  // Phone/email fallback for billing address (standard styles)
-  const stdContactFallback = [
+  // Phone/email lines for billing address (standard styles)
+  const stdContactLines = [
     quotation.customerPhone ? `Phone: ${quotation.customerPhone}` : null,
     quotation.customerEmail ? `Email: ${quotation.customerEmail}` : null,
   ].filter((l): l is string => Boolean(l));
   const stdBillingLines = quotation.customerAddress.length
-    ? quotation.customerAddress.map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")
-    : stdContactFallback.length
-      ? stdContactFallback.map((l) => `<p class="muted">${escapeHtml(l)}</p>`).join("")
+    ? [...quotation.customerAddress, ...stdContactLines].map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")
+    : stdContactLines.length
+      ? stdContactLines.map((l) => `<p class="muted">${escapeHtml(l)}</p>`).join("")
       : `<p class="muted">No billing address provided</p>`;
 
   return `<!DOCTYPE html>
