@@ -32,6 +32,28 @@ export interface QuotationDocumentChargeLine {
 }
 
 export interface QuotationDocumentData {
+
+export type { DocumentBankAccount } from "./document-payment-details";
+
+export interface QuotationDocumentLine {
+  description: string;
+  details?: string | null;
+  serialNumber?: string | null;
+  quantity: string;
+  unitPrice: string;
+  discountPercent: string;
+  discountAmount?: string;
+  taxRatePercent: string;
+  priceSubtotal: string;
+}
+
+export interface QuotationDocumentChargeLine {
+  name: string;
+  amount: string;
+  scopeLabel?: string | null;
+}
+
+export interface QuotationDocumentData {
   documentType?: "quotation" | "invoice" | "purchase_order" | "credit_note";
   number: string;
   quoteDate: string;
@@ -40,6 +62,7 @@ export interface QuotationDocumentData {
   customerReference: string | null;
   customerName: string;
   customerEmail: string | null;
+  customerPhone?: string | null;
   customerTaxId: string | null;
   customerAddress: string[];
   notes: string | null;
@@ -238,9 +261,15 @@ export function renderQuotationDocumentHtml(
       profile.email && `Email: ${profile.email}`,
       profile.website && `Website: ${profile.website}`,
     ].filter((line): line is string => Boolean(line));
+    const customerContactFallback = [
+      quotation.customerPhone ? `Phone: ${quotation.customerPhone}` : null,
+      quotation.customerEmail ? `Email: ${quotation.customerEmail}` : null,
+    ].filter((l): l is string => Boolean(l));
     const customerLines = quotation.customerAddress.length
       ? quotation.customerAddress
-      : ["No billing address provided"];
+      : customerContactFallback.length
+        ? customerContactFallback
+        : ["No billing address provided"];
     const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
     const deliveryFeeLabel = quotation.deliveryFeePercent
       ? `${isPurchaseOrder ? "Freight" : "Delivery fee"} (${quotation.deliveryFeePercent}%)`
@@ -270,9 +299,6 @@ export function renderQuotationDocumentHtml(
 
     const vatAmountNum = Number(quotation.amountTax ?? 0);
     const hasVat = Number.isFinite(vatAmountNum) && vatAmountNum > 0;
-    const officialVatRow = hasVat
-      ? `<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>`
-      : "";
     const officialGrandLabel = hasVat
       ? "Total Amount (Incl. VAT)"
       : "Total Amount";
@@ -342,7 +368,7 @@ tr{page-break-inside:avoid;break-inside:avoid}
 ${discountRows}<div class="row"><span>Net subtotal</span><span>${money(subTotalValue)}</span></div>
 ${deliveryFeeRow}
 ${otherChargesRow}
-${officialVatRow}
+${hasVat ? `<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>` : ""}
 <div class="row grand"><span>${officialGrandLabel}</span><span>${money(quotation.amountTotal)}</span></div>
 </div></div>
 ${paymentDetailsHtml}
@@ -378,6 +404,17 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
       : "";
   const stdVatNum = Number(quotation.amountTax ?? 0);
   const stdHasVat = Number.isFinite(stdVatNum) && stdVatNum > 0;
+
+  // Phone/email fallback for billing address (standard styles)
+  const stdContactFallback = [
+    quotation.customerPhone ? `Phone: ${quotation.customerPhone}` : null,
+    quotation.customerEmail ? `Email: ${quotation.customerEmail}` : null,
+  ].filter((l): l is string => Boolean(l));
+  const stdBillingLines = quotation.customerAddress.length
+    ? quotation.customerAddress.map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")
+    : stdContactFallback.length
+      ? stdContactFallback.map((l) => `<p class="muted">${escapeHtml(l)}</p>`).join("")
+      : `<p class="muted">No billing address provided</p>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -456,7 +493,7 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     <div>
       <p class="section-label">Billing address:</p>
       <p><strong>${escapeHtml(quotation.customerName)}</strong></p>
-      ${quotation.customerAddress.length ? quotation.customerAddress.map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("") : `<p class="muted">No billing address provided</p>`}
+      ${stdBillingLines}
       ${quotation.paymentReference ? `<p>Payment ref: ${escapeHtml(quotation.paymentReference)}</p>` : ""}
       ${quotation.customerReference ? `<p>Customer ref: ${escapeHtml(quotation.customerReference)}</p>` : ""}
     </div>

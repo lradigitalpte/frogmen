@@ -24,6 +24,7 @@ export interface DeliveryNoteDocumentData {
   invoiceNumber: string;
   customerName: string;
   customerEmail: string | null;
+  customerPhone?: string | null;
   deliveryAddress: string[];
   receivedBy?: string | null;
   signedOn?: string | null;
@@ -104,7 +105,15 @@ export function renderDeliveryNoteDocumentHtml(
 
   const deliveryAddressHtml = note.deliveryAddress.length
     ? note.deliveryAddress.map((line) => `<div>${escapeHtml(line)}</div>`).join("")
-    : `<div class="muted">No delivery address on file</div>`;
+    : (() => {
+        const fb = [
+          note.customerPhone ? `Phone: ${note.customerPhone}` : null,
+          note.customerEmail ? `Email: ${note.customerEmail}` : null,
+        ].filter(Boolean);
+        return fb.length
+          ? fb.map((l) => `<div class="muted">${escapeHtml(l as string)}</div>`).join("")
+          : `<div class="muted">No delivery address on file</div>`;
+      })();
 
   const lineRows = note.lines
     .map(
@@ -458,7 +467,6 @@ export function renderDeliveryNoteDocumentHtml(
       <div class="ship-to">
         <div class="block-label">Ship to</div>
         <div class="ship-name">${escapeHtml(note.customerName)}</div>
-        ${note.customerEmail ? `<div class="muted">${escapeHtml(note.customerEmail)}</div>` : ""}
         <div style="margin-top:8px;">${deliveryAddressHtml}</div>
       </div>
       <div class="ship-note">

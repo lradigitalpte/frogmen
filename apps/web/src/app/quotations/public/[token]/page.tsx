@@ -54,6 +54,7 @@ interface PublicQuotationData {
   currencyCode: string;
   customerName: string;
   customerEmail: string | null;
+  customerPhone: string | null;
   customerTaxId: string | null;
   customerStreet1: string | null;
   customerStreet2: string | null;
@@ -474,17 +475,23 @@ export default function PublicQuotationPage({
               </section>
 
               <section className="public-quote-party">
-                <div className="public-quote-section-title">Quotation To:</div>
+                <div className="public-quote-section-title">Billing Address:</div>
                 <div className="public-quote-party__name">{data.customerName}</div>
                 {customerAddress.length ? (
                   customerAddress.map((line, index) => (
                     <div key={`${index}-${line}`}>{line}</div>
                   ))
                 ) : (
-                  <div>No billing address provided</div>
+                  <>
+                    {data.customerPhone ? <div>Phone: {data.customerPhone}</div> : null}
+                    {data.customerEmail ? <div>Email: {data.customerEmail}</div> : null}
+                    {!data.customerPhone && !data.customerEmail ? (
+                      <div>No billing address provided</div>
+                    ) : null}
+                  </>
                 )}
                 {data.customerTaxId ? <div>Tax ID: {data.customerTaxId}</div> : null}
-                {data.customerEmail ? <div>Email: {data.customerEmail}</div> : null}
+                {customerAddress.length > 0 && data.customerEmail ? <div>Email: {data.customerEmail}</div> : null}
               </section>
             </div>
 

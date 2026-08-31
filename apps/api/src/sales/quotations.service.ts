@@ -1921,6 +1921,7 @@ export class QuotationsService {
         signedEmail: salesOrders.signedEmail,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerPhone: customers.phone,
         customerTaxId: customers.taxId,
         customerStreet1: customers.street1,
         customerStreet2: customers.street2,

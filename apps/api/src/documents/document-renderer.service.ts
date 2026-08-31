@@ -69,6 +69,7 @@ export class DocumentRendererService {
         order: salesOrders,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerPhone: customers.phone,
         customerTaxId: customers.taxId,
         customerStreet1: customers.street1,
         customerStreet2: customers.street2,
@@ -125,6 +126,7 @@ export class DocumentRendererService {
       customerReference: header.order.customerReference,
       customerName: header.customerName,
       customerEmail: header.customerEmail,
+      customerPhone: header.customerPhone ?? null,
       customerTaxId: header.customerTaxId,
       customerAddress: formatPostalAddressLines({
         street1: header.customerStreet1,
@@ -211,6 +213,7 @@ export class DocumentRendererService {
         invoice: invoices,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerPhone: customers.phone,
         customerTaxId: customers.taxId,
         customerStreet1: customers.street1,
         customerStreet2: customers.street2,
@@ -258,6 +261,7 @@ export class DocumentRendererService {
       customerReference: header.invoice.customerReference,
       customerName: header.customerName,
       customerEmail: header.customerEmail,
+      customerPhone: header.customerPhone ?? null,
       customerTaxId: header.customerTaxId,
       customerAddress: formatPostalAddressLines({
         street1: header.customerStreet1,
@@ -464,6 +468,7 @@ export class DocumentRendererService {
         note: deliveryNotes,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerPhone: customers.phone,
         invoiceNumber: invoices.number,
       })
       .from(deliveryNotes)
@@ -520,6 +525,7 @@ export class DocumentRendererService {
       invoiceNumber: header.invoiceNumber,
       customerName: header.customerName,
       customerEmail: header.customerEmail,
+      customerPhone: header.customerPhone ?? null,
       deliveryAddress: formatPostalAddressLines({
         street1: header.note.deliveryStreet1,
         street2: header.note.deliveryStreet2,
@@ -544,6 +550,7 @@ export class DocumentRendererService {
         invoice: invoices,
         customerName: customers.name,
         customerEmail: customers.email,
+        customerPhone: customers.phone,
         customerStreet1: customers.street1,
         customerStreet2: customers.street2,
         customerCity: customers.city,
@@ -606,6 +613,7 @@ export class DocumentRendererService {
       invoiceNumber: header.invoice.number,
       customerName: header.customerName,
       customerEmail: header.customerEmail,
+      customerPhone: header.customerPhone ?? null,
       deliveryAddress: formatPostalAddressLines({
         street1: header.customerStreet1,
         street2: header.customerStreet2,
