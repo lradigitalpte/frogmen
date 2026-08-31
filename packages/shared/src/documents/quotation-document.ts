@@ -32,28 +32,6 @@ export interface QuotationDocumentChargeLine {
 }
 
 export interface QuotationDocumentData {
-
-export type { DocumentBankAccount } from "./document-payment-details";
-
-export interface QuotationDocumentLine {
-  description: string;
-  details?: string | null;
-  serialNumber?: string | null;
-  quantity: string;
-  unitPrice: string;
-  discountPercent: string;
-  discountAmount?: string;
-  taxRatePercent: string;
-  priceSubtotal: string;
-}
-
-export interface QuotationDocumentChargeLine {
-  name: string;
-  amount: string;
-  scopeLabel?: string | null;
-}
-
-export interface QuotationDocumentData {
   documentType?: "quotation" | "invoice" | "purchase_order" | "credit_note";
   number: string;
   quoteDate: string;

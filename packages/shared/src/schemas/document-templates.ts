@@ -14,6 +14,9 @@ export const documentTemplateSettingsSchema = z.object({
   documentStyle: z
     .enum(["official_blue", "modern_navy", "clean_minimal"])
     .optional(),
+  documentNumberingFormat: z
+    .enum(["alphanumeric_random", "numeric_random", "date_random", "sequential"])
+    .optional(),
   lineItemDetailsLayout: z.enum(["bullets", "comma"]).optional(),
   quotationTitle: optionalText(120),
   invoiceTitle: optionalText(120),
@@ -52,6 +55,7 @@ export type UpdateDocumentTemplatesInput = z.infer<
 
 export const DEFAULT_DOCUMENT_TEMPLATES: Required<DocumentTemplateSettings> = {
   documentStyle: "official_blue",
+  documentNumberingFormat: "alphanumeric_random",
   lineItemDetailsLayout: "bullets",
   quotationTitle: "Quotation",
   invoiceTitle: "Commercial Invoice",
@@ -107,6 +111,9 @@ export function resolveDocumentTemplates(
   return {
     documentStyle:
       settings.documentStyle ?? DEFAULT_DOCUMENT_TEMPLATES.documentStyle,
+    documentNumberingFormat:
+      settings.documentNumberingFormat ??
+      DEFAULT_DOCUMENT_TEMPLATES.documentNumberingFormat,
     lineItemDetailsLayout:
       settings.lineItemDetailsLayout ??
       DEFAULT_DOCUMENT_TEMPLATES.lineItemDetailsLayout,

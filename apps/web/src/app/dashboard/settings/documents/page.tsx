@@ -23,6 +23,7 @@ import {
   InlineGrid,
   InlineStack,
   Modal,
+  Select,
   Spinner,
   Tabs,
   Text,
@@ -38,6 +39,13 @@ const tabs = [
   { id: "terms", content: "Terms & notes" },
   { id: "email", content: "Email defaults" },
   { id: "vault", content: "Company File Vault" },
+];
+
+const documentNumberingOptions = [
+  { label: "Random Alphanumeric (e.g. MAIN-Q-7K9W2) — Default", value: "alphanumeric_random" },
+  { label: "Random Numeric (e.g. MAIN-Q-83921)", value: "numeric_random" },
+  { label: "Year + Random (e.g. MAIN-Q-26-84920)", value: "date_random" },
+  { label: "Sequential (e.g. MAIN-Q-00013)", value: "sequential" },
 ];
 
 const lineItemDetailsLayouts = [
@@ -290,6 +298,13 @@ export default function DocumentTemplatesSettingsPage() {
                     </div>
                   </BlockStack>
                   <FormLayout>
+                    <Select
+                      label="Document numbering sequence"
+                      options={documentNumberingOptions}
+                      value={templates.documentNumberingFormat || "alphanumeric_random"}
+                      onChange={(value) => updateTemplate("documentNumberingFormat", value as any)}
+                      helpText="Controls the format for generated Quotations, Invoices, Delivery Notes, and PO numbers. Duplicate numbers are automatically prevented."
+                    />
                     <FormLayout.Group>
                       <TextField
                         autoComplete="off"
