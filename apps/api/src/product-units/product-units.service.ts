@@ -267,6 +267,84 @@ export class ProductUnitsService {
     };
   }
 
+  async listSoldCandidates(
+    organizationId: string,
+    productId: string,
+    query: { search?: string; page?: number; perPage?: number } = {},
+  ) {
+    const page = Math.max(query.page ?? 1, 1);
+    const perPage = Math.min(Math.max(query.perPage ?? 30, 1), 100);
+    const offset = (page - 1) * perPage;
+
+    const filters: SQL[] = [
+      eq(productUnits.organizationId, organizationId),
+      eq(productUnits.productId, productId),
+      eq(productUnits.status, "sold"),
+    ];
+
+    if (query.search?.trim()) {
+      const term = `%${query.search.trim()}%`;
+      filters.push(
+        or(
+          ilike(productUnits.serialNumber, term),
+          ilike(invoices.number, term),
+          ilike(customers.name, term),
+        )!,
+      );
+    }
+
+    const whereClause = and(...filters);
+
+    const [rows, totalResult] = await Promise.all([
+      this.db
+        .select({
+          unitId: productUnits.id,
+          serialNumber: productUnits.serialNumber,
+          productId: productUnits.productId,
+          warehouseId: productUnits.warehouseId,
+          warehouseName: warehouses.name,
+          updatedAt: productUnits.updatedAt,
+          invoiceId: invoices.id,
+          invoiceNumber: invoices.number,
+          invoiceDate: invoices.invoiceDate,
+          invoiceLineId: invoiceLines.id,
+          customerName: customers.name,
+          unitPrice: invoiceLines.unitPrice,
+          costAmount: invoiceLines.costAmount,
+          currencyCode: currencies.code,
+        })
+        .from(productUnits)
+        .innerJoin(warehouses, eq(productUnits.warehouseId, warehouses.id))
+        .leftJoin(invoiceLines, eq(invoiceLines.productUnitId, productUnits.id))
+        .leftJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
+        .leftJoin(customers, eq(invoices.customerId, customers.id))
+        .leftJoin(currencies, eq(invoices.currencyId, currencies.id))
+        .where(whereClause)
+        .orderBy(desc(productUnits.updatedAt))
+        .limit(perPage)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(productUnits)
+        .leftJoin(invoiceLines, eq(invoiceLines.productUnitId, productUnits.id))
+        .leftJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
+        .leftJoin(customers, eq(invoices.customerId, customers.id))
+        .where(whereClause),
+    ]);
+
+    const total = Number(totalResult[0]?.total ?? 0);
+
+    return {
+      data: rows,
+      meta: {
+        page,
+        perPage,
+        total,
+        totalPages: Math.ceil(total / perPage) || 1,
+      },
+    };
+  }
+
   async getById(
     organizationId: string,
     id: string,

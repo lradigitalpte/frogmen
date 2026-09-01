@@ -261,4 +261,16 @@ export class PurchaseOrdersController {
       body ?? {},
     );
   }
+
+  @Post("v1/goods-receipts/:id/revert")
+  revertReceipt(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+  ) {
+    return this.purchaseOrdersService.revertReceipt(
+      this.orgId(session),
+      id,
+      this.userId(session),
+    );
+  }
 }

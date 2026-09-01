@@ -13,6 +13,7 @@ import {
   InlineStack,
   Layout,
   Link,
+  Modal,
   Text,
 } from "@shopify/polaris";
 import { Building2, Package, ScanBarcode, Truck } from "lucide-react";
@@ -34,6 +35,7 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   getGoodsReceipt,
+  revertGoodsReceipt,
   updateGoodsReceiptLine,
   validateGoodsReceipt,
   type GoodsReceipt,
@@ -98,6 +100,8 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [lineInputs, setLineInputs] = useState<Record<string, LineInput>>({});
   const [sellingPrices, setSellingPrices] = useState<Record<string, string>>({});
 
@@ -205,6 +209,26 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
     }
   }
 
+  async function handleRevert() {
+    if (!receipt || receipt.state !== "done") return;
+
+    setReverting(true);
+    setError(null);
+
+    try {
+      const reverted = await revertGoodsReceipt(receipt.id);
+      setReceipt(reverted);
+      setRevertOpen(false);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to revert receipt",
+      );
+    } finally {
+      setReverting(false);
+    }
+  }
+
   function updateLineSerials(lineId: string, serials: string[]) {
     setLineInputs((current) => ({
       ...current,
@@ -272,6 +296,11 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
               {
                 content: "Print receipt",
                 onAction: () => setPrintOpen(true),
+              },
+              {
+                content: "Revert to Draft",
+                destructive: true,
+                onAction: () => setRevertOpen(true),
               },
             ]
           : []),
@@ -466,6 +495,7 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
 
                           {line.trackSerial ? (
                             <ReceiveSerialEntry
+                              productId={line.productId}
                               quantity={quantity}
                               serials={input?.serials ?? []}
                               onChange={(serials) =>
@@ -663,6 +693,14 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
                       </Button>
                       <Button
                         fullWidth
+                        tone="critical"
+                        variant="plain"
+                        onClick={() => setRevertOpen(true)}
+                      >
+                        Revert to Draft
+                      </Button>
+                      <Button
+                        fullWidth
                         onClick={() =>
                           router.push(
                             `/dashboard/purchasing/orders/${receipt.purchaseOrderId}`,
@@ -687,6 +725,36 @@ export function GoodsReceiptViewPage({ receiptId }: { receiptId: string }) {
           onClose={() => setPrintOpen(false)}
         />
       ) : null}
+
+      <Modal
+        open={revertOpen}
+        onClose={() => setRevertOpen(false)}
+        title={`Revert ${receipt.number} to Draft?`}
+        primaryAction={{
+          content: "Revert to Draft",
+          destructive: true,
+          loading: reverting,
+          onAction: () => void handleRevert(),
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            disabled: reverting,
+            onAction: () => setRevertOpen(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Banner tone="warning">
+              This action will reset the goods receipt back to <strong>Draft</strong>, safely remove newly created duplicate in-stock units from your warehouse, and reset the purchase order received quantities.
+            </Banner>
+            <Text as="p">
+              After reverting, you can edit quantities, select/link the serial numbers of products that were already sold on customer invoices, and re-validate.
+            </Text>
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </AppPage>
   );
 }

@@ -16,5 +16,6 @@ export { applyExpensesIfNeeded } from "./apply-expenses";
 export { applyDealsIfNeeded } from "./apply-deals";
 export { applyLeadsIfNeeded } from "./apply-leads";
 export { applyQuotationSignatureFieldsIfNeeded } from "./apply-quotation-signature-fields";
+export { applyEmailMarketingIfNeeded } from "./apply-email-marketing";
+export { applyCompanyVaultIfNeeded } from "./apply-company-vault";
 export * from "./schema";
-

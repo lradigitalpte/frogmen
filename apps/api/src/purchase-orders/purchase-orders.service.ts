@@ -21,7 +21,9 @@ import {
   currencies,
   goodsReceiptLines,
   goodsReceipts,
+  invoiceLines,
   organizations,
+  productUnits,
   products,
   purchaseActivities,
   purchaseOrderCharges,
@@ -1154,16 +1156,61 @@ export class PurchaseOrdersService {
       const createdUnits: Array<{ id: string; serialNumber: string }> = [];
 
       if (line.trackSerial) {
+        const lineLandedUnitCost =
+          poLine?.unitPrice != null
+            ? (landedCosts.get(poLine.id) ?? Number(poLine.unitPrice))
+            : null;
+
         for (const serial of line.serialNumbers ?? []) {
-          const unit = await this.productUnitsService.create(
-            organizationId,
-            line.productId,
-            {
-              warehouseId: line.warehouseId,
-              serialNumber: serial.trim(),
-            },
-          );
-          createdUnits.push({ id: unit.id, serialNumber: unit.serialNumber });
+          const trimmedSerial = serial.trim();
+
+          // Check if an existing unit with this serial number is already marked as sold
+          const [existingSoldUnit] = await this.db
+            .select({
+              id: productUnits.id,
+              serialNumber: productUnits.serialNumber,
+              status: productUnits.status,
+            })
+            .from(productUnits)
+            .where(
+              and(
+                eq(productUnits.organizationId, organizationId),
+                eq(productUnits.productId, line.productId),
+                eq(productUnits.serialNumber, trimmedSerial),
+                eq(productUnits.status, "sold"),
+              ),
+            )
+            .limit(1);
+
+          if (existingSoldUnit) {
+            // Already sold on invoice — link PO landed cost directly without creating a duplicate unit
+            createdUnits.push({
+              id: existingSoldUnit.id,
+              serialNumber: existingSoldUnit.serialNumber,
+            });
+
+            // Update costAmount on any invoiceLine referencing this sold unit to freeze the exact PO cost
+            if (lineLandedUnitCost != null) {
+              await this.db
+                .update(invoiceLines)
+                .set({
+                  costAmount: String(lineLandedUnitCost),
+                  updatedAt: new Date(),
+                })
+                .where(eq(invoiceLines.productUnitId, existingSoldUnit.id));
+            }
+          } else {
+            // Normal flow: create new in-stock unit in the warehouse
+            const unit = await this.productUnitsService.create(
+              organizationId,
+              line.productId,
+              {
+                warehouseId: line.warehouseId,
+                serialNumber: trimmedSerial,
+              },
+            );
+            createdUnits.push({ id: unit.id, serialNumber: unit.serialNumber });
+          }
         }
       } else {
         await this.stockService.adjust(organizationId, {
@@ -1274,6 +1321,92 @@ export class PurchaseOrdersService {
       hasLandedCharges
         ? `Goods receipt ${receipt.number} validated · product costs updated to landed unit cost`
         : `Goods receipt ${receipt.number} validated`,
+    );
+
+    return this.getReceiptById(organizationId, receiptId);
+  }
+
+  async revertReceipt(
+    organizationId: string,
+    receiptId: string,
+    userId?: string,
+  ) {
+    const receipt = await this.getReceiptById(organizationId, receiptId);
+
+    if (receipt.state !== "done") {
+      throw new BadRequestException("Only validated receipts can be reverted");
+    }
+
+    const order = await this.getById(organizationId, receipt.purchaseOrderId);
+
+    for (const line of receipt.lines) {
+      const qty = Number(line.quantity);
+      const poLine = order.lines.find(
+        (item) => item.id === line.purchaseOrderLineId,
+      );
+
+      if (line.trackSerial && (line.serialNumbers?.length ?? 0) > 0) {
+        for (const serial of line.serialNumbers ?? []) {
+          const trimmedSerial = serial.trim();
+          // Find any in_stock unit with this serial created for this product
+          const [unit] = await this.db
+            .select({ id: productUnits.id, status: productUnits.status })
+            .from(productUnits)
+            .where(
+              and(
+                eq(productUnits.organizationId, organizationId),
+                eq(productUnits.productId, line.productId),
+                eq(productUnits.serialNumber, trimmedSerial),
+              ),
+            )
+            .limit(1);
+
+          if (unit && unit.status === "in_stock") {
+            // Delete the unused duplicate in-stock unit
+            await this.db
+              .delete(productUnits)
+              .where(eq(productUnits.id, unit.id));
+          }
+        }
+      } else if (!line.trackSerial) {
+        // Reverse warehouse stock adjustment
+        await this.stockService.adjust(organizationId, {
+          productId: line.productId,
+          warehouseId: line.warehouseId,
+          adjustment: String(-qty),
+        });
+      }
+
+      if (poLine) {
+        const newQtyReceived = Math.max(0, Number(poLine.qtyReceived) - qty);
+        await this.db
+          .update(purchaseOrderLines)
+          .set({
+            qtyReceived: String(newQtyReceived),
+            updatedAt: new Date(),
+          })
+          .where(eq(purchaseOrderLines.id, poLine.id));
+      }
+    }
+
+    // Set goods receipt back to draft
+    await this.db
+      .update(goodsReceipts)
+      .set({
+        state: "draft",
+        validatedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(goodsReceipts.id, receiptId));
+
+    await this.syncReceiptStatus(organizationId, receipt.purchaseOrderId);
+
+    await this.logActivity(
+      organizationId,
+      receipt.purchaseOrderId,
+      userId,
+      "updated",
+      `Goods receipt ${receipt.number} reverted to draft · duplicate inventory adjustments reversed`,
     );
 
     return this.getReceiptById(organizationId, receiptId);

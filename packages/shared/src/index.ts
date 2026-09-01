@@ -19,3 +19,6 @@ export * from "./documents/delivery-note-document";
 export * from "./documents/inspection-report-document";
 export * from "./currency";
 export * from "./severity";
+export * from "./schemas/email-marketing";
+export * from "./email/marketing-templates";
+export * from "./schemas/company-vault";

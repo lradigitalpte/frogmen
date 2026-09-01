@@ -31,6 +31,7 @@ import { SecurityModule } from "./security/security.module";
 import { PlatformModule } from "./platform/platform.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { LeadsModule } from "./leads/leads.module";
+import { EmailMarketingModule } from "./email-marketing/email-marketing.module";
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { LeadsModule } from "./leads/leads.module";
     UploadsModule,
     CustomersModule,
     LeadsModule,
+    EmailMarketingModule,
     CurrenciesModule,
     SalesModule,
     InvoicesModule,

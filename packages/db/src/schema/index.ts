@@ -19,6 +19,8 @@ export * from "./expense-claims";
 export * from "./product-cost-events";
 export * from "./rov-inspection";
 export * from "./leads";
+export * from "./email-marketing";
+export * from "./company-vault";
 
 import * as auth from "./auth";
 import * as security from "./security";
@@ -41,6 +43,8 @@ import * as expenseClaims from "./expense-claims";
 import * as productCostEvents from "./product-cost-events";
 import * as rovInspection from "./rov-inspection";
 import * as leads from "./leads";
+import * as emailMarketing from "./email-marketing";
+import * as companyVault from "./company-vault";
 
 export const schema = {
   ...auth,
@@ -64,4 +68,6 @@ export const schema = {
   ...productCostEvents,
   ...rovInspection,
   ...leads,
+  ...emailMarketing,
+  ...companyVault,
 };

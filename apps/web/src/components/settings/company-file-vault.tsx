@@ -6,19 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
-  createFile,
   createFolder,
   deleteFile,
   deleteFolder,
   formatBytes,
-  getStoredFiles,
-  getStoredFolders,
-  getVaultStats,
+  getVaultFileDownloadUrl,
+  getVaultOverview,
   moveFile,
   renameFile,
   renameFolder,
+  uploadVaultFile,
 } from "@/lib/file-vault-api";
-import type { FileCategory, VaultFile, VaultFolder, VaultStats } from "@/types/file-vault";
+import type {
+  FileCategory,
+  VaultFile,
+  VaultFolder,
+  VaultStats,
+} from "@/lib/file-vault-api";
 import {
   ArrowLeft,
   ChevronRight,
@@ -36,6 +40,7 @@ import {
   HardDrive,
   Image as ImageIcon,
   List,
+  Loader2,
   MoveRight,
   Plus,
   Search,
@@ -104,8 +109,9 @@ function BigFolderIcon({ className = "w-24 h-20" }: { className?: string }) {
 }
 
 export function CompanyFileVault() {
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
 
+  const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<VaultFolder[]>([]);
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [stats, setStats] = useState<VaultStats | null>(null);
@@ -134,11 +140,19 @@ export function CompanyFileVault() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refreshData = useCallback(() => {
-    setFolders(getStoredFolders());
-    setFiles(getStoredFiles());
-    setStats(getVaultStats());
-  }, []);
+  const refreshData = useCallback(async () => {
+    try {
+      const res = await getVaultOverview();
+      setFolders(res.folders);
+      setFiles(res.files);
+      setStats(res.stats);
+    } catch (err: any) {
+      console.error("Failed to load vault overview:", err);
+      showError(err.message || "Failed to load company vault");
+    } finally {
+      setLoading(false);
+    }
+  }, [showError]);
 
   useEffect(() => {
     refreshData();
@@ -172,116 +186,147 @@ export function CompanyFileVault() {
     setUploadOpen(true);
   };
 
-  const handleCreateFolderSubmit = (e: React.FormEvent) => {
+  const handleCreateFolderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim()) return;
 
-    createFolder(newFolderName.trim(), newFolderDesc.trim(), "amber", currentFolderId);
-    showSuccess(`Created folder "${newFolderName.trim()}"`);
-    setNewFolderName("");
-    setNewFolderDesc("");
-    setCreateFolderOpen(false);
-    refreshData();
+    try {
+      await createFolder({
+        name: newFolderName.trim(),
+        description: newFolderDesc.trim() || undefined,
+        color: "amber",
+        parentFolderId: currentFolderId,
+      });
+      showSuccess(`Created folder "${newFolderName.trim()}"`);
+      setNewFolderName("");
+      setNewFolderDesc("");
+      setCreateFolderOpen(false);
+      await refreshData();
+    } catch (err: any) {
+      showError(err.message || "Failed to create folder");
+    }
   };
 
-  const handleFileUpload = (fileList: FileList | null) => {
+  const handleFileUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
 
     let destinationFolderId = uploadTargetFolder;
 
-    // Create inline folder if user requested inside upload modal
-    if (createNewFolderInUpload && inlineFolderName.trim()) {
-      const created = createFolder(inlineFolderName.trim(), undefined, "amber", currentFolderId);
-      destinationFolderId = created.id;
-    }
-
     setUploading(true);
-    setUploadProgress(20);
+    setUploadProgress(10);
 
-    const timer = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(timer);
-          return 90;
-        }
-        return prev + 25;
-      });
-    }, 200);
+    try {
+      // Create inline folder if user requested inside upload modal
+      if (createNewFolderInUpload && inlineFolderName.trim()) {
+        const created = await createFolder({
+          name: inlineFolderName.trim(),
+          color: "amber",
+          parentFolderId: currentFolderId,
+        });
+        destinationFolderId = created.id;
+      }
 
-    setTimeout(() => {
-      clearInterval(timer);
+      const filesArray = Array.from(fileList);
+      const totalFiles = filesArray.length;
+
+      for (let i = 0; i < totalFiles; i++) {
+        const file = filesArray[i];
+        setUploadProgress(Math.round(((i + 0.5) / totalFiles) * 90));
+        await uploadVaultFile(file, destinationFolderId);
+      }
+
       setUploadProgress(100);
-
-      Array.from(fileList).forEach((file) => {
-        let objectUrl = "";
-        try {
-          objectUrl = URL.createObjectURL(file);
-        } catch (e) {
-          objectUrl = "";
-        }
-
-        createFile(
-          file.name,
-          file.size,
-          file.type || "application/octet-stream",
-          destinationFolderId,
-          objectUrl,
-          "Admin User",
-        );
-      });
-
-      setUploading(false);
+      showSuccess(`Successfully uploaded ${totalFiles} file(s) to S3 Cloud Vault`);
       setUploadOpen(false);
       setUploadProgress(0);
-      showSuccess(`Successfully uploaded ${fileList.length} file(s)`);
-      refreshData();
-    }, 1000);
-  };
-
-  const handleCopyUrl = (url: string) => {
-    navigator.clipboard.writeText(url);
-    showSuccess("Cloud file link copied to clipboard");
-  };
-
-  const handleDeleteFile = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete file "${name}"?`)) {
-      deleteFile(id);
-      showSuccess(`Deleted file "${name}"`);
-      refreshData();
+      await refreshData();
+    } catch (err: any) {
+      showError(err.message || "Failed to upload file to Cloud Vault");
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleDeleteFolder = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete folder "${name}" and all its contents?`)) {
-      deleteFolder(id);
-      showSuccess(`Deleted folder "${name}"`);
-      if (currentFolderId === id) setCurrentFolderId(null);
-      refreshData();
+  const handleCopyUrl = async (file: VaultFile) => {
+    try {
+      const downloadUrl = file.url || (await getVaultFileDownloadUrl(file.id));
+      await navigator.clipboard.writeText(downloadUrl);
+      showSuccess("Cloud S3 link copied to clipboard");
+    } catch (err: any) {
+      showError(err.message || "Failed to copy link");
     }
   };
 
-  const handleMoveSubmit = (e: React.FormEvent) => {
+  const handleDownloadFile = async (file: VaultFile) => {
+    try {
+      const downloadUrl = await getVaultFileDownloadUrl(file.id);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = file.name;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err: any) {
+      showError(err.message || "Failed to get download link");
+    }
+  };
+
+  const handleDeleteFile = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete file "${name}" from S3 storage?`)) {
+      try {
+        await deleteFile(id);
+        showSuccess(`Deleted file "${name}"`);
+        await refreshData();
+      } catch (err: any) {
+        showError(err.message || "Failed to delete file");
+      }
+    }
+  };
+
+  const handleDeleteFolder = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete folder "${name}" and all its contents from S3?`)) {
+      try {
+        await deleteFolder(id);
+        showSuccess(`Deleted folder "${name}"`);
+        if (currentFolderId === id) setCurrentFolderId(null);
+        await refreshData();
+      } catch (err: any) {
+        showError(err.message || "Failed to delete folder");
+      }
+    }
+  };
+
+  const handleMoveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!moveItem) return;
-    moveFile(moveItem.id, targetMoveFolder);
-    showSuccess(`Moved "${moveItem.name}" to target directory`);
-    setMoveItem(null);
-    refreshData();
+    try {
+      await moveFile(moveItem.id, targetMoveFolder);
+      showSuccess(`Moved "${moveItem.name}" to target directory`);
+      setMoveItem(null);
+      await refreshData();
+    } catch (err: any) {
+      showError(err.message || "Failed to move file");
+    }
   };
 
-  const handleRenameSubmit = (e: React.FormEvent) => {
+  const handleRenameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!renameItem || !renameItem.name.trim()) return;
 
-    if (renameItem.type === "file") {
-      renameFile(renameItem.id, renameItem.name.trim());
-      showSuccess(`Renamed to "${renameItem.name.trim()}"`);
-    } else {
-      renameFolder(renameItem.id, renameItem.name.trim());
-      showSuccess(`Renamed to "${renameItem.name.trim()}"`);
+    try {
+      if (renameItem.type === "file") {
+        await renameFile(renameItem.id, renameItem.name.trim());
+        showSuccess(`Renamed file to "${renameItem.name.trim()}"`);
+      } else {
+        await renameFolder(renameItem.id, renameItem.name.trim());
+        showSuccess(`Renamed folder to "${renameItem.name.trim()}"`);
+      }
+      setRenameItem(null);
+      await refreshData();
+    } catch (err: any) {
+      showError(err.message || "Failed to rename item");
     }
-    setRenameItem(null);
-    refreshData();
   };
 
   const getCategoryIcon = (category: FileCategory, mimeType?: string) => {
@@ -314,7 +359,7 @@ export function CompanyFileVault() {
                   Enterprise Cloud Document Storage
                 </h3>
                 <StatusBadge variant="success" className="text-[10px] font-bold">
-                  Cloud Vault Active
+                  AWS S3 Cloud Vault Active
                 </StatusBadge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
@@ -451,7 +496,6 @@ export function CompanyFileVault() {
                 onClick={() => setViewMode("grid")}
               >
                 <Grid className="h-4 w-4" />
-                <span className="sr-only">Grid View</span>
               </button>
               <button
                 type="button"
@@ -462,351 +506,366 @@ export function CompanyFileVault() {
                 onClick={() => setViewMode("list")}
               >
                 <List className="h-4 w-4" />
-                <span className="sr-only">List View</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Folders Section - Only show when at Root Vault with no folders OR when folders exist */}
-      {(currentFoldersList.length > 0 || currentFolderId === null) && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Folder className="h-3.5 w-3.5 text-amber-500" /> Folders ({currentFoldersList.length})
-            </span>
-            <Button size="xs" variant="outline" onClick={() => setCreateFolderOpen(true)}>
-              <FolderPlus className="h-3.5 w-3.5 mr-1" /> New Folder
-            </Button>
-          </div>
-
-          {currentFoldersList.length === 0 && currentFolderId === null ? (
-            <div className="p-8 border border-dashed rounded-2xl bg-muted/10 text-center space-y-3">
-              <BigFolderIcon className="w-20 h-16 mx-auto opacity-70" />
-              <div>
-                <p className="text-sm font-bold text-foreground">No folders created yet</p>
-                <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
-                  Create a folder to organize your company contracts, ROV inspection videos, and media assets.
-                </p>
+      {loading ? (
+        <div className="p-16 border rounded-2xl bg-card text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-amber-500" />
+          <p className="text-sm font-bold text-foreground">Loading S3 Company Cloud Vault...</p>
+        </div>
+      ) : (
+        <>
+          {/* Folders Section */}
+          {(currentFolderId === null || currentFoldersList.length > 0) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Folder className="h-3.5 w-3.5 text-amber-500" /> Folders ({currentFoldersList.length})
+                </span>
+                <Button size="xs" variant="ghost" onClick={() => setCreateFolderOpen(true)}>
+                  <Plus className="h-3 w-3 mr-1" /> New Folder
+                </Button>
               </div>
-              <Button size="sm" onClick={() => setCreateFolderOpen(true)}>
-                <FolderPlus className="h-4 w-4 mr-1.5" /> Create First Folder
-              </Button>
-            </div>
-          ) : currentFoldersList.length > 0 ? (
-            viewMode === "grid" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                {currentFoldersList.map((folder) => {
-                  const fileCount = files.filter((f) => f.folderId === folder.id).length;
 
-                  return (
-                    <div
-                      key={folder.id}
-                      className="group relative p-5 rounded-2xl border border-border/80 bg-card hover:bg-muted/20 hover:border-amber-500/60 hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col items-center text-center space-y-3"
-                      onClick={() => setCurrentFolderId(folder.id)}
-                    >
-                      {/* Top Action Controls */}
-                      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+              {currentFoldersList.length === 0 ? (
+                <div className="text-center py-10 border border-dashed rounded-2xl bg-muted/10 space-y-2">
+                  <p className="text-xs font-bold text-foreground">No folders created yet</p>
+                  <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
+                    Create a folder to organize your company contracts, ROV inspection videos, and media assets.
+                  </p>
+                  <Button size="xs" variant="outline" onClick={() => setCreateFolderOpen(true)} className="mt-2">
+                    <FolderPlus className="h-3.5 w-3.5 mr-1 text-amber-500" /> Create Folder
+                  </Button>
+                </div>
+              ) : viewMode === "grid" ? (
+                /* Folders Big Icon Grid View */
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {currentFoldersList.map((folder) => {
+                    const fileCount = files.filter((f) => f.folderId === folder.id).length;
+
+                    return (
+                      <div
+                        key={folder.id}
+                        className="group relative p-5 rounded-2xl border border-border/80 bg-card hover:bg-muted/20 hover:border-amber-500/60 hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col items-center text-center space-y-3"
+                        onClick={() => setCurrentFolderId(folder.id)}
+                      >
+                        {/* Top Action Controls */}
+                        <div className="absolute top-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                            title="Rename Folder"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenameItem({ id: folder.id, type: "folder", name: folder.name });
+                            }}
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            title="Delete Folder"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteFolder(folder.id, folder.name);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Prominent OS Desktop Big Golden Folder Icon */}
+                        <div className="pt-2">
+                          <BigFolderIcon className="w-24 h-20 transition-transform duration-200 group-hover:scale-105 drop-shadow-md" />
+                        </div>
+
+                        {/* Folder Label & Details */}
+                        <div className="w-full px-1">
+                          <h4 className="font-extrabold text-sm text-foreground group-hover:text-amber-500 transition-colors line-clamp-1">
+                            {folder.name}
+                          </h4>
+                          {folder.description && (
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 font-medium">
+                              {folder.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-1 w-full border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="px-2 py-0.5 rounded-md bg-muted font-bold text-[11px]">
+                            {fileCount} file{fileCount !== 1 ? "s" : ""}
+                          </span>
+                          <span className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 flex items-center group-hover:translate-x-0.5 transition-transform">
+                            Open <ChevronRight className="h-3 w-3 ml-0.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Folders Table List View */
+                <div className="rounded-xl border bg-card overflow-hidden shadow-2xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/40 border-b text-muted-foreground font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-3 px-4">Folder Name</th>
+                        <th className="py-3 px-4">Description</th>
+                        <th className="py-3 px-4">Contents</th>
+                        <th className="py-3 px-4">Created Date</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {currentFoldersList.map((folder) => {
+                        const fileCount = files.filter((f) => f.folderId === folder.id).length;
+
+                        return (
+                          <tr
+                            key={folder.id}
+                            className="hover:bg-muted/20 transition-colors cursor-pointer"
+                            onClick={() => setCurrentFolderId(folder.id)}
+                          >
+                            <td className="py-3 px-4 font-extrabold text-foreground flex items-center gap-2">
+                              <Folder className="h-4 w-4 text-amber-500 shrink-0" />
+                              <span className="hover:text-amber-500 transition-colors truncate max-w-[250px]">
+                                {folder.name}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-muted-foreground truncate max-w-[200px]">
+                              {folder.description || "—"}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-foreground">
+                              {fileCount} file{fileCount !== 1 ? "s" : ""}
+                            </td>
+                            <td className="py-3 px-4 text-muted-foreground">
+                              {new Date(folder.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                <Button size="xs" variant="ghost" onClick={() => setCurrentFolderId(folder.id)}>
+                                  Open
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="ghost"
+                                  onClick={() => setRenameItem({ id: folder.id, type: "folder", name: folder.name })}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="ghost"
+                                  className="text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleDeleteFolder(folder.id, folder.name)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Files Section - Main View when Inside a Folder */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-primary" /> Files ({currentFilesList.length})
+              </span>
+              {currentFolder ? (
+                <span className="text-xs font-semibold text-muted-foreground font-normal flex items-center gap-2">
+                  <span>Inside <strong className="text-amber-500 font-bold">{currentFolder.name}</strong></span>
+                  <Button size="xs" variant="outline" onClick={() => setCreateFolderOpen(true)}>
+                    <FolderPlus className="h-3 w-3 mr-1" /> New Subfolder
+                  </Button>
+                </span>
+              ) : null}
+            </div>
+
+            {currentFilesList.length === 0 ? (
+              <div className="text-center py-14 border border-dashed rounded-2xl bg-muted/20 space-y-3">
+                <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                  <UploadCloud className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">No files in this location</p>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
+                    Upload documents, PDFs, spreadsheet reports, or inspection videos into a selected folder.
+                  </p>
+                </div>
+              </div>
+            ) : viewMode === "grid" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {currentFilesList.map((file) => (
+                  <div
+                    key={file.id}
+                    className="group relative p-4 rounded-xl border bg-card hover:border-primary/50 hover:shadow-md transition-all space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 rounded-xl border bg-muted/30 shrink-0">
+                          {getCategoryIcon(file.category, file.mimeType)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-foreground line-clamp-1 break-all group-hover:text-primary transition-colors">
+                            {file.name}
+                          </h4>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            <span className="font-medium">{formatBytes(file.sizeBytes)}</span>
+                            <span>•</span>
+                            <span className="uppercase text-[10px] font-bold text-primary px-1.5 py-0.2 rounded bg-primary/10 border border-primary/20">
+                              {file.category}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="p-1 rounded text-muted-foreground hover:text-foreground"
+                        onClick={() => setPreviewFile(file)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Video Player Preview thumbnail if Video */}
+                    {file.category === "video" && (
+                      <div className="relative aspect-video rounded-lg overflow-hidden bg-black/80 border flex items-center justify-center group/video cursor-pointer" onClick={() => setPreviewFile(file)}>
+                        <Film className="h-8 w-8 text-purple-400 group-hover/video:scale-110 transition-transform" />
+                        <span className="absolute bottom-2 right-2 text-[10px] font-bold bg-black/70 text-white px-2 py-0.5 rounded">
+                          Video Stream
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Action Toolbar */}
+                    <div className="flex items-center justify-between pt-2 border-t border-border/50 text-xs">
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        By {file.uploadedBy || "Team Member"}
+                      </span>
+
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                          title="Rename Folder"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenameItem({ id: folder.id, type: "folder", name: folder.name });
-                          }}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          title="Download File"
+                          onClick={() => handleDownloadFile(file)}
                         >
-                          <Edit3 className="h-3.5 w-3.5" />
+                          <Download className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                          title="Delete Folder"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFolder(folder.id, folder.name);
-                          }}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          title="Copy Share Link"
+                          onClick={() => handleCopyUrl(file)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                          title="Move File"
+                          onClick={() => setMoveItem(file)}
+                        >
+                          <MoveRight className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          title="Delete File"
+                          onClick={() => handleDeleteFile(file.id, file.name)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
-
-                      {/* Prominent OS Desktop Big Golden Folder Icon */}
-                      <div className="pt-2">
-                        <BigFolderIcon className="w-24 h-20 transition-transform duration-200 group-hover:scale-105 drop-shadow-md" />
-                      </div>
-
-                      {/* Folder Label & Details */}
-                      <div className="w-full px-1">
-                        <h4 className="font-extrabold text-sm text-foreground group-hover:text-amber-500 transition-colors line-clamp-1">
-                          {folder.name}
-                        </h4>
-                        {folder.description && (
-                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 font-medium">
-                            {folder.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="pt-1 w-full border-t border-border/40 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="px-2 py-0.5 rounded-md bg-muted font-bold text-[11px]">
-                          {fileCount} file{fileCount !== 1 ? "s" : ""}
-                        </span>
-                        <span className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 flex items-center group-hover:translate-x-0.5 transition-transform">
-                          Open <ChevronRight className="h-3 w-3 ml-0.5" />
-                        </span>
-                      </div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             ) : (
-              /* Folders Table List View */
+              /* List View Table */
               <div className="rounded-xl border bg-card overflow-hidden shadow-2xs">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-muted/40 border-b text-muted-foreground font-bold uppercase text-[10px]">
                     <tr>
-                      <th className="py-3 px-4">Folder Name</th>
-                      <th className="py-3 px-4">Description</th>
-                      <th className="py-3 px-4">Contents</th>
-                      <th className="py-3 px-4">Created Date</th>
+                      <th className="py-3 px-4">File Name</th>
+                      <th className="py-3 px-4">Category</th>
+                      <th className="py-3 px-4">Size</th>
+                      <th className="py-3 px-4">Uploaded By</th>
+                      <th className="py-3 px-4">Date</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {currentFoldersList.map((folder) => {
-                      const fileCount = files.filter((f) => f.folderId === folder.id).length;
-
-                      return (
-                        <tr
-                          key={folder.id}
-                          className="hover:bg-muted/20 transition-colors cursor-pointer"
-                          onClick={() => setCurrentFolderId(folder.id)}
-                        >
-                          <td className="py-3 px-4 font-extrabold text-foreground flex items-center gap-2">
-                            <Folder className="h-4 w-4 text-amber-500 shrink-0" />
-                            <span className="hover:text-amber-500 transition-colors truncate max-w-[250px]">
-                              {folder.name}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground truncate max-w-[200px]">
-                            {folder.description || "—"}
-                          </td>
-                          <td className="py-3 px-4 font-bold text-foreground">
-                            {fileCount} file{fileCount !== 1 ? "s" : ""}
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground">
-                            {new Date(folder.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button size="xs" variant="ghost" onClick={() => setCurrentFolderId(folder.id)}>
-                                Open
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="ghost"
-                                onClick={() => setRenameItem({ id: folder.id, type: "folder", name: folder.name })}
-                              >
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="ghost"
-                                className="text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteFolder(folder.id, folder.name)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {currentFilesList.map((file) => (
+                      <tr key={file.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="py-3 px-4 font-bold text-foreground flex items-center gap-2">
+                          {getCategoryIcon(file.category, file.mimeType)}
+                          <span
+                            className="hover:text-primary cursor-pointer truncate max-w-[280px]"
+                            onClick={() => setPreviewFile(file)}
+                          >
+                            {file.name}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="uppercase text-[10px] font-bold px-2 py-0.5 rounded bg-muted border">
+                            {file.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-muted-foreground">
+                          {formatBytes(file.sizeBytes)}
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground">{file.uploadedBy || "Team Member"}</td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {new Date(file.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="xs" variant="ghost" onClick={() => setPreviewFile(file)}>
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="xs" variant="ghost" onClick={() => handleDownloadFile(file)}>
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="xs" variant="ghost" onClick={() => handleCopyUrl(file)}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="xs" variant="ghost" onClick={() => setMoveItem(file)}>
+                              <MoveRight className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              className="text-destructive hover:bg-destructive/10"
+                              onClick={() => handleDeleteFile(file.id, file.name)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            )
-          ) : null}
-        </div>
+            )}
+          </div>
+        </>
       )}
-
-      {/* Files Section - Main View when Inside a Folder */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <FileText className="h-3.5 w-3.5 text-primary" /> Files ({currentFilesList.length})
-          </span>
-          {currentFolder ? (
-            <span className="text-xs font-semibold text-muted-foreground font-normal flex items-center gap-2">
-              <span>Inside <strong className="text-amber-500 font-bold">{currentFolder.name}</strong></span>
-              <Button size="xs" variant="outline" onClick={() => setCreateFolderOpen(true)}>
-                <FolderPlus className="h-3 w-3 mr-1" /> New Subfolder
-              </Button>
-            </span>
-          ) : null}
-        </div>
-
-        {currentFilesList.length === 0 ? (
-          <div className="text-center py-14 border border-dashed rounded-2xl bg-muted/20 space-y-3">
-            <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
-              <UploadCloud className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-foreground">No files in this location</p>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
-                Upload documents, PDFs, spreadsheet reports, or inspection videos into a selected folder.
-              </p>
-            </div>
-          </div>
-        ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {currentFilesList.map((file) => (
-              <div
-                key={file.id}
-                className="group relative p-4 rounded-xl border bg-card hover:border-primary/50 hover:shadow-md transition-all space-y-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl border bg-muted/30 shrink-0">
-                      {getCategoryIcon(file.category, file.mimeType)}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-foreground line-clamp-1 break-all group-hover:text-primary transition-colors">
-                        {file.name}
-                      </h4>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        <span className="font-medium">{formatBytes(file.sizeBytes)}</span>
-                        <span>•</span>
-                        <span className="uppercase text-[10px] font-bold text-primary px-1.5 py-0.2 rounded bg-primary/10 border border-primary/20">
-                          {file.category}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="p-1 rounded text-muted-foreground hover:text-foreground"
-                    onClick={() => setPreviewFile(file)}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Video Player Preview thumbnail if Video */}
-                {file.category === "video" && (
-                  <div className="relative aspect-video rounded-lg overflow-hidden bg-black/80 border flex items-center justify-center group/video cursor-pointer" onClick={() => setPreviewFile(file)}>
-                    <Film className="h-8 w-8 text-purple-400 group-hover/video:scale-110 transition-transform" />
-                    <span className="absolute bottom-2 right-2 text-[10px] font-bold bg-black/70 text-white px-2 py-0.5 rounded">
-                      Video Stream
-                    </span>
-                  </div>
-                )}
-
-                {/* Action Toolbar */}
-                <div className="flex items-center justify-between pt-2 border-t border-border/50 text-xs">
-                  <span className="text-[11px] text-muted-foreground truncate">
-                    By {file.uploadedBy}
-                  </span>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-                      title="Copy Share Link"
-                      onClick={() => handleCopyUrl(file.url)}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-                      title="Move File"
-                      onClick={() => setMoveItem(file)}
-                    >
-                      <MoveRight className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      title="Delete File"
-                      onClick={() => handleDeleteFile(file.id, file.name)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* List View Table */
-          <div className="rounded-xl border bg-card overflow-hidden shadow-2xs">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 border-b text-muted-foreground font-bold uppercase text-[10px]">
-                <tr>
-                  <th className="py-3 px-4">File Name</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">Uploaded By</th>
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {currentFilesList.map((file) => (
-                  <tr key={file.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="py-3 px-4 font-bold text-foreground flex items-center gap-2">
-                      {getCategoryIcon(file.category, file.mimeType)}
-                      <span
-                        className="hover:text-primary cursor-pointer truncate max-w-[280px]"
-                        onClick={() => setPreviewFile(file)}
-                      >
-                        {file.name}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="uppercase text-[10px] font-bold px-2 py-0.5 rounded bg-muted border">
-                        {file.category}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-muted-foreground">
-                      {formatBytes(file.sizeBytes)}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground">{file.uploadedBy}</td>
-                    <td className="py-3 px-4 text-muted-foreground">
-                      {new Date(file.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button size="xs" variant="ghost" onClick={() => setPreviewFile(file)}>
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="xs" variant="ghost" onClick={() => handleCopyUrl(file.url)}>
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="xs" variant="ghost" onClick={() => setMoveItem(file)}>
-                          <MoveRight className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          className="text-destructive hover:bg-destructive/10"
-                          onClick={() => handleDeleteFile(file.id, file.name)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
 
       {/* MODAL 1: Create Folder */}
       {createFolderOpen && (
@@ -864,7 +923,7 @@ export function CompanyFileVault() {
           <div className="relative w-full max-w-lg bg-card border rounded-2xl p-6 shadow-2xl space-y-4 z-10 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                <UploadCloud className="h-5 w-5 text-amber-500" /> Upload Files to Storage
+                <UploadCloud className="h-5 w-5 text-amber-500" /> Upload Files to S3 Cloud Vault
               </h3>
               <button type="button" onClick={() => setUploadOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="h-5 w-5" />
@@ -953,7 +1012,7 @@ export function CompanyFileVault() {
             {uploading && (
               <div className="space-y-1.5 pt-2">
                 <div className="flex justify-between text-xs font-semibold text-foreground">
-                  <span>Uploading to folder...</span>
+                  <span>Uploading to S3 Cloud Storage...</span>
                   <span>{uploadProgress}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
@@ -994,10 +1053,6 @@ export function CompanyFileVault() {
                   autoPlay
                   className="max-h-[400px] w-full rounded-lg"
                   src={previewFile.url}
-                  onError={(e) => {
-                    (e.target as HTMLVideoElement).src =
-                      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-                  }}
                 >
                   Your browser does not support HTML5 video playback.
                 </video>
@@ -1006,10 +1061,6 @@ export function CompanyFileVault() {
                   src={previewFile.url}
                   alt={previewFile.name}
                   className="max-h-[400px] object-contain rounded-lg"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src =
-                      "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&auto=format&fit=crop&q=80";
-                  }}
                 />
               ) : (
                 <div className="text-center p-8 text-white space-y-3">
@@ -1017,7 +1068,7 @@ export function CompanyFileVault() {
                   <div>
                     <p className="font-bold text-base">{previewFile.name}</p>
                     <p className="text-xs text-slate-300 mt-1">
-                      Enterprise document stored in Cloud Storage Vault
+                      Enterprise document stored in AWS S3 Cloud Storage Vault
                     </p>
                   </div>
                 </div>
@@ -1026,13 +1077,13 @@ export function CompanyFileVault() {
 
             {/* Actions Footer */}
             <div className="flex items-center justify-between pt-2 shrink-0 border-t">
-              <span className="text-xs text-muted-foreground">Uploaded by {previewFile.uploadedBy}</span>
+              <span className="text-xs text-muted-foreground">Uploaded by {previewFile.uploadedBy || "Team Member"}</span>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleCopyUrl(previewFile.url)}>
+                <Button size="sm" variant="outline" onClick={() => handleCopyUrl(previewFile)}>
                   <Copy className="h-4 w-4 mr-1.5" /> Copy Share Link
                 </Button>
-                <Button size="sm" onClick={() => window.open(previewFile.url, "_blank")}>
-                  <Download className="h-4 w-4 mr-1.5" /> Open / Download
+                <Button size="sm" onClick={() => handleDownloadFile(previewFile)}>
+                  <Download className="h-4 w-4 mr-1.5" /> Download
                 </Button>
               </div>
             </div>

@@ -251,7 +251,7 @@ export class S3Service {
 
   async getPresignedUrl(key: string, expiresIn = 3600) {
     if (!key) return null;
-    if (!key.startsWith("rov-inspection/")) return null;
+    if (!key.startsWith("rov-inspection/") && !key.startsWith("company-vault/")) return null;
 
     const { client, bucket } = this.ensureClient();
     const command = new GetObjectCommand({

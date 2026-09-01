@@ -98,6 +98,44 @@ export class ProductUnitsController {
     });
   }
 
+  @Get("v1/products/:productId/sold-units")
+  listSoldUnits(
+    @Session() session: UserSession,
+    @Param("productId") productId: string,
+    @Query("search") search?: string,
+    @Query("page") page?: string,
+    @Query("perPage") perPage?: string,
+  ) {
+    return this.productUnitsService.listSoldCandidates(
+      this.orgId(session),
+      productId,
+      {
+        search,
+        page: page ? Number(page) : undefined,
+        perPage: perPage ? Number(perPage) : undefined,
+      },
+    );
+  }
+
+  @Get("v1/units/sold-candidates")
+  listSoldCandidates(
+    @Session() session: UserSession,
+    @Query("productId") productId: string,
+    @Query("search") search?: string,
+    @Query("page") page?: string,
+    @Query("perPage") perPage?: string,
+  ) {
+    return this.productUnitsService.listSoldCandidates(
+      this.orgId(session),
+      productId,
+      {
+        search,
+        page: page ? Number(page) : undefined,
+        perPage: perPage ? Number(perPage) : undefined,
+      },
+    );
+  }
+
   @Get("v1/units/:id")
   async get(@Session() session: UserSession, @Param("id") id: string) {
     const context = await this.securityContext.resolve({

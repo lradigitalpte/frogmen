@@ -372,3 +372,34 @@ export function validateGoodsReceipt(
     body: JSON.stringify(input),
   });
 }
+
+export function revertGoodsReceipt(id: string) {
+  return apiFetch<GoodsReceipt>(`/api/v1/goods-receipts/${id}/revert`, {
+    method: "POST",
+  });
+}
+
+export interface SoldUnitCandidate {
+  unitId: string;
+  serialNumber: string;
+  productId: string;
+  warehouseId: string;
+  warehouseName: string;
+  updatedAt: string;
+  invoiceId?: string | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  invoiceLineId?: string | null;
+  customerName?: string | null;
+  unitPrice?: string | null;
+  costAmount?: string | null;
+  currencyCode?: string | null;
+}
+
+export function getSoldUnitCandidates(productId: string, search?: string) {
+  const query = new URLSearchParams({ productId });
+  if (search?.trim()) query.set("search", search.trim());
+  return apiFetch<{ data: SoldUnitCandidate[] }>(
+    `/api/v1/units/sold-candidates?${query.toString()}`,
+  );
+}

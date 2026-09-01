@@ -1,11 +1,13 @@
 import {
   applyAccountingIfNeeded,
   applyBankAccountsIfNeeded,
+  applyCompanyVaultIfNeeded,
   applyCreditNotesIfNeeded,
   applyCustomerCreditIfNeeded,
   applyCustomerIsLocalIfNeeded,
   applyCustomersIfNeeded,
   applyDealsIfNeeded,
+  applyEmailMarketingIfNeeded,
   applyExpensesIfNeeded,
   applyInventoryIfNeeded,
   applyLeadsIfNeeded,
@@ -34,6 +36,8 @@ export async function runDatabaseSetup(databaseUrl: string) {
   await applyExpensesIfNeeded(databaseUrl);
   await applyDealsIfNeeded(databaseUrl);
   await applyLeadsIfNeeded(databaseUrl);
+  await applyEmailMarketingIfNeeded(databaseUrl);
+  await applyCompanyVaultIfNeeded(databaseUrl);
   await applyQuotationSignatureFieldsIfNeeded(databaseUrl);
   await ensureCurrencies(databaseUrl);
 }
