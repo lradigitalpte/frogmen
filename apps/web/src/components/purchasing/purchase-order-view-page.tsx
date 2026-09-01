@@ -639,31 +639,58 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                         Goods receipts
                       </Text>
                     </InlineStack>
-                    {receipts.map((receipt) => (
-                      <InlineStack
-                        key={receipt.id}
-                        align="space-between"
-                        blockAlign="center"
-                      >
-                        <Link
-                          url={`/dashboard/purchasing/receipts/${receipt.id}`}
+                    <BlockStack gap="200">
+                      {receipts.map((receipt) => (
+                        <Box
+                          key={receipt.id}
+                          background="bg-surface-secondary"
+                          borderRadius="200"
+                          padding="300"
                         >
-                          {receipt.number}
-                        </Link>
-                        <InlineStack gap="200" blockAlign="center">
-                          <StatusBadge
-                            variant={
-                              receipt.state === "done" ? "success" : "neutral"
-                            }
+                          <InlineStack
+                            align="space-between"
+                            blockAlign="center"
+                            wrap
                           >
-                            {receiptStateLabel(receipt.state)}
-                          </StatusBadge>
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            {formatDisplayDate(receipt.receiptDate)}
-                          </Text>
-                        </InlineStack>
-                      </InlineStack>
-                    ))}
+                            <InlineStack gap="300" blockAlign="center">
+                              <Link
+                                url={`/dashboard/purchasing/receipts/${receipt.id}`}
+                              >
+                                <Text as="span" fontWeight="bold">
+                                  {receipt.number}
+                                </Text>
+                              </Link>
+                              <StatusBadge
+                                variant={
+                                  receipt.state === "done" ? "success" : "neutral"
+                                }
+                              >
+                                {receiptStateLabel(receipt.state)}
+                              </StatusBadge>
+                              <Text as="span" tone="subdued" variant="bodySm">
+                                {formatDisplayDate(receipt.receiptDate)}
+                              </Text>
+                            </InlineStack>
+
+                            <InlineStack gap="200" blockAlign="center">
+                              <Button
+                                size="slim"
+                                tone={receipt.state === "done" ? "critical" : undefined}
+                                onClick={() =>
+                                  router.push(
+                                    `/dashboard/purchasing/receipts/${receipt.id}`,
+                                  )
+                                }
+                              >
+                                {receipt.state === "done"
+                                  ? "View / Revert to Draft"
+                                  : "Edit / Validate"}
+                              </Button>
+                            </InlineStack>
+                          </InlineStack>
+                        </Box>
+                      ))}
+                    </BlockStack>
                   </BlockStack>
                 </Card>
               ) : null}

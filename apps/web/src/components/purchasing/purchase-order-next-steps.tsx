@@ -64,9 +64,7 @@ export function PurchaseOrderNextSteps({
             quantities and serial numbers.
           </List.Item>
           <List.Item>
-            View the goods receipt under{" "}
-            <Link url="/dashboard/purchasing/receipts">Receipts</Link> or in the
-            receipts list on this PO.
+            Need to change serials or link to an already-sold customer invoice? Open the goods receipt below and click <strong>Revert to Draft</strong>.
           </List.Item>
         </List>
         <Text as="p" tone="subdued" variant="bodySm">

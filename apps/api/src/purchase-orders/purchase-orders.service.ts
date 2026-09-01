@@ -1195,7 +1195,6 @@ export class PurchaseOrdersService {
                 .update(invoiceLines)
                 .set({
                   costAmount: String(lineLandedUnitCost),
-                  updatedAt: new Date(),
                 })
                 .where(eq(invoiceLines.productUnitId, existingSoldUnit.id));
             }
