@@ -16,7 +16,10 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { Link2Icon, SearchIcon } from "lucide-react";
+import {
+  LinkIcon,
+  SearchIcon,
+} from "@shopify/polaris-icons";
 import { useEffect, useMemo, useState } from "react";
 import { formatQuantity } from "@/lib/format-quantity";
 import {
@@ -225,7 +228,7 @@ export function ReceiveSerialEntry({
         {productId ? (
           <Button
             disabled={disabled}
-            icon={Link2Icon}
+            icon={LinkIcon}
             onClick={() => setSoldModalOpen(true)}
           >
             Link to Sold Product / Invoice
