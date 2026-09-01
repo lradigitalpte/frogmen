@@ -388,13 +388,13 @@ export function TemplatesListPage() {
                     pressed={previewTheme === "light"}
                     onClick={() => setPreviewTheme("light")}
                   >
-                    ☀️ Light Mode
+                    Light Mode
                   </Button>
                   <Button
                     pressed={previewTheme === "dark"}
                     onClick={() => setPreviewTheme("dark")}
                   >
-                    🌙 Dark Mode
+                    Dark Mode
                   </Button>
                 </ButtonGroup>
               </div>

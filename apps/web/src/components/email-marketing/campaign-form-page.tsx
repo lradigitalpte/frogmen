@@ -634,57 +634,49 @@ export function CampaignFormPage({ campaignId }: CampaignFormPageProps) {
                 {/* TAB 2: CONTENT & TEMPLATE */}
                 {selectedTab === 1 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                    {/* Preset Templates Carousel */}
-                    <div>
-                      <Text variant="headingMd" as="h3">
-                        Choose a Starting Template
-                      </Text>
-                      <p style={{ color: "#64748b", fontSize: "13px", marginTop: "2px", marginBottom: "12px" }}>
-                        Pick a professional layout. All templates include rich dark mode and responsive styling.
-                      </p>
-
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {SYSTEM_PRESET_TEMPLATES.map((preset) => (
-                          <div
-                            key={preset.id}
-                            style={{
-                              border: "1px solid #e2e8f0",
-                              borderRadius: "10px",
-                              padding: "14px",
-                              background: "#ffffff",
-                              display: "flex",
-                              flexDirection: "column",
-                              justifyContent: "space-between",
-                              cursor: "pointer",
-                              transition: "border-color 0.2s, box-shadow 0.2s",
-                            }}
-                            className="hover:border-emerald-500 hover:shadow-sm"
-                            onClick={() => applyPresetTemplate(preset)}
-                          >
-                            <div>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                <Text variant="bodyMd" fontWeight="bold" as="span">
-                                  {preset.name}
-                                </Text>
-                                <Badge tone="info">{preset.category}</Badge>
-                              </div>
-                              <p style={{ fontSize: "12px", color: "#64748b", lineHeight: "1.4" }}>
-                                {preset.description}
-                              </p>
-                            </div>
-                            <div style={{ marginTop: "12px" }}>
-                              <Button size="slim">Use Preset</Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    {/* Template Selection Dropdown */}
+                    <div style={{ background: "#f8fafc", padding: "16px 20px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+                      <FormLayout>
+                        <Select
+                          label="Starting Template Layout"
+                          options={[
+                            { label: "Custom / Blank Template", value: "" },
+                            ...SYSTEM_PRESET_TEMPLATES.map((preset) => ({
+                              label: `${preset.name} (${preset.category})`,
+                              value: preset.id,
+                            })),
+                            ...templates.map((t) => ({
+                              label: `${t.name} (Saved Template)`,
+                              value: t.id,
+                            })),
+                          ]}
+                          value={templateId}
+                          onChange={(val) => {
+                            setTemplateId(val);
+                            if (!val) return;
+                            const preset = SYSTEM_PRESET_TEMPLATES.find((p) => p.id === val);
+                            if (preset) {
+                              applyPresetTemplate(preset);
+                              return;
+                            }
+                            const saved = templates.find((t) => t.id === val);
+                            if (saved) {
+                              setSubject(saved.subject);
+                              setBodyHtml(saved.bodyHtml);
+                              setStructuredContent(parseMarketingEmailBodyHtml(saved.bodyHtml));
+                              if (saved.designConfig) {
+                                setPrimaryColor(saved.designConfig.primaryColor || "#0f766e");
+                                setBrandName(saved.designConfig.brandName || "");
+                                setHeaderStyle(saved.designConfig.headerStyle || "banner");
+                                setCtaLabel(saved.designConfig.ctaLabel || "");
+                                setCtaUrl(saved.designConfig.ctaUrl || "");
+                                setFooterText(saved.designConfig.footerText || "");
+                              }
+                            }
+                          }}
+                          helpText="Selecting a template loads its pre-configured layout, styling tokens, and content structure."
+                        />
+                      </FormLayout>
                     </div>
 
                     {/* Editor Mode Switcher & Merge Tags */}
@@ -692,7 +684,7 @@ export function CampaignFormPage({ campaignId }: CampaignFormPageProps) {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
                         <div>
                           <Text variant="bodySm" fontWeight="bold" as="span">
-                            Content Editor Mode:
+                            Editor Mode
                           </Text>
                           <div style={{ marginTop: "6px" }}>
                             <ButtonGroup variant="segmented">
@@ -700,19 +692,19 @@ export function CampaignFormPage({ campaignId }: CampaignFormPageProps) {
                                 pressed={editorMode === "visual"}
                                 onClick={() => handleEditorModeChange("visual")}
                               >
-                                📝 Visual Content Editor
+                                Visual Editor
                               </Button>
                               <Button
                                 pressed={editorMode === "text"}
                                 onClick={() => handleEditorModeChange("text")}
                               >
-                                📄 Plain Paragraphs
+                                Plain Text
                               </Button>
                               <Button
                                 pressed={editorMode === "html"}
                                 onClick={() => handleEditorModeChange("html")}
                               >
-                                💻 Raw HTML Code
+                                HTML Code
                               </Button>
                             </ButtonGroup>
                           </div>
@@ -720,7 +712,7 @@ export function CampaignFormPage({ campaignId }: CampaignFormPageProps) {
 
                         <div>
                           <Text variant="bodySm" fontWeight="bold" as="span">
-                            Insert Merge Tags:
+                            Insert Merge Tags
                           </Text>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
                             {[
@@ -1232,13 +1224,13 @@ export function CampaignFormPage({ campaignId }: CampaignFormPageProps) {
                             pressed={previewTheme === "light"}
                             onClick={() => setPreviewTheme("light")}
                           >
-                            ☀️ Light Mode
+                            Light Mode
                           </Button>
                           <Button
                             pressed={previewTheme === "dark"}
                             onClick={() => setPreviewTheme("dark")}
                           >
-                            🌙 Dark Mode
+                            Dark Mode
                           </Button>
                         </ButtonGroup>
 
