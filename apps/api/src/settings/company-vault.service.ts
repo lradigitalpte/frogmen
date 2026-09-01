@@ -12,6 +12,7 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
+import { DATABASE } from "../database/database.constants";
 import { S3Service } from "../rov-inspection/s3.service";
 import type {
   CreateVaultFolderInput,
@@ -27,7 +28,7 @@ import type {
 @Injectable()
 export class CompanyVaultService {
   constructor(
-    @Inject("DATABASE") private readonly db: Database,
+    @Inject(DATABASE) private readonly db: Database,
     private readonly s3: S3Service,
   ) {}
 
