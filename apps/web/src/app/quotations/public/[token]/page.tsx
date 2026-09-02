@@ -583,7 +583,7 @@ export default function PublicQuotationPage({
                     </div>
                     <div className="public-quote-totals__row">
                       <span>
-                        Delivery fee
+                        Shipping fee
                         {data.deliveryFeePercent
                           ? ` (${data.deliveryFeePercent}%)`
                           : ""}

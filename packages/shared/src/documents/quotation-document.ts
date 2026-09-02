@@ -250,10 +250,10 @@ export function renderQuotationDocumentHtml(
         : ["No billing address provided"];
     const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
     const deliveryFeeLabel = quotation.deliveryFeePercent
-      ? `${isPurchaseOrder ? "Freight" : "Delivery fee"} (${quotation.deliveryFeePercent}%)`
+      ? `${isPurchaseOrder ? "Freight" : "Shipping fee"} (${quotation.deliveryFeePercent}%)`
       : isPurchaseOrder
         ? "Freight"
-        : "Delivery fee";
+        : "Shipping fee";
     const deliveryFeeRow = quotation.deliveryFee
       ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
       : "";
@@ -355,10 +355,10 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
 
   const subTotalValue = quotation.lineNetSubtotal ?? quotation.amountUntaxed;
   const deliveryFeeLabel = quotation.deliveryFeePercent
-    ? `${isPurchaseOrder ? "Freight" : "Delivery fee"} (${quotation.deliveryFeePercent}%)`
+    ? `${isPurchaseOrder ? "Freight" : "Shipping fee"} (${quotation.deliveryFeePercent}%)`
     : isPurchaseOrder
       ? "Freight"
-      : "Delivery fee";
+      : "Shipping fee";
   const deliveryFeeRow = quotation.deliveryFee
     ? `<div class="totals-row"><span class="muted">${escapeHtml(deliveryFeeLabel)}</span><span>+${formatDocumentMoney(quotation.deliveryFee, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";

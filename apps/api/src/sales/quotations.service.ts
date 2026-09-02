@@ -1352,7 +1352,7 @@ export class QuotationsService {
 
     if (hasAmount && hasPercent) {
       throw new BadRequestException(
-        "Set either a delivery fee amount or percent, not both",
+        "Set either a shipping fee amount or percent, not both",
       );
     }
 

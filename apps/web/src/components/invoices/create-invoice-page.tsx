@@ -771,7 +771,7 @@ export function CreateInvoicePage() {
                     {deliveryFee > 0 ? (
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued">
-                          Delivery fee
+                          Shipping fee
                           {deliveryFeePercent ? ` (${deliveryFeePercent}%)` : ""}
                         </Text>
                         <Text as="span" fontWeight="semibold">+{fmt(deliveryFee)}</Text>

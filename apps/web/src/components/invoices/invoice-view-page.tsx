@@ -633,7 +633,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                           </div>
                           <div className="quotation-summary-row">
                             <Text as="span" tone="subdued">
-                              Delivery fee
+                              Shipping fee
                               {invoice.deliveryFeePercent
                                 ? ` (${invoice.deliveryFeePercent}%)`
                                 : ""}

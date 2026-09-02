@@ -1011,7 +1011,7 @@ export function CreateQuotationPage() {
                       </Text>
                       <Text as="p" tone="subdued">
                         Each line is shown as a summary card. Use Edit to set
-                        quantity, pricing, discount, VAT, delivery fee, and
+                        quantity, pricing, discount, VAT, shipping fee, and
                         review profit.
                       </Text>
                     </BlockStack>
@@ -1086,7 +1086,7 @@ export function CreateQuotationPage() {
                     />
                     <TextField
                       autoComplete="off"
-                      label="Global Delivery & Freight Fee"
+                      label="Shipping Fee"
                       type="number"
                       value={deliveryFeeValue}
                       onChange={(val) => {
@@ -1095,7 +1095,7 @@ export function CreateQuotationPage() {
                       }}
                       prefix={displayCurrency?.code ?? "AED"}
                       placeholder="0.00"
-                      helpText="Global shipping fee for entire quotation"
+                      helpText="Shipping fee for entire quotation"
                     />
                     <Select
                       label="Global VAT / Tax Rate"
@@ -1164,7 +1164,7 @@ export function CreateQuotationPage() {
                     {deliveryFee > 0 ? (
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued" variant="bodySm">
-                          Delivery fee
+                          Shipping fee
                           {deliveryFeeMode === "percent" && deliveryFeeValue
                             ? ` (${deliveryFeeValue}%)`
                             : ""}
@@ -1382,7 +1382,7 @@ export function CreateQuotationPage() {
                     {deliveryFee > 0 ? (
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued" variant="bodySm">
-                          Delivery fee
+                          Shipping fee
                           {deliveryFeeMode === "percent" && deliveryFeeValue
                             ? ` (${deliveryFeeValue}%)`
                             : ""}

@@ -320,7 +320,7 @@ export function EditConfiguredLineModal({
               />
               {deliveryFee ? (
                 <Select
-                  label="Delivery"
+                  label="Shipping"
                   options={[
                     { label: "None", value: "none" },
                     { label: "Fixed amount", value: "amount" },
@@ -339,8 +339,8 @@ export function EditConfiguredLineModal({
                 helpText="Applies to the whole quotation, not this line only."
                 label={
                   deliveryFee.mode === "amount"
-                    ? "Delivery amount"
-                    : "Delivery percent"
+                    ? "Shipping fee amount"
+                    : "Shipping fee percent"
                 }
                 prefix={
                   deliveryFee.mode === "amount"

@@ -542,7 +542,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                       />
                       <TextField
                         autoComplete="off"
-                        label="Global Delivery & Freight Fee"
+                        label="Shipping Fee"
                         type="number"
                         value={deliveryFee}
                         onChange={(val) => {
@@ -551,7 +551,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                         }}
                         prefix={currency?.code ?? "AED"}
                         placeholder="0.00"
-                        helpText="Global shipping and transport fee for entire quote"
+                        helpText="Shipping fee for entire quotation"
                       />
                       <Select
                         label="VAT / Sales Tax Rate"
@@ -573,7 +573,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                           onClick={() => void saveHeader()}
                           variant="secondary"
                         >
-                          Save Financial Details & Delivery Fee
+                          Save Financial Details & Shipping Fee
                         </Button>
                       ) : null}
                     </BlockStack>
@@ -622,7 +622,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
                     {deliveryFeeNum > 0 ? (
                       <div className="quotation-summary-row">
                         <Text as="span" tone="subdued" variant="bodySm">
-                          Delivery & Freight Fee
+                          Shipping Fee
                         </Text>
                         <Text as="span" variant="bodyMd" fontWeight="semibold">
                           +{formatMoney(deliveryFeeNum, currency?.code)}

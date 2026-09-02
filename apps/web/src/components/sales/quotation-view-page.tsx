@@ -678,7 +678,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                           </div>
                           <div className="quotation-summary-row">
                             <Text as="span" tone="subdued">
-                              Delivery fee
+                              Shipping fee
                               {quotation?.deliveryFeePercent
                                 ? ` (${quotation.deliveryFeePercent}%)`
                                 : ""}
