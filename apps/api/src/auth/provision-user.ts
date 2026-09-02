@@ -5,6 +5,7 @@ import {
   accounts,
   branchMembers,
   members,
+  sessions,
   users,
   type Database,
 } from "@frog1/db";
@@ -107,11 +108,34 @@ export async function updateUserCredentialPassword(
     .limit(1);
 
   if (!account) {
-    throw new Error("Credential account not found");
+    await db.insert(accounts).values({
+      id: randomUUID(),
+      userId,
+      accountId: userId,
+      providerId: "credential",
+      password: hashedPassword,
+    });
+    return;
   }
 
   await db
     .update(accounts)
     .set({ password: hashedPassword })
     .where(eq(accounts.id, account.id));
+}
+
+export async function issueTemporaryPassword(
+  db: Database,
+  userId: string,
+): Promise<string> {
+  const temporaryPassword = generateTemporaryPassword();
+
+  await updateUserCredentialPassword(db, userId, temporaryPassword);
+  await db
+    .update(users)
+    .set({ mustChangePassword: true })
+    .where(eq(users.id, userId));
+  await db.delete(sessions).where(eq(sessions.userId, userId));
+
+  return temporaryPassword;
 }

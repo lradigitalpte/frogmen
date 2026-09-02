@@ -17,12 +17,20 @@ import { ApiError } from "@/lib/api";
 import {
   deletePlatformOrganization,
   listPlatformOrganizations,
+  resetPlatformOrganizationUserPassword,
   type PlatformOrganization,
+  type PlatformOrganizationMember,
+  type ResetOrganizationPasswordResult,
 } from "@/lib/platform-api";
 import { getMe } from "@/lib/security-api";
 
+async function copyText(value: string) {
+  await navigator.clipboard.writeText(value);
+}
+
 export default function PlatformAdminSettingsPage() {
   const [rows, setRows] = useState<PlatformOrganization[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +39,11 @@ export default function PlatformAdminSettingsPage() {
     useState<PlatformOrganization | null>(null);
   const [confirmSlug, setConfirmSlug] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [pendingReset, setPendingReset] =
+    useState<PlatformOrganization | null>(null);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [issuedPassword, setIssuedPassword] =
+    useState<ResetOrganizationPasswordResult | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +56,7 @@ export default function PlatformAdminSettingsPage() {
         return;
       }
       setAuthorized(true);
+      setCurrentUserId(me.user.id);
       const organizations = await listPlatformOrganizations();
       setRows(organizations);
     } catch (err) {
@@ -63,6 +77,12 @@ export default function PlatformAdminSettingsPage() {
     if (deleting) return;
     setPendingDelete(null);
     setConfirmSlug("");
+  };
+
+  const closeResetModal = () => {
+    if (resettingUserId) return;
+    setPendingReset(null);
+    setIssuedPassword(null);
   };
 
   const handleDelete = async () => {
@@ -97,6 +117,30 @@ export default function PlatformAdminSettingsPage() {
     }
   };
 
+  const handleResetPassword = async (member: PlatformOrganizationMember) => {
+    if (!pendingReset) return;
+    setResettingUserId(member.userId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await resetPlatformOrganizationUserPassword(
+        pendingReset.id,
+        member.userId,
+      );
+      setIssuedPassword(result);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to reset password",
+      );
+    } finally {
+      setResettingUserId(null);
+    }
+  };
+
   const confirmMatches =
     Boolean(pendingDelete) &&
     confirmSlug.trim() === (pendingDelete?.slug ?? "");
@@ -118,7 +162,7 @@ export default function PlatformAdminSettingsPage() {
   return (
     <AppPage
       title="Platform admin"
-      subtitle="List and permanently delete organizations across all tenants. Backup export comes later."
+      subtitle="List organizations, reset member passwords, and permanently delete tenants. Backup export comes later."
       primaryAction={{
         content: "Refresh",
         onAction: () => void load(),
@@ -137,7 +181,8 @@ export default function PlatformAdminSettingsPage() {
           Deleting an organization removes its members, branches, sales,
           inventory, and related data. Users who only belonged to that
           organization are removed so their email can be reused. This cannot be
-          undone.
+          undone. Resetting a password signs that user out and gives you a
+          temporary password to share; they must change it on next sign-in.
         </Banner>
 
         {loading ? (
@@ -186,18 +231,31 @@ export default function PlatformAdminSettingsPage() {
                     {new Date(row.createdAt).toLocaleString()}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
-                    <Button
-                      tone="critical"
-                      variant="plain"
-                      onClick={() => {
-                        setSuccess(null);
-                        setError(null);
-                        setPendingDelete(row);
-                        setConfirmSlug("");
-                      }}
-                    >
-                      Delete
-                    </Button>
+                    <InlineStack gap="200" wrap={false}>
+                      <Button
+                        variant="plain"
+                        onClick={() => {
+                          setSuccess(null);
+                          setError(null);
+                          setIssuedPassword(null);
+                          setPendingReset(row);
+                        }}
+                      >
+                        Reset password
+                      </Button>
+                      <Button
+                        tone="critical"
+                        variant="plain"
+                        onClick={() => {
+                          setSuccess(null);
+                          setError(null);
+                          setPendingDelete(row);
+                          setConfirmSlug("");
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </InlineStack>
                   </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
@@ -242,6 +300,137 @@ export default function PlatformAdminSettingsPage() {
               onChange={setConfirmSlug}
               disabled={deleting}
             />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingReset)}
+        title="Reset member password"
+        onClose={closeResetModal}
+        secondaryActions={[
+          {
+            content: issuedPassword ? "Done" : "Close",
+            onAction: closeResetModal,
+            disabled: Boolean(resettingUserId),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            {issuedPassword ? (
+              <>
+                <Banner tone="success">
+                  Temporary password created for {issuedPassword.email}. Share
+                  it once, then they will be asked to set a new password on
+                  sign-in.
+                </Banner>
+                <BlockStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="p">
+                      <Text as="span" tone="subdued">
+                        Email:{" "}
+                      </Text>
+                      {issuedPassword.email}
+                    </Text>
+                    <Button
+                      size="slim"
+                      onClick={() =>
+                        void copyText(issuedPassword.email).then(() =>
+                          setSuccess("Email copied."),
+                        )
+                      }
+                    >
+                      Copy
+                    </Button>
+                  </InlineStack>
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="p">
+                      <Text as="span" tone="subdued">
+                        Temporary password:{" "}
+                      </Text>
+                      {issuedPassword.temporaryPassword}
+                    </Text>
+                    <Button
+                      size="slim"
+                      onClick={() =>
+                        void copyText(issuedPassword.temporaryPassword).then(
+                          () => setSuccess("Password copied."),
+                        )
+                      }
+                    >
+                      Copy
+                    </Button>
+                  </InlineStack>
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="p">
+                      <Text as="span" tone="subdued">
+                        Sign-in link:{" "}
+                      </Text>
+                      {issuedPassword.loginUrl}
+                    </Text>
+                    <Button
+                      size="slim"
+                      onClick={() =>
+                        void copyText(issuedPassword.loginUrl).then(() =>
+                          setSuccess("Sign-in link copied."),
+                        )
+                      }
+                    >
+                      Copy
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
+              </>
+            ) : (
+              <>
+                <Text as="p">
+                  Choose a member of{" "}
+                  <Text as="span" fontWeight="semibold">
+                    {pendingReset?.name}
+                  </Text>
+                  . They will be signed out and must use the temporary password
+                  you share.
+                </Text>
+                {(pendingReset?.members ?? []).length === 0 ? (
+                  <Text as="p" tone="subdued">
+                    This organization has no members.
+                  </Text>
+                ) : (
+                  <BlockStack gap="200">
+                    {(pendingReset?.members ?? []).map((member) => {
+                      const isSelf = member.userId === currentUserId;
+                      return (
+                        <InlineStack
+                          key={member.userId}
+                          align="space-between"
+                          blockAlign="center"
+                          wrap
+                        >
+                          <BlockStack gap="100">
+                            <Text as="span" fontWeight="semibold">
+                              {member.email}
+                            </Text>
+                            <Text as="span" tone="subdued">
+                              {member.name} · {member.role}
+                              {isSelf ? " · you" : ""}
+                            </Text>
+                          </BlockStack>
+                          <Button
+                            size="slim"
+                            disabled={isSelf || Boolean(resettingUserId)}
+                            loading={resettingUserId === member.userId}
+                            onClick={() => void handleResetPassword(member)}
+                          >
+                            Reset password
+                          </Button>
+                        </InlineStack>
+                      );
+                    })}
+                  </BlockStack>
+                )}
+              </>
+            )}
           </BlockStack>
         </Modal.Section>
       </Modal>
