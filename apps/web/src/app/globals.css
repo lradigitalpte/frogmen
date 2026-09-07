@@ -829,8 +829,8 @@ textarea.Polaris-TextField__Input:focus {
 .frogmen-line-card {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.15rem;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem;
   border: 1px solid #e1e3e5;
   border-radius: 10px;
   background: #ffffff;
@@ -841,11 +841,130 @@ textarea.Polaris-TextField__Input:focus {
   border-color: #3f3f3f;
 }
 
+.frogmen-line-card--dragging {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  z-index: 1;
+}
+
 .frogmen-line-card--empty {
   align-items: center;
   justify-content: center;
   min-height: 6rem;
   text-align: center;
+}
+
+.frogmen-line-card__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.frogmen-line-card__reorder {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.frogmen-line-card__drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 6px;
+}
+
+.frogmen-line-card__drag-handle:hover {
+  background: #f1f2f3;
+}
+
+[data-theme="dark"] .frogmen-line-card__drag-handle:hover {
+  background: #262626;
+}
+
+.frogmen-line-card__drag-handle:active {
+  cursor: grabbing;
+}
+
+.frogmen-line-card__nudge {
+  display: flex;
+  flex-direction: column;
+}
+
+.frogmen-line-card__nudge-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.55rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  color: #6d7175;
+  border-radius: 4px;
+}
+
+.frogmen-line-card__nudge-btn:hover:not(:disabled) {
+  background: #f1f2f3;
+  color: #202223;
+}
+
+[data-theme="dark"] .frogmen-line-card__nudge-btn:hover:not(:disabled) {
+  background: #262626;
+  color: #f6f6f7;
+}
+
+.frogmen-line-card__nudge-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.frogmen-line-card__summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.frogmen-line-card__summary-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.frogmen-line-card__summary-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frogmen-line-card__summary-metrics {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.frogmen-line-card__details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e1e3e5;
+}
+
+[data-theme="dark"] .frogmen-line-card__details {
+  border-top-color: #3f3f3f;
 }
 
 .frogmen-line-card__main {
@@ -879,7 +998,7 @@ textarea.Polaris-TextField__Input:focus {
 }
 
 @media (min-width: 640px) {
-  .frogmen-line-card {
+  .frogmen-line-card__details {
     flex-direction: row;
     align-items: flex-start;
     justify-content: space-between;

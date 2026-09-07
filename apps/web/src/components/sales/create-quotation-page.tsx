@@ -617,6 +617,24 @@ export function CreateQuotationPage() {
     );
   }
 
+  function reorderLines(fromIndex: number, toIndex: number) {
+    setLines((prev) => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex >= prev.length
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }
+
   // Create quotation as draft, then open workspace for send / confirm / invoice
   async function handleSaveQuotation() {
     setError(null);
@@ -1027,6 +1045,7 @@ export function CreateQuotationPage() {
                       lines={lines}
                       onEdit={setEditingLineId}
                       onRemove={removeLine}
+                      onReorder={reorderLines}
                     />
 
                     <InlineStack align="space-between" blockAlign="center">

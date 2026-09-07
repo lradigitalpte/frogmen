@@ -106,7 +106,8 @@ export class DocumentRendererService {
       .from(salesOrderLines)
       .leftJoin(products, eq(products.id, salesOrderLines.productId))
       .leftJoin(productUnits, eq(productUnits.id, salesOrderLines.productUnitId))
-      .where(eq(salesOrderLines.salesOrderId, quotationId));
+      .where(eq(salesOrderLines.salesOrderId, quotationId))
+      .orderBy(asc(salesOrderLines.lineNumber));
 
     const lineNetSubtotal = lines.reduce(
       (sum, row) => sum + Number(row.line.priceSubtotal),

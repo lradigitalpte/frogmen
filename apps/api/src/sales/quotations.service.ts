@@ -1958,7 +1958,8 @@ export class QuotationsService {
       .from(salesOrderLines)
       .leftJoin(products, eq(products.id, salesOrderLines.productId))
       .leftJoin(productUnits, eq(productUnits.id, salesOrderLines.productUnitId))
-      .where(eq(salesOrderLines.salesOrderId, order.id));
+      .where(eq(salesOrderLines.salesOrderId, order.id))
+      .orderBy(asc(salesOrderLines.lineNumber));
 
     const [org] = await this.rawDb
       .select({
