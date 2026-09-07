@@ -296,7 +296,7 @@ export function CreateQuotationPage() {
     try {
       const result = await listProducts({
         search: debouncedCatalogSearch || undefined,
-        perPage: 50,
+        perPage: debouncedCatalogSearch ? 50 : 4,
         forSaleOnly: true,
         rootOnly: true,
         includeStock: true,
@@ -906,7 +906,9 @@ export function CreateQuotationPage() {
                         ? "Loading products..."
                         : catalogTotal === 0
                           ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
-                          : `Showing ${products.length} of ${catalogTotal} in-stock product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`}
+                          : debouncedCatalogSearch
+                            ? `Showing ${products.length} of ${catalogTotal} matching product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`
+                            : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to find more.`}
                     </Text>
                     {products.length > 0 ? (
                       <ProductCatalogSearchResults>
