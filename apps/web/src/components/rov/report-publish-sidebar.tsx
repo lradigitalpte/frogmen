@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockStack, Button, Card, Text } from "@shopify/polaris";
+import { copyText } from "@/lib/clipboard";
 
 interface ChecklistItem {
   label: string;
@@ -90,7 +91,7 @@ export function ReportPublishSidebar({
                 </Button>
                 <Button
                   fullWidth
-                  onClick={() => void navigator.clipboard.writeText(shareUrl)}
+                  onClick={() => void copyText(shareUrl)}
                 >
                   Copy share link
                 </Button>

@@ -83,6 +83,7 @@ export class ExpensesService {
         reference: row.expense.reference,
         amount,
         paymentMethod: row.expense.paymentMethod,
+        paymentSourceId: row.expense.paymentSourceId,
         paymentSource,
         bankAccountId: row.expense.bankAccountId,
         bankAccountName: row.bankAccountName,
@@ -138,6 +139,7 @@ export class ExpensesService {
       reference: row.expense.reference,
       amount: roundMoney(Number(row.expense.amount)),
       paymentMethod: row.expense.paymentMethod,
+      paymentSourceId: row.expense.paymentSourceId,
       bankAccountId: row.expense.bankAccountId,
       bankAccountName: row.bankAccountName,
       categoryId: row.expense.categoryId,
@@ -158,6 +160,7 @@ export class ExpensesService {
       paymentMethod: string;
       reference?: string;
       bankAccountId?: string;
+      paymentSourceId?: string;
       categoryId?: string;
     },
   ) {
@@ -202,6 +205,7 @@ export class ExpensesService {
         expenseDate: input.expenseDate,
         description,
         paymentMethod: input.paymentMethod,
+        paymentSourceId: input.paymentSourceId ?? null,
         reference: number,
         bankAccountId: input.bankAccountId,
       },
@@ -241,6 +245,7 @@ export class ExpensesService {
       paymentMethod?: string;
       reference?: string | null;
       bankAccountId?: string | null;
+      paymentSourceId?: string | null;
       categoryId?: string | null;
     },
   ) {
@@ -255,6 +260,9 @@ export class ExpensesService {
       input.bankAccountId !== undefined
         ? input.bankAccountId
         : existing.bankAccountId;
+    const paymentSourceId = input.paymentSourceId !== undefined
+      ? input.paymentSourceId
+      : existing.paymentSourceId;
     const categoryId =
       input.categoryId !== undefined ? input.categoryId : existing.categoryId;
     const reference =
@@ -311,6 +319,7 @@ export class ExpensesService {
         amount: String(amount),
         expenseDate,
         paymentMethod,
+        paymentSourceId: paymentSourceId ?? null,
         bankAccountId: bankAccountId ?? null,
         updatedAt: new Date(),
       })

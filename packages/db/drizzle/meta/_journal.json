@@ -260,6 +260,13 @@
       "when": 1785050700000,
       "tag": "0035_line_discount_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788868800000,
+      "tag": "0036_expense_payment_sources",
+      "breakpoints": true
     }
   ]
 }

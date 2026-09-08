@@ -21,6 +21,22 @@ import type { Response } from "express";
 import { ExpenseCategoriesService } from "./expense-categories.service";
 import { ExpensesService } from "./expenses.service";
 import { UploadsService } from "../uploads/uploads.service";
+import { ExpensePaymentSourcesService } from "./expense-payment-sources.service";
+
+@Controller("v1/expense-payment-sources")
+@RequireActiveOrg()
+export class ExpensePaymentSourcesController {
+  constructor(private readonly service: ExpensePaymentSourcesService) {}
+  private orgId(session: UserSession) {
+    const id = session.session.activeOrganizationId;
+    if (!id) throw new Error("Active organization is required");
+    return id;
+  }
+  @Get() list(@Session() session: UserSession) { return this.service.list(this.orgId(session)); }
+  @Post() create(@Session() session: UserSession, @Body() body: { name: string; lastFour?: string }) { return this.service.create(this.orgId(session), body); }
+  @Patch(":id") update(@Session() session: UserSession, @Param("id") id: string, @Body() body: { name: string; lastFour?: string }) { return this.service.update(this.orgId(session), id, body); }
+  @Delete(":id") remove(@Session() session: UserSession, @Param("id") id: string) { return this.service.remove(this.orgId(session), id); }
+}
 
 @Controller("v1/expense-categories")
 @RequireActiveOrg()
@@ -117,6 +133,7 @@ export class ExpensesController {
       paymentMethod: string;
       reference?: string;
       bankAccountId?: string;
+      paymentSourceId?: string;
       categoryId?: string;
     },
   ) {
@@ -139,6 +156,7 @@ export class ExpensesController {
       paymentMethod?: string;
       reference?: string | null;
       bankAccountId?: string | null;
+      paymentSourceId?: string | null;
       categoryId?: string | null;
     },
   ) {

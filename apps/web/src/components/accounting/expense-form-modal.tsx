@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { listBankAccounts, type BankAccount } from "@/lib/bank-accounts-api";
+import { PaymentSourcesModal } from "./payment-sources-modal";
 import {
   createExpense,
   listExpenseCategories,
@@ -24,6 +25,8 @@ import {
   uploadExpenseReceipt,
   type ExpenseCategory,
   type ExpenseRecord,
+  type ExpensePaymentSource,
+  listExpensePaymentSources,
 } from "@/lib/expenses-api";
 
 const paymentMethods = [
@@ -54,6 +57,9 @@ export function ExpenseFormModal({
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentSourceId, setPaymentSourceId] = useState("");
+  const [paymentSources, setPaymentSources] = useState<ExpensePaymentSource[]>([]);
+  const [managingSources, setManagingSources] = useState(false);
   const [reference, setReference] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -63,7 +69,17 @@ export function ExpenseFormModal({
   const [error, setError] = useState<string | null>(null);
 
   const requiresBankAccount =
-    paymentMethod !== "cash" && paymentMethod !== "cheque";
+    paymentMethod !== "cash" && paymentMethod !== "cheque" && paymentMethod !== "custom";
+
+  const paidFromOptions = useMemo(() => [
+    ...paymentMethods,
+    ...paymentSources.map((source) => ({ label: `${source.name}${source.lastFour ? ` •••• ${source.lastFour}` : ""}`, value: `source:${source.id}` })),
+    { label: "Manage payment sources", value: "manage" },
+  ], [paymentSources]);
+
+  const loadPaymentSources = useCallback(() => {
+    listExpensePaymentSources().then(setPaymentSources).catch(() => setPaymentSources([]));
+  }, []);
 
   const categoryOptions = useMemo(
     () => [
@@ -100,7 +116,8 @@ export function ExpenseFormModal({
       .then(setBankAccounts)
       .catch(() => setBankAccounts([]));
     void loadCategories();
-  }, [open, loadCategories]);
+    loadPaymentSources();
+  }, [open, loadCategories, loadPaymentSources]);
 
   useEffect(() => {
     if (!open) return;
@@ -111,6 +128,7 @@ export function ExpenseFormModal({
       setDescription(expense.description);
       setCategoryId(expense.categoryId ?? "");
       setPaymentMethod(expense.paymentMethod);
+      setPaymentSourceId(expense.paymentSourceId ?? "");
       setReference(expense.reference ?? "");
       setBankAccountId(expense.bankAccountId ?? "");
     } else {
@@ -119,6 +137,7 @@ export function ExpenseFormModal({
       setDescription("");
       setCategoryId("");
       setPaymentMethod("cash");
+      setPaymentSourceId("");
       setReference("");
       setBankAccountId("");
     }
@@ -172,6 +191,7 @@ export function ExpenseFormModal({
         expenseDate,
         description: description.trim(),
         paymentMethod,
+        paymentSourceId: paymentSourceId || undefined,
         reference: reference.trim() || undefined,
         bankAccountId:
           requiresBankAccount && bankAccountId ? bankAccountId : undefined,
@@ -186,6 +206,7 @@ export function ExpenseFormModal({
           bankAccountId:
             requiresBankAccount && bankAccountId ? bankAccountId : null,
           categoryId: categoryId || null,
+          paymentSourceId: paymentSourceId || null,
         });
       } else {
         const created = await createExpense(payload);
@@ -263,9 +284,13 @@ export function ExpenseFormModal({
             </FormLayout.Group>
             <Select
               label="Paid from"
-              options={paymentMethods}
-              value={paymentMethod}
-              onChange={setPaymentMethod}
+              options={paidFromOptions}
+              value={paymentSourceId ? `source:${paymentSourceId}` : paymentMethod}
+              onChange={(value) => {
+                if (value === "manage") { setManagingSources(true); return; }
+                if (value.startsWith("source:")) { setPaymentSourceId(value.slice(7)); setPaymentMethod("custom"); return; }
+                setPaymentSourceId(""); setPaymentMethod(value);
+              }}
             />
             {requiresBankAccount ? (
               <Select
@@ -273,11 +298,17 @@ export function ExpenseFormModal({
                 options={
                   bankAccountOptions.length
                     ? bankAccountOptions
-                    : [{ label: "No bank accounts available", value: "" }]
+                    : [
+                        {
+                          label: "No bank accounts available",
+                          value: "",
+                        },
+                      ]
                 }
                 value={bankAccountId}
                 onChange={setBankAccountId}
                 disabled={bankAccountOptions.length === 0}
+                helpText={<Link url="/dashboard/settings/bank-accounts">Manage bank accounts</Link>}
               />
             ) : null}
             <TextField
@@ -325,6 +356,7 @@ export function ExpenseFormModal({
           </BlockStack>
         </BlockStack>
       </Modal.Section>
+      <PaymentSourcesModal open={managingSources} sources={paymentSources} onClose={() => setManagingSources(false)} onChanged={loadPaymentSources} />
     </Modal>
   );
 }

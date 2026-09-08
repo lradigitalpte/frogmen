@@ -26,6 +26,7 @@ import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { LineItemDescription } from "@/components/sales/line-item-description";
 import { formatQuantity } from "@/lib/format-quantity";
+import { copyText } from "@/lib/clipboard";
 import { formatDiscountLabel, resolveDeliveryFee } from "@/lib/line-item-utils";
 import { listCurrencies } from "@/lib/currencies-api";
 import type { Currency } from "@/lib/currencies-api";
@@ -123,7 +124,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
     setCopySigningLinkLoading(true);
     try {
       const { url } = await getQuotationSigningUrl(quotation.id);
-      await navigator.clipboard.writeText(url);
+      await copyText(url);
       showSuccess("Customer signing link copied to clipboard");
     } catch (err) {
       showError(

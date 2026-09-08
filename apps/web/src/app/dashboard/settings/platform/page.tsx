@@ -23,10 +23,7 @@ import {
   type ResetOrganizationPasswordResult,
 } from "@/lib/platform-api";
 import { getMe } from "@/lib/security-api";
-
-async function copyText(value: string) {
-  await navigator.clipboard.writeText(value);
-}
+import { copyText } from "@/lib/clipboard";
 
 export default function PlatformAdminSettingsPage() {
   const [rows, setRows] = useState<PlatformOrganization[]>([]);

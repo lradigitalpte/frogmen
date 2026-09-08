@@ -13,6 +13,7 @@ export interface ExpenseRecord {
   reference: string | null;
   amount: number;
   paymentMethod: string;
+  paymentSourceId?: string | null;
   paymentSource: "cash" | "bank";
   bankAccountId?: string | null;
   bankAccountName?: string | null;
@@ -46,7 +47,8 @@ export function createExpense(input: {
   description: string;
   paymentMethod: string;
   reference?: string;
-  bankAccountId?: string;
+    bankAccountId?: string;
+    paymentSourceId?: string;
   categoryId?: string;
 }) {
   return apiFetch<{ id: string; number: string; reference: string | null }>(
@@ -67,6 +69,7 @@ export function updateExpense(
     paymentMethod?: string;
     reference?: string | null;
     bankAccountId?: string | null;
+    paymentSourceId?: string | null;
     categoryId?: string | null;
   },
 ) {
@@ -75,6 +78,21 @@ export function updateExpense(
     body: JSON.stringify(input),
   });
 }
+
+export interface ExpensePaymentSource {
+  id: string;
+  name: string;
+  lastFour: string | null;
+}
+
+export const listExpensePaymentSources = () =>
+  apiFetch<ExpensePaymentSource[]>("/api/v1/expense-payment-sources");
+export const createExpensePaymentSource = (body: { name: string; lastFour?: string }) =>
+  apiFetch<ExpensePaymentSource>("/api/v1/expense-payment-sources", { method: "POST", body: JSON.stringify(body) });
+export const updateExpensePaymentSource = (id: string, body: { name: string; lastFour?: string }) =>
+  apiFetch<ExpensePaymentSource>(`/api/v1/expense-payment-sources/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const deleteExpensePaymentSource = (id: string) =>
+  apiFetch(`/api/v1/expense-payment-sources/${id}`, { method: "DELETE" });
 
 export function deleteExpense(id: string) {
   return apiFetch(`/api/v1/expenses/${id}`, { method: "DELETE" });

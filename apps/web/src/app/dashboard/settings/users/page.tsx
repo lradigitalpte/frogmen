@@ -2,6 +2,7 @@
 
 import { AppPage } from "@/components/layout/page";
 import { useToast } from "@/components/providers/toast-provider";
+import { copyText } from "@/lib/clipboard";
 import {
   cancelInvitation,
   inviteMember,
@@ -102,10 +103,6 @@ function memberInitials(member: OrganizationMember) {
 }
 
 type InviteMode = "email" | "create";
-
-async function copyText(value: string) {
-  await navigator.clipboard.writeText(value);
-}
 
 export default function UsersSettingsPage() {
   const { showError, showSuccess } = useToast();

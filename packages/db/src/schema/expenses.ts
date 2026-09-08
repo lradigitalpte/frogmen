@@ -37,6 +37,30 @@ export const expenseCategories = pgTable(
   ],
 );
 
+export const expensePaymentSources = pgTable(
+  "expense_payment_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    lastFour: varchar("last_four", { length: 4 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("expense_payment_sources_org_name_idx")
+      .on(table.organizationId, sql`lower(${table.name})`)
+      .where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
 export const expenses = pgTable(
   "expenses",
   {
@@ -61,6 +85,10 @@ export const expenses = pgTable(
     amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
     expenseDate: date("expense_date").notNull(),
     paymentMethod: varchar("payment_method", { length: 40 }).notNull(),
+    paymentSourceId: uuid("payment_source_id").references(
+      () => expensePaymentSources.id,
+      { onDelete: "set null" },
+    ),
     bankAccountId: uuid("bank_account_id").references(() => bankAccounts.id, {
       onDelete: "set null",
     }),
@@ -82,4 +110,5 @@ export const expenses = pgTable(
 );
 
 export type ExpenseCategory = typeof expenseCategories.$inferSelect;
+export type ExpensePaymentSource = typeof expensePaymentSources.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;

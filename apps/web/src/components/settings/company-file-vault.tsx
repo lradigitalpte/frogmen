@@ -5,6 +5,7 @@ import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { copyText } from "@/lib/clipboard";
 import {
   createFolder,
   deleteFile,
@@ -250,7 +251,7 @@ export function CompanyFileVault() {
   const handleCopyUrl = async (file: VaultFile) => {
     try {
       const downloadUrl = file.url || (await getVaultFileDownloadUrl(file.id));
-      await navigator.clipboard.writeText(downloadUrl);
+      await copyText(downloadUrl);
       showSuccess("Cloud S3 link copied to clipboard");
     } catch (err: any) {
       showError(err.message || "Failed to copy link");
