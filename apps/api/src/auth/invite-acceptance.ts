@@ -50,13 +50,18 @@ export async function assignInvitationBranches(
     return;
   }
 
-  await db.insert(branchMembers).values(
-    branchRows.map((row, index) => ({
-      memberId,
-      branchId: row.branchId,
-      isPrimary: index === 0,
-    })),
-  );
+  await db
+    .insert(branchMembers)
+    .values(
+      branchRows.map((row, index) => ({
+        memberId,
+        branchId: row.branchId,
+        isPrimary: index === 0,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [branchMembers.branchId, branchMembers.memberId],
+    });
 }
 
 export async function acceptInvitationForUser(
@@ -114,13 +119,18 @@ export async function acceptInvitationForUser(
       .where(eq(invitationBranches.invitationId, invitation.id));
 
     if (branchRows.length > 0) {
-      await transaction.insert(branchMembers).values(
-        branchRows.map((row, index) => ({
-          memberId,
-          branchId: row.branchId,
-          isPrimary: index === 0,
-        })),
-      );
+      await transaction
+        .insert(branchMembers)
+        .values(
+          branchRows.map((row, index) => ({
+            memberId,
+            branchId: row.branchId,
+            isPrimary: index === 0,
+          })),
+        )
+        .onConflictDoNothing({
+          target: [branchMembers.branchId, branchMembers.memberId],
+        });
     }
   });
 

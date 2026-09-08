@@ -61,13 +61,18 @@ export async function provisionOrganizationUser(
     });
 
     if (input.branchIds.length > 0) {
-      await transaction.insert(branchMembers).values(
-        input.branchIds.map((branchId, index) => ({
-          memberId,
-          branchId,
-          isPrimary: index === 0,
-        })),
-      );
+      await transaction
+        .insert(branchMembers)
+        .values(
+          input.branchIds.map((branchId, index) => ({
+            memberId,
+            branchId,
+            isPrimary: index === 0,
+          })),
+        )
+        .onConflictDoNothing({
+          target: [branchMembers.branchId, branchMembers.memberId],
+        });
     }
   });
 
