@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAccessControl, organization } from "better-auth/plugins";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { eq, asc } from "drizzle-orm";
