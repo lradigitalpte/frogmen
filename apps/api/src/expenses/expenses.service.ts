@@ -205,7 +205,6 @@ export class ExpensesService {
         expenseDate: input.expenseDate,
         description,
         paymentMethod: input.paymentMethod,
-        paymentSourceId: input.paymentSourceId ?? null,
         reference: number,
         bankAccountId: input.bankAccountId,
       },
@@ -223,6 +222,7 @@ export class ExpensesService {
         amount: String(amount),
         expenseDate: input.expenseDate,
         paymentMethod: input.paymentMethod,
+        paymentSourceId: input.paymentSourceId ?? null,
         bankAccountId: input.bankAccountId ?? null,
         createdBy: userId ?? null,
       })
