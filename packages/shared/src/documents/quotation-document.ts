@@ -317,6 +317,8 @@ tr{page-break-inside:avoid;break-inside:avoid}
 .notes{min-height:76px;padding:8px 10px;border:1px solid #b9c5d8;white-space:pre-wrap;background:#fbfcfe;page-break-inside:avoid;break-inside:avoid}
 .notes strong{display:block;color:#17275b;margin-bottom:6px}
 .notes[style]{min-height:0}
+.terms{margin-top:14px;padding:10px 12px;border:1px solid #b9c5d8;background:#fbfcfe;white-space:pre-wrap;page-break-inside:avoid;break-inside:avoid}
+.terms strong{display:block;color:#17275b;margin-bottom:6px}
 .totals{width:100%;border:1px solid #d3dbe7;page-break-inside:avoid;break-inside:avoid}
 .row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;gap:14px;border-bottom:1px solid #edf1f6}
 .row:last-child{border-bottom:0}
