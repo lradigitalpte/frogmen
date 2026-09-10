@@ -533,7 +533,7 @@ export class QuotationsService {
         input.productId,
         input.productUnitId,
       );
-    } else {
+    } else if (product.type === "goods" && product.isStorable) {
       await this.validateBulkStockAvailability(
         organizationId,
         input.productId,
@@ -745,7 +745,11 @@ export class QuotationsService {
         );
       }
 
-      if (!product.trackSerial) {
+      if (
+        !product.trackSerial &&
+        product.type === "goods" &&
+        product.isStorable
+      ) {
         await this.validateBulkStockAvailability(
           organizationId,
           line.productId,

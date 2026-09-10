@@ -14,5 +14,7 @@ export interface ConfiguredLineItem {
   /** Fixed currency discount; when > 0 it takes priority over discountPercent. */
   discountAmount?: number;
   taxRatePercent: number;
-  availableQuantity?: number;
+  availableQuantity?: number | null;
+  isStorable?: boolean;
+  productType?: string;
 }

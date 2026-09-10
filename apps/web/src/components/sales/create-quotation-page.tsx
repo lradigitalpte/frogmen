@@ -332,6 +332,13 @@ export function CreateQuotationPage() {
     setInStockUnits([]);
     setSelectedProductStock(null);
     setQuantityWarning(null);
+
+    const isInventoryTracked = product.type === "goods" && product.isStorable;
+    if (!isInventoryTracked) {
+      setStockLoading(false);
+      return;
+    }
+
     setStockLoading(true);
 
     try {
@@ -355,9 +362,18 @@ export function CreateQuotationPage() {
     }
   }
 
+  const isSelectedProductInventoryTracked = useMemo(() => {
+    if (!selectedProduct) return false;
+    return selectedProduct.type === "goods" && selectedProduct.isStorable;
+  }, [selectedProduct]);
+
   const selectedAvailableQuantity = useMemo(() => {
     if (!selectedProduct) {
       return 0;
+    }
+
+    if (!isSelectedProductInventoryTracked) {
+      return null;
     }
 
     if (selectedProduct.trackSerial) {
@@ -365,25 +381,33 @@ export function CreateQuotationPage() {
     }
 
     return sumStockQuantity(selectedProductStock);
-  }, [selectedProduct, selectedProductStock, inStockUnits.length]);
+  }, [selectedProduct, isSelectedProductInventoryTracked, selectedProductStock, inStockUnits.length]);
 
   const remainingForSelectedProduct = useMemo(() => {
     if (!selectedProduct) {
       return 0;
     }
 
+    if (!isSelectedProductInventoryTracked) {
+      return null;
+    }
+
     return getMaxAllowedQuantity(
-      selectedAvailableQuantity,
+      selectedAvailableQuantity ?? 0,
       lines,
       selectedProduct.id,
     );
-  }, [selectedProduct, selectedAvailableQuantity, lines]);
+  }, [selectedProduct, isSelectedProductInventoryTracked, selectedAvailableQuantity, lines]);
 
   // Add Product with Serial Number to Line Items
   async function handleAddSelectedProduct() {
     if (!selectedProduct) return;
 
-    if (remainingForSelectedProduct <= 0) {
+    if (
+      isSelectedProductInventoryTracked &&
+      remainingForSelectedProduct !== null &&
+      remainingForSelectedProduct <= 0
+    ) {
       setQuantityWarning("No stock available for this product.");
       return;
     }
@@ -429,7 +453,11 @@ export function CreateQuotationPage() {
           ? parseFloat(globalDiscountValue) || 0
           : 0,
       taxRatePercent: parseFloat(globalVatPercent) || salesPricing.defaultVatRatePercent || 5,
-      availableQuantity: selectedAvailableQuantity,
+      availableQuantity: isSelectedProductInventoryTracked
+        ? selectedAvailableQuantity
+        : null,
+      isStorable: selectedProduct.isStorable,
+      productType: selectedProduct.type,
     };
 
     const [pricedLine] = applyPricingToLines<ConfiguredLineItem>(
@@ -926,15 +954,19 @@ export function CreateQuotationPage() {
                                   <Text as="span" fontWeight="bold">
                                     {product.name}
                                   </Text>
-                                  {product.trackSerial ? (
+                                  {product.type === "service" ? (
+                                    <Badge tone="info">Service</Badge>
+                                  ) : product.trackSerial ? (
                                     <Badge tone="info">Serialized</Badge>
                                   ) : null}
                                 </InlineStack>
                                 <Text as="span" tone="subdued" variant="bodySm">
                                   SKU: {product.sku || "N/A"}
-                                  {product.availableQuantity == null
+                                  {product.type === "service" || !product.isStorable
                                     ? ""
-                                    : ` · Qty on hand: ${product.availableQuantity}`}
+                                    : product.availableQuantity == null
+                                      ? ""
+                                      : ` · Qty on hand: ${product.availableQuantity}`}
                                 </Text>
                               </BlockStack>
                               <InlineStack gap="300" blockAlign="center">
@@ -973,12 +1005,21 @@ export function CreateQuotationPage() {
                         </Badge>
                       </InlineStack>
 
-                      <Text as="p" tone="subdued">
-                        Available: {stockLoading ? "Loading..." : selectedAvailableQuantity}
-                        {!selectedProduct.trackSerial && remainingForSelectedProduct < selectedAvailableQuantity
-                          ? ` (${remainingForSelectedProduct} remaining after lines on this quote)`
-                          : null}
-                      </Text>
+                      {isSelectedProductInventoryTracked ? (
+                        <Text as="p" tone="subdued">
+                          Available: {stockLoading ? "Loading..." : selectedAvailableQuantity}
+                          {!selectedProduct.trackSerial &&
+                          remainingForSelectedProduct !== null &&
+                          selectedAvailableQuantity !== null &&
+                          remainingForSelectedProduct < selectedAvailableQuantity
+                            ? ` (${remainingForSelectedProduct} remaining after lines on this quote)`
+                            : null}
+                        </Text>
+                      ) : (
+                        <Text as="p" tone="subdued">
+                          Service / Non-inventory item (unlimited availability)
+                        </Text>
+                      )}
 
                       {selectedProduct.trackSerial ? (
                         <BlockStack gap="200">
@@ -1008,7 +1049,10 @@ export function CreateQuotationPage() {
                         <Button
                           variant="primary"
                           disabled={
-                            remainingForSelectedProduct <= 0 || exchangeRateLoading
+                            (isSelectedProductInventoryTracked &&
+                              remainingForSelectedProduct !== null &&
+                              remainingForSelectedProduct <= 0) ||
+                            exchangeRateLoading
                           }
                           onClick={() => void handleAddSelectedProduct()}
                         >

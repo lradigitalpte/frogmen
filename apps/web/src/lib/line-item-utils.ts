@@ -67,7 +67,9 @@ export interface PricedLineItem {
   quantity: number;
   baseUnitPrice: number;
   unitPrice: number;
-  availableQuantity?: number;
+  availableQuantity?: number | null;
+  isStorable?: boolean;
+  productType?: string;
 }
 
 export function sumStockQuantity(stock: ProductStock | null | undefined): number {
@@ -107,11 +109,14 @@ export function getMaxAllowedQuantity<
     quantity: number;
   },
 >(
-  availableQuantity: number,
+  availableQuantity: number | null | undefined,
   lines: T[],
   productId: string,
   excludeLineId?: string,
 ): number {
+  if (availableQuantity === null || availableQuantity === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
   const allocated = getAllocatedQuantity(lines, productId, excludeLineId);
   return Math.max(0, availableQuantity - allocated);
 }
@@ -122,7 +127,9 @@ export function clampQuantity<
     productId?: string;
     productUnitId?: string;
     quantity: number;
-    availableQuantity?: number;
+    availableQuantity?: number | null;
+    isStorable?: boolean;
+    productType?: string;
   },
 >(
   requestedQty: number,
@@ -134,6 +141,14 @@ export function clampQuantity<
   }
 
   if (!line.productId) {
+    return Math.max(requestedQty, 0);
+  }
+
+  if (
+    line.availableQuantity === null ||
+    line.isStorable === false ||
+    line.productType === "service"
+  ) {
     return Math.max(requestedQty, 0);
   }
 

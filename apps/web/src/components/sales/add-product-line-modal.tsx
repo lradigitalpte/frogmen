@@ -123,9 +123,14 @@ export function AddProductLineModal({
     [customerIsLocal, priceAdjustmentEnabled, salesPricing],
   );
 
+  const isInventoryTracked = useMemo(() => {
+    if (!selectedProduct) return false;
+    return selectedProduct.type === "goods" && selectedProduct.isStorable;
+  }, [selectedProduct]);
+
   const availableQuantity = useMemo(
-    () => sumStockQuantity(productStock),
-    [productStock],
+    () => (isInventoryTracked ? sumStockQuantity(productStock) : null),
+    [productStock, isInventoryTracked],
   );
 
   const allocationLines = useMemo(
@@ -142,8 +147,8 @@ export function AddProductLineModal({
   );
 
   const remainingQuantity = useMemo(() => {
-    if (!selectedProduct) {
-      return 0;
+    if (!selectedProduct || !isInventoryTracked) {
+      return null;
     }
 
     if (selectedProduct.trackSerial) {
@@ -151,11 +156,11 @@ export function AddProductLineModal({
     }
 
     return getMaxAllowedQuantity(
-      availableQuantity,
+      availableQuantity ?? 0,
       allocationLines,
       selectedProduct.id,
     );
-  }, [selectedProduct, availableQuantity, allocationLines, units.length]);
+  }, [selectedProduct, isInventoryTracked, availableQuantity, allocationLines, units.length]);
 
   const modalTabs = [
     { id: "catalog", content: "1. Select Equipment" },
@@ -248,22 +253,28 @@ export function AddProductLineModal({
     setWarrantyPolicyId(product.defaultWarrantyPolicyId ?? "");
     setTaxRatePercent(String(resolvedDefaultTaxRate));
     setProductStock(null);
-    setStockLoading(true);
     setError(null);
+
+    const isStockTracked = product.type === "goods" && product.isStorable;
 
     try {
       const converted = await convertProductForDocument(product);
       setUnitPrice(applyAdjustedUnitPrice(converted.unitPrice));
 
-      const stock = await getProductStock(product.id);
-      setProductStock(stock);
+      if (isStockTracked) {
+        setStockLoading(true);
+        const stock = await getProductStock(product.id);
+        setProductStock(stock);
 
-      if (product.trackSerial) {
-        const result = await listProductUnits(product.id, {
-          status: "in_stock",
-          perPage: 50,
-        });
-        setUnits(result.data);
+        if (product.trackSerial) {
+          const result = await listProductUnits(product.id, {
+            status: "in_stock",
+            perPage: 50,
+          });
+          setUnits(result.data);
+        } else {
+          setUnits([]);
+        }
       } else {
         setUnits([]);
       }
@@ -371,14 +382,16 @@ export function AddProductLineModal({
       return;
     }
 
-    if (!selectedProduct.trackSerial && lineQty > remainingQuantity) {
-      setError(`Only ${remainingQuantity} unit(s) available in stock.`);
-      return;
-    }
+    if (isInventoryTracked) {
+      if (!selectedProduct.trackSerial && remainingQuantity !== null && lineQty > remainingQuantity) {
+        setError(`Only ${remainingQuantity} unit(s) available in stock.`);
+        return;
+      }
 
-    if (remainingQuantity <= 0) {
-      setError("No stock available for this product.");
-      return;
+      if (remainingQuantity !== null && remainingQuantity <= 0) {
+        setError("No stock available for this product.");
+        return;
+      }
     }
 
     setSaving(true);
@@ -521,18 +534,22 @@ export function AddProductLineModal({
                         <InlineStack align="space-between" blockAlign="center">
                           <BlockStack gap="100">
                             <InlineStack gap="200" blockAlign="center">
-                              <Text as="span" variant="bodyMd" fontWeight="semibold">
+                              <Text as="span" fontWeight="bold">
                                 {product.name}
                               </Text>
-                              {product.trackSerial ? (
+                              {product.type === "service" ? (
+                                <Badge tone="info">Service</Badge>
+                              ) : product.trackSerial ? (
                                 <Badge tone="info">Serial Tracked</Badge>
                               ) : null}
                             </InlineStack>
                             <Text as="span" tone="subdued" variant="bodySm">
                               SKU: {product.sku || "N/A"}
-                              {product.availableQuantity == null
+                              {product.type === "service" || !product.isStorable
                                 ? ""
-                                : ` · Qty on hand: ${product.availableQuantity}`}
+                                : product.availableQuantity == null
+                                  ? ""
+                                  : ` · Qty on hand: ${product.availableQuantity}`}
                             </Text>
                           </BlockStack>
                           <Text as="span" variant="bodyMd" fontWeight="bold">
@@ -648,10 +665,18 @@ export function AddProductLineModal({
 
               {pricingLabel ? <Badge tone="info">{pricingLabel}</Badge> : null}
 
-              <Text as="p" tone="subdued">
-                Available: {stockLoading ? "Loading..." : selectedProduct?.trackSerial ? units.length : availableQuantity}
-                {!selectedProduct?.trackSerial ? ` (${remainingQuantity} remaining on this quote)` : null}
-              </Text>
+              {isInventoryTracked ? (
+                <Text as="p" tone="subdued">
+                  Available: {stockLoading ? "Loading..." : selectedProduct?.trackSerial ? units.length : availableQuantity}
+                  {!selectedProduct?.trackSerial && remainingQuantity !== null
+                    ? ` (${remainingQuantity} remaining on this quote)`
+                    : null}
+                </Text>
+              ) : (
+                <Text as="p" tone="subdued">
+                  Service / Non-inventory item (unlimited availability)
+                </Text>
+              )}
 
               <Card>
                 <BlockStack gap="300">

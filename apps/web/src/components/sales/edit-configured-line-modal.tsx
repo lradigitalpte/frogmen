@@ -121,8 +121,20 @@ export function EditConfiguredLineModal({
     previewLine &&
     Math.abs(previewLine.baseUnitPrice - previewLine.unitPrice) >= 0.005;
 
+  const isLineStockTracked = useMemo(() => {
+    if (!previewLine) return false;
+    if (
+      previewLine.isStorable === false ||
+      previewLine.productType === "service" ||
+      previewLine.availableQuantity === null
+    ) {
+      return false;
+    }
+    return true;
+  }, [previewLine]);
+
   const maxQuantity = useMemo(() => {
-    if (!previewLine) return undefined;
+    if (!previewLine || !isLineStockTracked) return undefined;
     if (previewLine.productUnitId) return 1;
     return (
       getMaxAllowedQuantity(
@@ -132,7 +144,7 @@ export function EditConfiguredLineModal({
         previewLine.id,
       ) || undefined
     );
-  }, [previewLine, allLines]);
+  }, [previewLine, allLines, isLineStockTracked]);
 
   function updateField<K extends keyof ConfiguredLineItem>(
     field: K,
@@ -168,10 +180,12 @@ export function EditConfiguredLineModal({
       taxRatePercent: Number(draft.taxRatePercent) || 0,
     };
 
-    const clamped = clampQuantity(next.quantity, allLines, next);
-    if (clamped !== next.quantity) {
-      setError(`Only ${clamped} unit(s) available for this product.`);
-      next.quantity = clamped;
+    if (isLineStockTracked) {
+      const clamped = clampQuantity(next.quantity, allLines, next);
+      if (clamped !== next.quantity) {
+        setError(`Only ${clamped} unit(s) available for this product.`);
+        next.quantity = clamped;
+      }
     }
 
     onSave(next);

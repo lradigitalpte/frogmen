@@ -61,7 +61,9 @@ interface ConfiguredInvoiceLine {
   unitPrice: number;
   discountPercent: number;
   taxRatePercent: number;
-  availableQuantity?: number;
+  availableQuantity?: number | null;
+  isStorable?: boolean;
+  productType?: string;
 }
 
 export function CreateInvoicePage() {
@@ -295,6 +297,13 @@ export function CreateInvoicePage() {
     setSelectedUnitId("");
     setInStockUnits([]);
     setSelectedProductStock(null);
+
+    const isInventoryTracked = product.type === "goods" && product.isStorable;
+    if (!isInventoryTracked) {
+      setStockLoading(false);
+      return;
+    }
+
     setStockLoading(true);
 
     try {
@@ -318,20 +327,27 @@ export function CreateInvoicePage() {
     }
   }
 
+  const isSelectedProductInventoryTracked = useMemo(() => {
+    if (!selectedProduct) return false;
+    return selectedProduct.type === "goods" && selectedProduct.isStorable;
+  }, [selectedProduct]);
+
   const selectedAvailableQuantity = useMemo(() => {
     if (!selectedProduct) return 0;
+    if (!isSelectedProductInventoryTracked) return null;
     if (selectedProduct.trackSerial) return inStockUnits.length;
     return sumStockQuantity(selectedProductStock);
-  }, [selectedProduct, selectedProductStock, inStockUnits.length]);
+  }, [selectedProduct, isSelectedProductInventoryTracked, selectedProductStock, inStockUnits.length]);
 
   const remainingForSelectedProduct = useMemo(() => {
     if (!selectedProduct) return 0;
+    if (!isSelectedProductInventoryTracked) return null;
     return getMaxAllowedQuantity(
-      selectedAvailableQuantity,
+      selectedAvailableQuantity ?? 0,
       lines,
       selectedProduct.id,
     );
-  }, [selectedProduct, selectedAvailableQuantity, lines]);
+  }, [selectedProduct, isSelectedProductInventoryTracked, selectedAvailableQuantity, lines]);
 
   async function handleAddSelectedProduct() {
     if (!selectedProduct || !documentCurrencyId) return;
@@ -346,7 +362,11 @@ export function CreateInvoicePage() {
       return;
     }
 
-    if (remainingForSelectedProduct <= 0) {
+    if (
+      isSelectedProductInventoryTracked &&
+      remainingForSelectedProduct !== null &&
+      remainingForSelectedProduct <= 0
+    ) {
       setQuantityWarning("No stock available for this product.");
       return;
     }
@@ -366,7 +386,11 @@ export function CreateInvoicePage() {
         unitPrice,
         discountPercent: 0,
         taxRatePercent: salesPricing.defaultVatRatePercent ?? 5,
-        availableQuantity: selectedAvailableQuantity,
+        availableQuantity: isSelectedProductInventoryTracked
+          ? selectedAvailableQuantity
+          : null,
+        isStorable: selectedProduct.isStorable,
+        productType: selectedProduct.type,
       };
 
       const [pricedLine] = applyPricingToLines<ConfiguredInvoiceLine>(
@@ -1037,15 +1061,19 @@ export function CreateInvoicePage() {
                                   <Text as="span" fontWeight="bold">
                                     {product.name}
                                   </Text>
-                                  {product.trackSerial ? (
+                                  {product.type === "service" ? (
+                                    <Badge tone="info">Service</Badge>
+                                  ) : product.trackSerial ? (
                                     <Badge tone="info">Serialized</Badge>
                                   ) : null}
                                 </InlineStack>
                                 <Text as="span" tone="subdued" variant="bodySm">
                                   SKU: {product.sku || "N/A"}
-                                  {product.availableQuantity == null
+                                  {product.type === "service" || !product.isStorable
                                     ? ""
-                                    : ` · Qty on hand: ${product.availableQuantity}`}
+                                    : product.availableQuantity == null
+                                      ? ""
+                                      : ` · Qty on hand: ${product.availableQuantity}`}
                                 </Text>
                               </BlockStack>
                               <InlineStack gap="300" blockAlign="center">
@@ -1084,12 +1112,21 @@ export function CreateInvoicePage() {
                         </Badge>
                       </InlineStack>
 
-                      <Text as="p" tone="subdued">
-                        Available: {stockLoading ? "Loading..." : selectedAvailableQuantity}
-                        {!selectedProduct.trackSerial && remainingForSelectedProduct < selectedAvailableQuantity
-                          ? ` (${remainingForSelectedProduct} remaining on this invoice)`
-                          : null}
-                      </Text>
+                      {isSelectedProductInventoryTracked ? (
+                        <Text as="p" tone="subdued">
+                          Available: {stockLoading ? "Loading..." : selectedAvailableQuantity}
+                          {!selectedProduct.trackSerial &&
+                          remainingForSelectedProduct !== null &&
+                          selectedAvailableQuantity !== null &&
+                          remainingForSelectedProduct < selectedAvailableQuantity
+                            ? ` (${remainingForSelectedProduct} remaining on this invoice)`
+                            : null}
+                        </Text>
+                      ) : (
+                        <Text as="p" tone="subdued">
+                          Service / Non-inventory item (unlimited availability)
+                        </Text>
+                      )}
 
                       {selectedProduct.trackSerial ? (
                         <BlockStack gap="200">
@@ -1119,7 +1156,9 @@ export function CreateInvoicePage() {
                         <Button
                           variant="primary"
                           disabled={
-                            remainingForSelectedProduct <= 0 ||
+                            (isSelectedProductInventoryTracked &&
+                              remainingForSelectedProduct !== null &&
+                              remainingForSelectedProduct <= 0) ||
                             currencyLoading ||
                             exchangeRateLoading
                           }
@@ -1191,12 +1230,16 @@ export function CreateInvoicePage() {
                                     max={
                                       line.productUnitId || !line.productId
                                         ? 1
-                                        : getMaxAllowedQuantity(
-                                            line.availableQuantity ?? 0,
-                                            lines,
-                                            line.productId,
-                                            line.id,
-                                          ) || undefined
+                                        : line.isStorable === false ||
+                                            line.productType === "service" ||
+                                            line.availableQuantity === null
+                                          ? undefined
+                                          : getMaxAllowedQuantity(
+                                              line.availableQuantity ?? 0,
+                                              lines,
+                                              line.productId,
+                                              line.id,
+                                            ) || undefined
                                     }
                                     value={line.quantity}
                                     disabled={Boolean(line.productUnitId)}
