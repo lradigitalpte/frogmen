@@ -61,6 +61,8 @@ export interface QuotationDocumentData {
   signedOn?: string | null;
   signatureImage?: string | null;
   signedIp?: string | null;
+  isPaid?: boolean;
+  paidOn?: string | null;
 }
 
 export interface OrganizationBranding {
@@ -156,6 +158,21 @@ export function renderQuotationDocumentHtml(
   const isCreditNote = quotation.documentType === "credit_note";
   const title = isCreditNote ? "Credit Note" : isInvoice ? templates.invoiceTitle : isPurchaseOrder ? "Purchase Order" : templates.quotationTitle;
   const showPaymentDetails = isInvoice;
+  const showPaidStamp = isInvoice && quotation.isPaid === true;
+  const paidStampHtml = showPaidStamp
+    ? `<div class="paid-stamp"><span class="paid-stamp__text">Paid</span>${
+        quotation.paidOn
+          ? `<span class="paid-stamp__date">${escapeHtml(formatDocumentDate(quotation.paidOn))}</span>`
+          : ""
+      }</div>`
+    : "";
+  const paidStampCss = `
+    body{position:relative}
+    .paid-stamp{position:absolute;top:22px;right:30px;width:150px;height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:5px double #15803d;border-radius:10px;color:#15803d;transform:rotate(-16deg);opacity:.82;font-family:Arial,Helvetica,sans-serif;pointer-events:none;z-index:20;mix-blend-mode:multiply}
+    .paid-stamp__text{font-size:32px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;line-height:1}
+    .paid-stamp__date{margin-top:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em}
+    @media print{.paid-stamp{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  `;
   const country = formatCountryLabel(profile.country);
   const addressLine = [profile.address, profile.city, country]
     .filter(Boolean)
@@ -330,7 +347,9 @@ tr{page-break-inside:avoid;break-inside:avoid}
 .grand span:last-child{font-size:14.5px}
 .footer{margin-top:16px;color:#687386;font-size:9.5px;text-align:center;page-break-inside:avoid;break-inside:avoid}
 @media print{body{padding:4px 2px}}
+${paidStampCss}
 </style></head><body>
+${paidStampHtml}
 <div class="top"><div>${officialLogo}</div>
 <div><h1 class="doc-title">${escapeHtml(title)}</h1><div class="meta">
 <span>${isCreditNote ? "Credit Note No." : isInvoice ? "Tax Inv No." : isPurchaseOrder ? "PO No." : "Quotation No."}</span><b>${escapeHtml(quotation.number)}</b>
@@ -403,8 +422,8 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   <title>${escapeHtml(title)} ${escapeHtml(quotation.number)}</title>
   <style>
     * { box-sizing: border-box; }
-    :root { --accent: #3568a9; --accent-dark: #172552; --soft: #f3f6fa; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #111827; margin: 0; padding: 32px; font-size: 13px; border-top: 7px solid var(--accent-dark); }
+    :root { --accent: #3568a9; --accent-dark: #172552; --soft: #f3f6fa; color-scheme: light; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; margin: 0; padding: 32px; font-size: 13px; background: #fff; border-top: 7px solid var(--accent-dark); }
     body.style-modern_navy { --accent: #159a8c; --accent-dark: #102a43; --soft: #edf8f6; border-top-width: 12px; }
     body.style-clean_minimal { --accent: #111827; --accent-dark: #111827; --soft: #fff; border-top-width: 2px; }
     .header { display: flex; justify-content: space-between; gap: 24px; align-items: center; margin-bottom: 24px; }
@@ -437,9 +456,11 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     .total-strong { font-size: 16px; font-weight: 800; color: var(--accent); }
     .terms { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e5e7eb; white-space: pre-wrap; page-break-inside: avoid; break-inside: avoid; }
     .footer { margin-top: 14px; color: #6b7280; font-size: 11px; page-break-inside: avoid; break-inside: avoid; }
+    ${paidStampCss}
   </style>
 </head>
 <body class="${styleClass}">
+  ${paidStampHtml}
   <div class="header">
     <div class="brand">
       ${logoHtml}

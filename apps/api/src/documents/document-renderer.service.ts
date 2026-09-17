@@ -293,6 +293,8 @@ export class DocumentRendererService {
         taxRatePercent: row.line.taxRatePercent,
         priceSubtotal: row.line.priceSubtotal,
       })),
+      isPaid: header.invoice.paymentState === "paid",
+      paidOn: header.invoice.paidAt ? header.invoice.paidAt.toISOString() : null,
     };
   }
 
