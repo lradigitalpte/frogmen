@@ -160,17 +160,17 @@ export function renderQuotationDocumentHtml(
   const showPaymentDetails = isInvoice;
   const showPaidStamp = isInvoice && quotation.isPaid === true;
   const paidStampHtml = showPaidStamp
-    ? `<div class="paid-stamp"><span class="paid-stamp__text">Paid</span>${
+    ? `<div class="paid-stamp-row"><div class="paid-stamp"><span class="paid-stamp__text">Paid</span>${
         quotation.paidOn
           ? `<span class="paid-stamp__date">${escapeHtml(formatDocumentDate(quotation.paidOn))}</span>`
           : ""
-      }</div>`
+      }</div></div>`
     : "";
   const paidStampCss = `
-    body{position:relative}
-    .paid-stamp{position:absolute;top:22px;right:30px;width:150px;height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:5px double #15803d;border-radius:10px;color:#15803d;transform:rotate(-16deg);opacity:.82;font-family:Arial,Helvetica,sans-serif;pointer-events:none;z-index:20;mix-blend-mode:multiply}
-    .paid-stamp__text{font-size:32px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;line-height:1}
-    .paid-stamp__date{margin-top:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em}
+    .paid-stamp-row{text-align:right;margin-top:12px}
+    .paid-stamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:130px;padding:10px 0;border:4px double #15803d;border-radius:10px;color:#15803d;transform:rotate(-10deg);opacity:.85;font-family:Arial,Helvetica,sans-serif}
+    .paid-stamp__text{font-size:26px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;line-height:1}
+    .paid-stamp__date{margin-top:5px;font-size:10px;font-weight:700;letter-spacing:.06em}
     @media print{.paid-stamp{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   `;
   const country = formatCountryLabel(profile.country);
@@ -349,7 +349,6 @@ tr{page-break-inside:avoid;break-inside:avoid}
 @media print{body{padding:4px 2px}}
 ${paidStampCss}
 </style></head><body>
-${paidStampHtml}
 <div class="top"><div>${officialLogo}</div>
 <div><h1 class="doc-title">${escapeHtml(title)}</h1><div class="meta">
 <span>${isCreditNote ? "Credit Note No." : isInvoice ? "Tax Inv No." : isPurchaseOrder ? "PO No." : "Quotation No."}</span><b>${escapeHtml(quotation.number)}</b>
@@ -370,6 +369,7 @@ ${otherChargesRow}
 ${hasVat ? `<div class="row"><span>${escapeHtml(vatLabel)}</span><span>${money(quotation.amountTax)}</span></div>` : ""}
 <div class="row grand"><span>${officialGrandLabel}</span><span>${money(quotation.amountTotal)}</span></div>
 </div></div>
+${paidStampHtml}
 ${paymentDetailsHtml}
 ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}</p>` : ""}</body></html>`;
   }
@@ -460,7 +460,6 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   </style>
 </head>
 <body class="${styleClass}">
-  ${paidStampHtml}
   <div class="header">
     <div class="brand">
       ${logoHtml}
@@ -522,6 +521,7 @@ ${additionalChargeRows}${otherChargesRow}
     ${stdHasVat ? `<div class="totals-row"><span class="muted">${escapeHtml(vatLabel)}</span><span>+${formatDocumentMoney(quotation.amountTax, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>` : ""}
     <div class="totals-row"><span><strong>${stdHasVat ? "Total Amount (Including VAT)" : "Total Amount"}</strong></span><span class="total-strong">${formatDocumentMoney(quotation.amountTotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>
   </div>
+  ${paidStampHtml}
 
   ${quotation.notes ? `<div class="terms"><strong>Notes</strong>\n${escapeHtml(quotation.notes)}</div>` : ""}
   ${!quotation.notes && templates.defaultPaymentTerms ? `<div class="terms"><strong>Payment terms</strong>\n${escapeHtml(templates.defaultPaymentTerms)}</div>` : ""}
