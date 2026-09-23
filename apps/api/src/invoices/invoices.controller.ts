@@ -5,6 +5,7 @@ import {
   Get,
   Header,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -20,6 +21,7 @@ import {
   type CreateInvoiceInput,
   type ListInvoicesQuery,
   type RegisterPaymentInput,
+  type UpdateInvoiceDetailsInput,
 } from "./invoices.service";
 import { AccountingService } from "../accounting/accounting.service";
 import type { Response } from "express";
@@ -84,6 +86,20 @@ export class InvoicesController {
   ) {
     return this.invoicesService.create(
       this.orgId(session),
+      session.user.id,
+      body,
+    );
+  }
+
+  @Patch(":id")
+  updateDetails(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: UpdateInvoiceDetailsInput,
+  ) {
+    return this.invoicesService.updateDetails(
+      this.orgId(session),
+      id,
       session.user.id,
       body,
     );

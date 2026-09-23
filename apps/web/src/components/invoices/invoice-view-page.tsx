@@ -31,6 +31,7 @@ import { SendDocumentEmailModal } from "@/components/documents/send-document-ema
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { RegisterPaymentModal } from "@/components/invoices/register-payment-modal";
 import { DeliveryNoteReviewModal } from "@/components/invoices/delivery-note-review-modal";
+import { EditInvoiceDetailsModal } from "@/components/invoices/edit-invoice-details-modal";
 import {
   confirmInvoice,
   cancelInvoice,
@@ -90,6 +91,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   // PDF Preview Modal State
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [deliveryNoteOpen, setDeliveryNoteOpen] = useState(false);
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
   const [journalLines, setJournalLines] = useState<
     Awaited<ReturnType<typeof getInvoiceJournal>>["lines"]
   >([]);
@@ -428,6 +430,11 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
               >
                 Pay
               </Button>
+              {!isCancelled ? (
+                <Button size="slim" onClick={() => setEditDetailsOpen(true)}>
+                  Edit details
+                </Button>
+              ) : null}
               <Button
                 size="slim"
                 disabled={isCancelled}
@@ -512,6 +519,17 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                 </BlockStack>
               </Grid.Cell>
 
+              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                <BlockStack gap="050">
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    Customer PO Reference
+                  </Text>
+                  <Text as="span" fontWeight="semibold">
+                    {invoice.customerReference || "—"}
+                  </Text>
+                </BlockStack>
+              </Grid.Cell>
+
               <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
                 <BlockStack gap="050">
                   <Text as="span" tone="subdued" variant="bodySm">
@@ -530,6 +548,17 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                   </Text>
                   <Text as="span" fontWeight="semibold">
                     {invoice.paymentTerm}
+                  </Text>
+                </BlockStack>
+              </Grid.Cell>
+
+              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
+                <BlockStack gap="050">
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    Due Date
+                  </Text>
+                  <Text as="span" fontWeight="semibold">
+                    {invoice.dueDate || "—"}
                   </Text>
                 </BlockStack>
               </Grid.Cell>
@@ -731,14 +760,92 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
 
             {/* ── TAB 2: OTHER INFORMATION ── */}
             {selectedTab === 2 ? (
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingSm">Document references</Text>
-                <Text as="p" tone="subdued">
-                  Customer PO reference: {invoice.customerReference || "Not provided"}
-                </Text>
-                <Text as="p" tone="subdued">
-                  Payment reference: {invoice.number}
-                </Text>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h3" variant="headingSm">Document references</Text>
+                  {!isCancelled ? (
+                    <Button size="slim" onClick={() => setEditDetailsOpen(true)}>
+                      Edit references & notes
+                    </Button>
+                  ) : null}
+                </InlineStack>
+                <Grid>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                    <BlockStack gap="100">
+                      <Text as="span" tone="subdued" variant="bodySm">Customer PO Reference</Text>
+                      <Text as="span" fontWeight="semibold">
+                        {invoice.customerReference || "Not provided"}
+                      </Text>
+                    </BlockStack>
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                    <BlockStack gap="100">
+                      <Text as="span" tone="subdued" variant="bodySm">Internal Reference</Text>
+                      <Text as="span" fontWeight="semibold">
+                        {invoice.internalReference || "Not provided"}
+                      </Text>
+                    </BlockStack>
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                    <BlockStack gap="100">
+                      <Text as="span" tone="subdued" variant="bodySm">Payment Reference</Text>
+                      <Text as="span" fontWeight="semibold">
+                        {invoice.number}
+                      </Text>
+                    </BlockStack>
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                    <BlockStack gap="100">
+                      <Text as="span" tone="subdued" variant="bodySm">Payment Due Date</Text>
+                      <Text as="span" fontWeight="semibold">
+                        {invoice.dueDate || "Immediate / Not set"}
+                      </Text>
+                    </BlockStack>
+                  </Grid.Cell>
+                </Grid>
+
+                {invoice.activities && invoice.activities.length > 0 ? (
+                  <>
+                    <Divider />
+                    <BlockStack gap="200">
+                      <Text as="h3" variant="headingSm">Activity & Audit Trail</Text>
+                      <div className="frogmen-recent-table-wrapper">
+                        <table className="frogmen-recent-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: "25%" }}>Date & Time</th>
+                              <th style={{ width: "20%" }}>Action</th>
+                              <th style={{ width: "55%" }}>Details / Reason</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {invoice.activities.map((act) => (
+                              <tr key={act.id}>
+                                <td style={{ color: "var(--p-color-text-subdued)" }}>
+                                  {new Date(act.createdAt).toLocaleString()}
+                                </td>
+                                <td>
+                                  <Badge
+                                    tone={
+                                      act.activityType === "created"
+                                        ? "info"
+                                        : act.activityType === "paid"
+                                          ? "success"
+                                          : "attention"
+                                    }
+                                  >
+                                    {act.activityType.toUpperCase()}
+                                  </Badge>
+                                </td>
+                                <td>{act.message}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </BlockStack>
+                  </>
+                ) : null}
               </BlockStack>
             ) : null}
 
@@ -951,6 +1058,16 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
         invoiceNumber={invoice.number}
         open={deliveryNoteOpen}
         onClose={() => setDeliveryNoteOpen(false)}
+      />
+
+      <EditInvoiceDetailsModal
+        invoice={invoice}
+        open={editDetailsOpen}
+        onClose={() => setEditDetailsOpen(false)}
+        onSuccess={(updated) => {
+          setInvoice(updated);
+          setSuccessBanner(`Invoice ${updated.number} details updated successfully.`);
+        }}
       />
     </AppPage>
   );

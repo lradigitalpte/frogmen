@@ -18,6 +18,14 @@ export interface InvoiceLine {
   lineTotal: number;
 }
 
+export interface InvoiceActivity {
+  id: string;
+  activityType: string;
+  message: string;
+  userId?: string | null;
+  createdAt: string;
+}
+
 export interface Invoice {
   id: string;
   branchId: string;
@@ -27,6 +35,7 @@ export interface Invoice {
   customerName: string;
   customerEmail: string;
   customerReference?: string;
+  internalReference?: string | null;
   invoiceDate: string;
   dueDate: string;
   paymentTerm: string;
@@ -54,6 +63,7 @@ export interface Invoice {
   } | null;
   notes?: string;
   lines: InvoiceLine[];
+  activities?: InvoiceActivity[];
   createdAt: string;
 }
 
@@ -207,6 +217,25 @@ export function listCreditNotes() {
 export function createInvoice(input: CreateInvoiceInput) {
   return apiFetch<Invoice>("/api/v1/invoices", {
     method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export interface UpdateInvoiceDetailsInput {
+  customerReference?: string | null;
+  internalReference?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  syncSalesOrder?: boolean;
+  reason: string;
+}
+
+export function updateInvoiceDetails(
+  id: string,
+  input: UpdateInvoiceDetailsInput,
+) {
+  return apiFetch<Invoice>(`/api/v1/invoices/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(input),
   });
 }

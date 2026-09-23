@@ -104,6 +104,15 @@ export interface RegisterPaymentInput {
   bankAccountId?: string;
 }
 
+export interface UpdateInvoiceDetailsInput {
+  customerReference?: string | null;
+  internalReference?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  syncSalesOrder?: boolean;
+  reason: string;
+}
+
 @Injectable()
 export class InvoicesService {
   constructor(
@@ -253,6 +262,19 @@ export class InvoicesService {
     const [creditNote] = await this.db.select().from(creditNotes)
       .where(and(eq(creditNotes.organizationId, organizationId), eq(creditNotes.invoiceId, id)))
       .orderBy(desc(creditNotes.createdAt)).limit(1);
+
+    const activities = await this.db
+      .select()
+      .from(salesActivities)
+      .where(
+        and(
+          eq(salesActivities.organizationId, organizationId),
+          eq(salesActivities.entityType, "invoice"),
+          eq(salesActivities.entityId, id),
+        ),
+      )
+      .orderBy(desc(salesActivities.createdAt));
+
     const detail = this.mapInvoiceDetail({
       ...header.invoice,
       customerName: header.customerName,
@@ -267,6 +289,13 @@ export class InvoicesService {
     });
     return {
       ...detail,
+      activities: activities.map((a) => ({
+        id: a.id,
+        activityType: a.activityType,
+        message: a.message,
+        userId: a.userId,
+        createdAt: a.createdAt.toISOString(),
+      })),
       creditNote: creditNote
         ? {
             id: creditNote.id, number: creditNote.number, reason: creditNote.reason,
@@ -349,6 +378,103 @@ export class InvoicesService {
     );
 
     return this.getById(organizationId, invoice.id);
+  }
+
+  async updateDetails(
+    organizationId: string,
+    invoiceId: string,
+    userId: string | undefined,
+    input: UpdateInvoiceDetailsInput,
+  ) {
+    const reason = input.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException("An edit reason is required to update invoice details.");
+    }
+
+    const invoice = await this.getById(organizationId, invoiceId);
+    if (invoice.status === "cancelled") {
+      throw new BadRequestException("Cancelled invoices cannot be edited.");
+    }
+
+    const changes: string[] = [];
+    if (input.customerReference !== undefined) {
+      const prevRef = invoice.customerReference || "none";
+      const newRef = input.customerReference?.trim() || "none";
+      if (prevRef !== newRef) {
+        changes.push(`Customer PO reference changed from "${prevRef}" to "${newRef}"`);
+      }
+    }
+
+    if (input.internalReference !== undefined) {
+      const prevInt = invoice.internalReference || "none";
+      const newInt = input.internalReference?.trim() || "none";
+      if (prevInt !== newInt) {
+        changes.push(`Internal reference changed from "${prevInt}" to "${newInt}"`);
+      }
+    }
+
+    if (input.dueDate !== undefined) {
+      const prevDue = invoice.dueDate || "none";
+      const newDue = input.dueDate?.trim() || "none";
+      if (prevDue !== newDue) {
+        changes.push(`Due date changed from "${prevDue}" to "${newDue}"`);
+      }
+    }
+
+    if (input.notes !== undefined && input.notes !== invoice.notes) {
+      changes.push("Notes / terms updated");
+    }
+
+    const updateSet: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+    if (input.customerReference !== undefined) {
+      updateSet.customerReference = input.customerReference?.trim() || null;
+    }
+    if (input.internalReference !== undefined) {
+      updateSet.internalReference = input.internalReference?.trim() || null;
+    }
+    if (input.dueDate !== undefined) {
+      updateSet.dueDate = input.dueDate?.trim() || null;
+    }
+    if (input.notes !== undefined) {
+      updateSet.notes = input.notes || null;
+    }
+
+    await this.db
+      .update(invoices)
+      .set(updateSet)
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, organizationId)));
+
+    if (
+      input.syncSalesOrder !== false &&
+      invoice.salesOrderId &&
+      input.customerReference !== undefined
+    ) {
+      await this.db
+        .update(salesOrders)
+        .set({
+          customerReference: input.customerReference?.trim() || null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(salesOrders.id, invoice.salesOrderId),
+            eq(salesOrders.organizationId, organizationId),
+          ),
+        );
+    }
+
+    const changeSummary = changes.length > 0 ? changes.join("; ") : "Details updated";
+    await this.logActivity(
+      organizationId,
+      invoiceId,
+      userId,
+      "updated",
+      `Invoice details updated: ${changeSummary}. Reason: ${reason}`,
+    );
+
+    return this.getById(organizationId, invoiceId);
   }
 
   async confirm(
@@ -1598,6 +1724,7 @@ export class InvoicesService {
       customerName: row.customerName,
       customerEmail: row.customerEmail ?? "",
       customerReference: row.customerReference ?? undefined,
+      internalReference: row.internalReference ?? undefined,
       invoiceDate: row.invoiceDate,
       dueDate: row.dueDate ?? "",
       paymentTerm: row.paymentTermName ?? "—",
