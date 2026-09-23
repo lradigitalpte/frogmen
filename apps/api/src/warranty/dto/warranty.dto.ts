@@ -1,11 +1,16 @@
 export interface ListWarrantiesQuery {
   search?: string;
-  status?: "active" | "expired" | "voided";
+  status?: "pending_delivery" | "active" | "expired" | "voided";
   productId?: string;
   productUnitId?: string;
   expiringSoon?: boolean | string;
   page?: number;
   perPage?: number;
+}
+
+export interface ConfirmWarrantyDeliveryDto {
+  deliveryDate: string;
+  notes?: string;
 }
 
 export interface CreateWarrantyDto {

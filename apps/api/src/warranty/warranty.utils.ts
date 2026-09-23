@@ -13,7 +13,11 @@ export function formatDateOnly(value: Date | string): string {
   return value.toISOString().slice(0, 10);
 }
 
-export function computeDaysLeft(endsAt: string, today = new Date()): number {
+export function computeDaysLeft(
+  endsAt: string | null | undefined,
+  today = new Date(),
+): number {
+  if (!endsAt) return 0;
   const end = new Date(`${endsAt}T00:00:00Z`);
   const now = new Date(
     Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
@@ -23,12 +27,16 @@ export function computeDaysLeft(endsAt: string, today = new Date()): number {
 }
 
 export function resolveWarrantyStatus(
-  endsAt: string,
-  storedStatus: "active" | "expired" | "voided",
+  endsAt: string | null | undefined,
+  storedStatus: "pending_delivery" | "active" | "expired" | "voided",
   today = new Date(),
-): "active" | "expired" | "voided" {
+): "pending_delivery" | "active" | "expired" | "voided" {
   if (storedStatus === "voided") {
     return "voided";
+  }
+
+  if (storedStatus === "pending_delivery" || !endsAt) {
+    return "pending_delivery";
   }
 
   return computeDaysLeft(endsAt, today) < 0 ? "expired" : "active";

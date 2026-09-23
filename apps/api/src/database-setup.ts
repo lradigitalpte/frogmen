@@ -16,6 +16,7 @@ import {
   applyQuotationSignatureFieldsIfNeeded,
   applyRovInspectionIfNeeded,
   applyUserAuthFlagsIfNeeded,
+  applyWarrantyDeliveryIfNeeded,
   ensureCurrencies,
   runMigrations,
 } from "@frog1/db";
@@ -39,5 +40,6 @@ export async function runDatabaseSetup(databaseUrl: string) {
   await applyEmailMarketingIfNeeded(databaseUrl);
   await applyCompanyVaultIfNeeded(databaseUrl);
   await applyQuotationSignatureFieldsIfNeeded(databaseUrl);
+  await applyWarrantyDeliveryIfNeeded(databaseUrl);
   await ensureCurrencies(databaseUrl);
 }

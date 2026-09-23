@@ -15,12 +15,24 @@ import { AppPage } from "@/components/layout/page";
 import { formatQuantity } from "@/lib/format-quantity";
 import { getWarranty, type WarrantyRegistration } from "@/lib/warranty-api";
 
+import { ConfirmDeliveryModal } from "./confirm-delivery-modal";
+
 interface WarrantyDetailPageProps {
   warrantyId: string;
 }
 
-function formatDate(value: string) {
+function formatDate(value: string | null | undefined) {
+  if (!value) return "—";
   return new Date(`${value}T00:00:00`).toLocaleDateString();
+}
+
+function statusTone(
+  status: WarrantyRegistration["status"],
+): "success" | "warning" | "critical" | "info" | "attention" {
+  if (status === "active") return "success";
+  if (status === "expired") return "critical";
+  if (status === "pending_delivery") return "attention";
+  return "info";
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -40,6 +52,7 @@ export function WarrantyDetailPage({ warrantyId }: WarrantyDetailPageProps) {
   const [warranty, setWarranty] = useState<WarrantyRegistration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
 
   const loadWarranty = useCallback(async () => {
     setLoading(true);
@@ -84,36 +97,53 @@ export function WarrantyDetailPage({ warrantyId }: WarrantyDetailPageProps) {
   }
 
   const daysLabel =
-    warranty.status === "expired"
-      ? `Expired ${Math.abs(warranty.daysLeft)} days ago`
-      : warranty.daysLeft === 0
-        ? "Expires today"
-        : `${warranty.daysLeft} days left`;
+    warranty.status === "pending_delivery"
+      ? "Pending delivery (starts on delivery)"
+      : warranty.status === "expired"
+        ? `Expired ${Math.abs(warranty.daysLeft)} days ago`
+        : warranty.daysLeft === 0
+          ? "Expires today"
+          : `${warranty.daysLeft} days left`;
+
+  const statusLabel =
+    warranty.status === "pending_delivery" ? "Pending delivery" : warranty.status;
 
   return (
     <AppPage
       backAction={{ content: "Warranty", url: "/dashboard/warranty" }}
       fullWidth
+      primaryAction={{
+        content:
+          warranty.status === "pending_delivery"
+            ? "Confirm delivery"
+            : "Update delivery date",
+        onAction: () => setDeliveryModalOpen(true),
+      }}
       subtitle={warranty.policy?.name ?? "Warranty coverage"}
       title={warranty.displayProductName}
     >
       <BlockStack gap="400">
+        {warranty.status === "pending_delivery" ? (
+          <Banner
+            tone="warning"
+            action={{
+              content: "Confirm delivery now",
+              onAction: () => setDeliveryModalOpen(true),
+            }}
+          >
+            This warranty has not started yet because equipment delivery is pending.
+            Confirming delivery will start the warranty clock on the delivery date.
+          </Banner>
+        ) : null}
+
         <Card>
           <BlockStack gap="400">
             <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
               <DetailRow
                 label="Status"
                 value={
-                  <Badge
-                    tone={
-                      warranty.status === "active"
-                        ? "success"
-                        : warranty.status === "expired"
-                          ? "critical"
-                          : "info"
-                    }
-                  >
-                    {warranty.status}
+                  <Badge tone={statusTone(warranty.status)}>
+                    {statusLabel}
                   </Badge>
                 }
               />
@@ -124,6 +154,10 @@ export function WarrantyDetailPage({ warrantyId }: WarrantyDetailPageProps) {
             <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
               <DetailRow label="Customer" value={warranty.displayCustomerName} />
               <DetailRow label="Sold date" value={formatDate(warranty.soldAt)} />
+              <DetailRow
+                label="Delivered date"
+                value={formatDate(warranty.deliveredAt)}
+              />
               <DetailRow label="Starts" value={formatDate(warranty.startsAt)} />
               <DetailRow label="Ends" value={formatDate(warranty.endsAt)} />
               <DetailRow
@@ -172,10 +206,22 @@ export function WarrantyDetailPage({ warrantyId }: WarrantyDetailPageProps) {
                   View invoice{warranty.invoiceNumber ? ` ${warranty.invoiceNumber}` : ""}
                 </Link>
               ) : null}
+              {warranty.deliveryNoteId ? (
+                <Text as="span" variant="bodyMd">
+                  Delivery note: {warranty.deliveryNoteNumber ?? "Linked"}
+                </Text>
+              ) : null}
             </BlockStack>
           </BlockStack>
         </Card>
       </BlockStack>
+
+      <ConfirmDeliveryModal
+        open={deliveryModalOpen}
+        onClose={() => setDeliveryModalOpen(false)}
+        warranty={warranty}
+        onSuccess={(updated) => setWarranty(updated)}
+      />
     </AppPage>
   );
 }

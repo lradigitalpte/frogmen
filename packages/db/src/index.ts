@@ -18,4 +18,5 @@ export { applyLeadsIfNeeded } from "./apply-leads";
 export { applyQuotationSignatureFieldsIfNeeded } from "./apply-quotation-signature-fields";
 export { applyEmailMarketingIfNeeded } from "./apply-email-marketing";
 export { applyCompanyVaultIfNeeded } from "./apply-company-vault";
+export { applyWarrantyDeliveryIfNeeded } from "./apply-warranty-delivery";
 export * from "./schema";

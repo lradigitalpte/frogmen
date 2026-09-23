@@ -17,21 +17,30 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { listWarranties, type WarrantyRegistration } from "@/lib/warranty-api";
+import { ConfirmDeliveryModal } from "./confirm-delivery-modal";
 
-function formatDate(value: string) {
+function formatDate(value: string | null | undefined) {
+  if (!value) return "—";
   return new Date(`${value}T00:00:00`).toLocaleDateString();
 }
 
 function statusTone(
   status: WarrantyRegistration["status"],
-): "success" | "warning" | "critical" | "info" {
+): "success" | "warning" | "critical" | "info" | "attention" {
   if (status === "active") return "success";
   if (status === "expired") return "critical";
+  if (status === "pending_delivery") return "attention";
   return "info";
+}
+
+function statusLabel(status: WarrantyRegistration["status"]) {
+  if (status === "pending_delivery") return "Pending delivery";
+  return status;
 }
 
 function daysLeftLabel(daysLeft: number, status: WarrantyRegistration["status"]) {
   if (status === "voided") return "Voided";
+  if (status === "pending_delivery") return "Pending delivery";
   if (status === "expired" || daysLeft < 0) {
     return `${Math.abs(daysLeft)} days ago`;
   }
@@ -48,6 +57,8 @@ export function WarrantiesListPage() {
   const [warranties, setWarranties] = useState<WarrantyRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deliveryModalWarranty, setDeliveryModalWarranty] =
+    useState<WarrantyRegistration | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 250);
@@ -64,7 +75,7 @@ export function WarrantiesListPage() {
         status:
           statusFilter === "all"
             ? undefined
-            : (statusFilter as "active" | "expired" | "voided"),
+            : (statusFilter as "pending_delivery" | "active" | "expired" | "voided"),
         expiringSoon: expiringSoon || undefined,
         perPage: 200,
       });
@@ -110,8 +121,28 @@ export function WarrantiesListPage() {
           </IndexTable.Cell>
           <IndexTable.Cell>
             <Badge tone={statusTone(warranty.status)}>
-              {warranty.status}
+              {statusLabel(warranty.status)}
             </Badge>
+          </IndexTable.Cell>
+          <IndexTable.Cell>
+            <div onClick={(e) => e.stopPropagation()}>
+              {warranty.status === "pending_delivery" ? (
+                <Button
+                  size="micro"
+                  variant="primary"
+                  onClick={() => setDeliveryModalWarranty(warranty)}
+                >
+                  Confirm delivery
+                </Button>
+              ) : (
+                <Button
+                  size="micro"
+                  onClick={() => setDeliveryModalWarranty(warranty)}
+                >
+                  Edit delivery
+                </Button>
+              )}
+            </div>
           </IndexTable.Cell>
         </IndexTable.Row>
       )),
@@ -160,6 +191,7 @@ export function WarrantiesListPage() {
                 onChange={setStatusFilter}
                 options={[
                   { label: "Active", value: "active" },
+                  { label: "Pending Delivery", value: "pending_delivery" },
                   { label: "Expired", value: "expired" },
                   { label: "All", value: "all" },
                 ]}
@@ -197,6 +229,7 @@ export function WarrantiesListPage() {
                   { title: "Ends" },
                   { title: "Time left" },
                   { title: "Status" },
+                  { title: "Actions" },
                 ]}
                 itemCount={warranties.length}
                 selectable={false}
@@ -207,6 +240,13 @@ export function WarrantiesListPage() {
           </BlockStack>
         </Card>
       </BlockStack>
+
+      <ConfirmDeliveryModal
+        open={Boolean(deliveryModalWarranty)}
+        onClose={() => setDeliveryModalWarranty(null)}
+        warranty={deliveryModalWarranty}
+        onSuccess={() => void loadWarranties()}
+      />
     </AppPage>
   );
 }

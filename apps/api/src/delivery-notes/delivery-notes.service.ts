@@ -20,6 +20,7 @@ import { DATABASE } from "../database/database.constants";
 import { DocumentRendererService } from "../documents/document-renderer.service";
 import { MailService } from "../mail/mail.service";
 import { SettingsService } from "../settings/settings.service";
+import { WarrantiesService } from "../warranty/warranties.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import {
   formatDeliveryNoteSerialEntries,
@@ -40,6 +41,7 @@ export class DeliveryNotesService {
     private readonly settingsService: SettingsService,
     private readonly mailService: MailService,
     private readonly documentRenderer: DocumentRendererService,
+    private readonly warrantiesService: WarrantiesService,
   ) {}
 
   async preview(organizationId: string, invoiceId: string) {
@@ -193,6 +195,13 @@ export class DeliveryNotesService {
           };
         }),
       ),
+    );
+
+    await this.warrantiesService.activateFromDeliveryNote(
+      organizationId,
+      note.id,
+      context.invoice.id,
+      deliveryDate,
     );
 
     return this.getById(organizationId, note.id);

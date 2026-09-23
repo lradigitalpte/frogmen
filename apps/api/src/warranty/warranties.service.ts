@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm";
 import {
   customers,
+  deliveryNotes,
   invoiceLines,
   invoices,
   productUnits,
@@ -30,6 +31,7 @@ import {
   type Database,
 } from "@frog1/db";
 import type {
+  ConfirmWarrantyDeliveryDto,
   CreateWarrantyDto,
   ListWarrantiesQuery,
   SearchSalesQuery,
@@ -57,6 +59,7 @@ export class WarrantiesService {
       customerDisplayName?: string | null;
       productDisplayName?: string | null;
       invoiceNumber?: string | null;
+      deliveryNoteNumber?: string | null;
     },
   ) {
     const status = resolveWarrantyStatus(row.endsAt, row.status);
@@ -78,6 +81,7 @@ export class WarrantiesService {
           }
         : undefined,
       invoiceNumber: row.invoiceNumber ?? null,
+      deliveryNoteNumber: row.deliveryNoteNumber ?? null,
     };
   }
 
@@ -126,6 +130,7 @@ export class WarrantiesService {
         customerDisplayName: customers.name,
         productDisplayName: products.name,
         invoiceNumber: invoices.number,
+        deliveryNoteNumber: deliveryNotes.number,
       })
       .from(warrantyRegistrations)
       .leftJoin(
@@ -135,8 +140,12 @@ export class WarrantiesService {
       .leftJoin(customers, eq(warrantyRegistrations.customerId, customers.id))
       .leftJoin(products, eq(warrantyRegistrations.productId, products.id))
       .leftJoin(invoices, eq(warrantyRegistrations.invoiceId, invoices.id))
+      .leftJoin(
+        deliveryNotes,
+        eq(warrantyRegistrations.deliveryNoteId, deliveryNotes.id),
+      )
       .where(whereClause)
-      .orderBy(desc(warrantyRegistrations.endsAt))
+      .orderBy(desc(warrantyRegistrations.createdAt))
       .limit(perPage)
       .offset(offset);
 
@@ -148,6 +157,7 @@ export class WarrantiesService {
         customerDisplayName: row.customerDisplayName,
         productDisplayName: row.productDisplayName,
         invoiceNumber: row.invoiceNumber,
+        deliveryNoteNumber: row.deliveryNoteNumber,
       }),
     );
 
@@ -191,6 +201,7 @@ export class WarrantiesService {
         productSku: products.sku,
         invoiceNumber: invoices.number,
         unitSerial: productUnits.serialNumber,
+        deliveryNoteNumber: deliveryNotes.number,
       })
       .from(warrantyRegistrations)
       .leftJoin(
@@ -203,6 +214,10 @@ export class WarrantiesService {
       .leftJoin(
         productUnits,
         eq(warrantyRegistrations.productUnitId, productUnits.id),
+      )
+      .leftJoin(
+        deliveryNotes,
+        eq(warrantyRegistrations.deliveryNoteId, deliveryNotes.id),
       )
       .where(
         and(
@@ -223,6 +238,7 @@ export class WarrantiesService {
       customerDisplayName: row.customerDisplayName,
       productDisplayName: row.productDisplayName,
       invoiceNumber: row.invoiceNumber,
+      deliveryNoteNumber: row.deliveryNoteNumber,
     });
 
     return {
@@ -596,6 +612,23 @@ export class WarrantiesService {
 
     const soldAt = formatDateOnly(invoice.postedAt ?? invoice.invoiceDate);
 
+    // Check if an approved delivery note already exists for this invoice
+    const [existingDeliveryNote] = await this.db
+      .select({ id: deliveryNotes.id, deliveryDate: deliveryNotes.deliveryDate })
+      .from(deliveryNotes)
+      .where(
+        and(
+          eq(deliveryNotes.organizationId, organizationId),
+          eq(deliveryNotes.invoiceId, invoiceId),
+          eq(deliveryNotes.state, "approved"),
+          isNull(deliveryNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const isDelivered = Boolean(existingDeliveryNote);
+    const deliveryDate = existingDeliveryNote?.deliveryDate ?? null;
+
     const lines = await this.db
       .select({
         line: invoiceLines,
@@ -654,16 +687,23 @@ export class WarrantiesService {
         policyId,
       );
 
-      const endsAt = addMonthsToDate(soldAt, policy.durationMonths);
+      const startsAt = isDelivered && deliveryDate ? deliveryDate : null;
+      const endsAt =
+        isDelivered && deliveryDate
+          ? addMonthsToDate(deliveryDate, policy.durationMonths)
+          : null;
+      const status = isDelivered ? "active" : "pending_delivery";
 
       await this.db.insert(warrantyRegistrations).values({
         organizationId,
         policyId,
         source: "sale",
-        status: "active",
-        startsAt: soldAt,
+        status,
+        startsAt,
         endsAt,
         soldAt,
+        deliveredAt: startsAt,
+        deliveryNoteId: existingDeliveryNote?.id ?? null,
         productId: row.line.productId,
         productUnitId: row.line.productUnitId,
         serialNumber: row.unit?.serialNumber ?? null,
@@ -676,6 +716,109 @@ export class WarrantiesService {
         salesOrderLineId: row.line.salesOrderLineId,
       });
     }
+  }
+
+  async activateFromDeliveryNote(
+    organizationId: string,
+    deliveryNoteId: string,
+    invoiceId: string,
+    deliveryDate: string,
+  ) {
+    const registrations = await this.db
+      .select({
+        id: warrantyRegistrations.id,
+        policyId: warrantyRegistrations.policyId,
+        durationMonths: warrantyPolicies.durationMonths,
+      })
+      .from(warrantyRegistrations)
+      .innerJoin(
+        warrantyPolicies,
+        eq(warrantyRegistrations.policyId, warrantyPolicies.id),
+      )
+      .where(
+        and(
+          eq(warrantyRegistrations.organizationId, organizationId),
+          eq(warrantyRegistrations.invoiceId, invoiceId),
+          eq(warrantyRegistrations.status, "pending_delivery"),
+        ),
+      );
+
+    for (const reg of registrations) {
+      const endsAt = addMonthsToDate(deliveryDate, reg.durationMonths);
+      await this.db
+        .update(warrantyRegistrations)
+        .set({
+          status: "active",
+          startsAt: deliveryDate,
+          endsAt,
+          deliveredAt: deliveryDate,
+          deliveryNoteId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(warrantyRegistrations.id, reg.id),
+            eq(warrantyRegistrations.organizationId, organizationId),
+          ),
+        );
+    }
+  }
+
+  async confirmDelivery(
+    organizationId: string,
+    warrantyId: string,
+    input: ConfirmWarrantyDeliveryDto,
+  ) {
+    const [row] = await this.db
+      .select({
+        reg: warrantyRegistrations,
+        durationMonths: warrantyPolicies.durationMonths,
+      })
+      .from(warrantyRegistrations)
+      .innerJoin(
+        warrantyPolicies,
+        eq(warrantyRegistrations.policyId, warrantyPolicies.id),
+      )
+      .where(
+        and(
+          eq(warrantyRegistrations.id, warrantyId),
+          eq(warrantyRegistrations.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundException("Warranty registration not found");
+    }
+
+    const deliveryDate =
+      input.deliveryDate?.trim() || new Date().toISOString().slice(0, 10);
+    const endsAt = addMonthsToDate(deliveryDate, row.durationMonths);
+    const updatedNotes = input.notes?.trim()
+      ? row.reg.notes
+        ? `${row.reg.notes}\nDelivery: ${input.notes.trim()}`
+        : input.notes.trim()
+      : row.reg.notes;
+
+    const [updated] = await this.db
+      .update(warrantyRegistrations)
+      .set({
+        status: "active",
+        startsAt: deliveryDate,
+        endsAt,
+        deliveredAt: deliveryDate,
+        notes: updatedNotes,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(warrantyRegistrations.id, warrantyId),
+          eq(warrantyRegistrations.organizationId, organizationId),
+        ),
+      )
+      .returning();
+
+    return this.getById(organizationId, updated.id);
   }
 
   private async assertSerialNotAlreadyRegistered(

@@ -87,7 +87,7 @@ export interface CreateInvoiceInput {
   customerId?: string;
   currencyId?: string;
   paymentTermId?: string;
-  invoiceDate: string;
+  invoiceDate?: string;
   dueDate?: string;
   customerReference?: string;
   internalReference?: string;
@@ -356,7 +356,8 @@ export class InvoicesService {
         currencyId: input.currencyId,
         exchangeRate: String(exchangeRate),
         paymentTermId: input.paymentTermId ?? null,
-        invoiceDate: input.invoiceDate,
+        invoiceDate:
+          input.invoiceDate?.trim() || new Date().toISOString().slice(0, 10),
         dueDate: input.dueDate ?? null,
         customerReference: input.customerReference ?? null,
         internalReference: input.internalReference ?? null,
@@ -1247,7 +1248,8 @@ export class InvoicesService {
         currencyId: order.currencyId,
         exchangeRate: String(exchangeRate),
         paymentTermId: order.paymentTermId,
-        invoiceDate: input.invoiceDate,
+        invoiceDate:
+          input.invoiceDate?.trim() || new Date().toISOString().slice(0, 10),
         dueDate: input.dueDate ?? null,
         customerReference:
           input.customerReference ?? order.customerReference ?? null,

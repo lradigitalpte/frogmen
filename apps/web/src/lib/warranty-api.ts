@@ -25,11 +25,14 @@ export interface WarrantyRegistration {
   id: string;
   organizationId: string;
   policyId: string;
-  status: "active" | "expired" | "voided";
+  status: "pending_delivery" | "active" | "expired" | "voided";
   source: "sale" | "manual";
-  startsAt: string;
-  endsAt: string;
+  startsAt: string | null;
+  endsAt: string | null;
   soldAt: string;
+  deliveredAt?: string | null;
+  deliveryNoteId?: string | null;
+  deliveryNoteNumber?: string | null;
   productId: string | null;
   productUnitId: string | null;
   serialNumber: string | null;
@@ -160,7 +163,7 @@ export function seedDefaultWarrantyPolicy() {
 export function listWarranties(
   params: {
     search?: string;
-    status?: "active" | "expired" | "voided";
+    status?: "pending_delivery" | "active" | "expired" | "voided";
     productId?: string;
     productUnitId?: string;
     expiringSoon?: boolean;
@@ -206,5 +209,18 @@ export function searchWarrantySales(
 ) {
   return apiFetch<PaginatedSaleSearch>(
     `/api/v1/warranties/search-sales${toQuery(params)}`,
+  );
+}
+
+export function confirmWarrantyDelivery(
+  id: string,
+  input: { deliveryDate: string; notes?: string },
+) {
+  return apiFetch<WarrantyRegistration>(
+    `/api/v1/warranties/${id}/confirm-delivery`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }

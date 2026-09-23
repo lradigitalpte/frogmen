@@ -15,6 +15,7 @@ import { customers } from "./customers";
 import { products } from "./products";
 import { productUnits } from "./product-units";
 import {
+  deliveryNotes,
   invoiceLines,
   invoices,
   salesOrderLines,
@@ -23,7 +24,7 @@ import { branches } from "./security";
 
 export const warrantyRegistrationStatusEnum = pgEnum(
   "warranty_registration_status",
-  ["active", "expired", "voided"],
+  ["pending_delivery", "active", "expired", "voided"],
 );
 
 export const warrantyRegistrationSourceEnum = pgEnum(
@@ -62,9 +63,10 @@ export const warrantyRegistrations = pgTable("warranty_registrations", {
     .references(() => warrantyPolicies.id),
   status: warrantyRegistrationStatusEnum("status").notNull().default("active"),
   source: warrantyRegistrationSourceEnum("source").notNull().default("manual"),
-  startsAt: date("starts_at").notNull(),
-  endsAt: date("ends_at").notNull(),
+  startsAt: date("starts_at"),
+  endsAt: date("ends_at"),
   soldAt: date("sold_at").notNull(),
+  deliveredAt: date("delivered_at"),
   productId: uuid("product_id").references(() => products.id, {
     onDelete: "set null",
   }),
@@ -88,6 +90,9 @@ export const warrantyRegistrations = pgTable("warranty_registrations", {
     () => salesOrderLines.id,
     { onDelete: "set null" },
   ),
+  deliveryNoteId: uuid("delivery_note_id").references(() => deliveryNotes.id, {
+    onDelete: "set null",
+  }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

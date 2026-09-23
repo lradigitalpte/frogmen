@@ -3,6 +3,7 @@ import { DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { MailModule } from "../mail/mail.module";
 import { SettingsModule } from "../settings/settings.module";
+import { WarrantyModule } from "../warranty/warranty.module";
 import {
   DeliveryNotesController,
   InvoiceDeliveryNotesController,
@@ -10,7 +11,13 @@ import {
 import { DeliveryNotesService } from "./delivery-notes.service";
 
 @Module({
-  imports: [DatabaseModule, DocumentsModule, MailModule, SettingsModule],
+  imports: [
+    DatabaseModule,
+    DocumentsModule,
+    MailModule,
+    SettingsModule,
+    WarrantyModule,
+  ],
   controllers: [DeliveryNotesController, InvoiceDeliveryNotesController],
   providers: [DeliveryNotesService],
   exports: [DeliveryNotesService],

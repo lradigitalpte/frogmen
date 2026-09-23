@@ -101,7 +101,7 @@ export interface CreateInvoiceInput {
   salesOrderId?: string;
   customerId?: string;
   currencyId?: string;
-  invoiceDate: string;
+  invoiceDate?: string;
   dueDate?: string;
   customerReference?: string;
   internalReference?: string;

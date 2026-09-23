@@ -265,7 +265,7 @@ export function CreateInvoicePage() {
         );
         if (q.customerReference) setPoReference(q.customerReference);
         if (q.notes) setNotes(q.notes);
-        if (q.quoteDate) setInvoiceDate(q.quoteDate);
+        setInvoiceDate(todayIsoDate());
         if (q.lines && q.lines.length > 0) {
           setLines(
             q.lines.map((l) => {
@@ -676,20 +676,18 @@ export function CreateInvoicePage() {
                       <TextField
                         autoComplete="off"
                         label="Invoice date"
-                        readOnly
                         type="date"
                         value={invoiceDate}
-                        onChange={() => undefined}
+                        onChange={setInvoiceDate}
                       />
                     </Grid.Cell>
                     <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
                       <TextField
                         autoComplete="off"
                         label="Due date"
-                        readOnly
                         type="date"
                         value={dueDate}
-                        onChange={() => undefined}
+                        onChange={setDueDate}
                       />
                     </Grid.Cell>
                     <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>

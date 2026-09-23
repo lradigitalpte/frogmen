@@ -6,6 +6,7 @@ import {
 } from "@thallesp/nestjs-better-auth";
 import { WarrantiesService } from "./warranties.service";
 import type {
+  ConfirmWarrantyDeliveryDto,
   CreateWarrantyDto,
   ListWarrantiesQuery,
   SearchSalesQuery,
@@ -60,5 +61,18 @@ export class WarrantiesController {
   @Post()
   create(@Session() session: UserSession, @Body() body: CreateWarrantyDto) {
     return this.warrantiesService.createManual(this.orgId(session), body);
+  }
+
+  @Post(":id/confirm-delivery")
+  confirmDelivery(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: ConfirmWarrantyDeliveryDto,
+  ) {
+    return this.warrantiesService.confirmDelivery(
+      this.orgId(session),
+      id,
+      body,
+    );
   }
 }
