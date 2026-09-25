@@ -188,7 +188,7 @@ export function DeliveryNoteReviewModal({
       );
     }
 
-    return <Text as="span" tone="subdued">—</Text>;
+    return <Text as="span" tone="subdued">N/A</Text>;
   }
 
   if (!open) return null;

@@ -36,7 +36,6 @@ import type { PurchaseOrderChargeBreakdownItem } from "@/components/purchasing/p
 import { todayIsoDate } from "@/components/sales/format-money";
 import { Package, ShoppingCart } from "lucide-react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
-import { listProducts } from "@/lib/products-api";
 import {
   buildPurchaseOrderChargesPayload,
   computePurchaseOrderTotals,
@@ -49,7 +48,6 @@ import {
   updatePurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { listWarehouses } from "@/lib/warehouses-api";
-import type { Product } from "@/types/product";
 import type { Warehouse } from "@/types/warehouse";
 import { useToast } from "@/components/providers/toast-provider";
 
@@ -84,7 +82,6 @@ export function CreatePurchaseOrderPage() {
   const [charges, setCharges] = useState<PurchaseOrderChargeValues>(
     emptyPurchaseOrderCharges(),
   );
-  const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [lines, setLines] = useState<PurchaseOrderDraftLine[]>([]);
   const [lineModalOpen, setLineModalOpen] = useState(false);
@@ -97,18 +94,6 @@ export function CreatePurchaseOrderPage() {
       current.currencyId ? current : { ...current, currencyId: baseCurrency.id },
     );
   }, [baseCurrency?.id]);
-
-  useEffect(() => {
-    void listProducts({ perPage: 100 })
-      .then((productRows) => {
-        setProducts(
-          productRows.data.filter(
-            (product) => product.isStorable && product.type !== "service",
-          ),
-        );
-      })
-      .catch(() => setProducts([]));
-  }, []);
 
   useEffect(() => {
     void listWarehouses({ perPage: 100 })
@@ -516,7 +501,6 @@ export function CreatePurchaseOrderPage() {
         currencyCode={currency?.code}
         documentCurrencyId={header.currencyId}
         open={lineModalOpen}
-        products={products}
         warehouses={warehouses}
         onAdd={addLine}
         onClose={() => setLineModalOpen(false)}

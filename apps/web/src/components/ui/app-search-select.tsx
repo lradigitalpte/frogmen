@@ -23,6 +23,11 @@ interface AppSearchSelectProps {
   emptyLabel?: string;
   emptyDescription?: string;
   error?: string;
+  /** Server-side search: options are already filtered, so skip local filtering. */
+  onQueryChange?: (query: string) => void;
+  loading?: boolean;
+  /** Shown as the current value when it is not among `options` (e.g. async results). */
+  selectedOption?: AppSearchSelectOption | null;
 }
 
 function formatSummary(option: AppSearchSelectOption) {
@@ -45,6 +50,9 @@ export function AppSearchSelect({
   emptyLabel = "None",
   emptyDescription,
   error,
+  onQueryChange,
+  loading = false,
+  selectedOption,
 }: AppSearchSelectProps) {
   const fieldId = useId();
   const [open, setOpen] = useState(false);
@@ -62,13 +70,15 @@ export function AppSearchSelect({
   }, [allowEmpty, emptyDescription, emptyLabel, options]);
 
   const selected = useMemo(
-    () => allOptions.find((option) => option.value === value),
-    [allOptions, value],
+    () =>
+      allOptions.find((option) => option.value === value) ??
+      (selectedOption?.value === value ? selectedOption : undefined),
+    [allOptions, selectedOption, value],
   );
 
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) {
+    if (!normalized || onQueryChange) {
       return allOptions;
     }
 
@@ -80,11 +90,16 @@ export function AppSearchSelect({
 
       return haystack.includes(normalized);
     });
-  }, [allOptions, query]);
+  }, [allOptions, onQueryChange, query]);
+
+  function updateQuery(nextQuery: string) {
+    setQuery(nextQuery);
+    onQueryChange?.(nextQuery);
+  }
 
   function closePopover() {
     setOpen(false);
-    setQuery("");
+    updateQuery("");
   }
 
   function handleSelect(nextValue: string) {
@@ -120,17 +135,17 @@ export function AppSearchSelect({
                 prefix={<Icon source={SearchIcon} tone="subdued" />}
                 value={inputValue}
                 onChange={(nextQuery) => {
-                  setQuery(nextQuery);
+                  updateQuery(nextQuery);
                   setOpen(true);
                 }}
                 onClearButtonClick={() => {
                   onChange("");
-                  setQuery("");
+                  updateQuery("");
                   setOpen(true);
                 }}
                 onFocus={() => {
                   setOpen(true);
-                  setQuery("");
+                  updateQuery("");
                 }}
               />
             </div>
@@ -143,10 +158,10 @@ export function AppSearchSelect({
         >
           <div className="app-search-select__dropdown">
             <Box padding="100">
-              {filteredOptions.length === 0 ? (
+              {loading || filteredOptions.length === 0 ? (
               <div className="app-search-select__empty">
                 <Text as="p" tone="subdued" variant="bodySm">
-                  No matches
+                  {loading ? "Searching…" : "No matches"}
                 </Text>
               </div>
             ) : (

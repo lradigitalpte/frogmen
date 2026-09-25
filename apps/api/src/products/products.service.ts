@@ -30,6 +30,8 @@ import {
 
   isNull,
 
+  ne,
+
   or,
 
   sql,
@@ -288,6 +290,14 @@ export class ProductsService {
     } else if (query.usageType) {
 
       filters.push(eq(products.usageType, query.usageType));
+
+    }
+
+
+
+    if (query.storableOnly) {
+
+      filters.push(eq(products.isStorable, true), ne(products.type, "service"));
 
     }
 

@@ -37,7 +37,7 @@ import {
 } from "@/components/purchasing/purchase-order-totals-summary";
 import { Package, ShoppingCart } from "lucide-react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
-import { listProducts } from "@/lib/products-api";
+import { getProduct } from "@/lib/products-api";
 import {
   buildPurchaseOrderChargesPayload,
   chargesFromPurchaseOrder,
@@ -105,7 +105,6 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
     emptyPurchaseOrderCharges(),
   );
   const [originalLineIds, setOriginalLineIds] = useState<string[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [lines, setLines] = useState<PurchaseOrderDraftLine[]>([]);
   const [lineModalOpen, setLineModalOpen] = useState(false);
@@ -113,25 +112,31 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void Promise.all([
-      listProducts({ perPage: 100 }),
-      listWarehouses({ perPage: 100 }),
-      getPurchaseOrder(orderId),
-    ])
-      .then(([productRows, warehouseRows, order]) => {
+    void Promise.all([listWarehouses({ perPage: 100 }), getPurchaseOrder(orderId)])
+      .then(async ([warehouseRows, order]) => {
         if (order.state !== "draft") {
           router.replace(`/dashboard/purchasing/orders/${orderId}`);
           return;
         }
 
-        const productMap = new Map(
-          productRows.data.map((product) => [product.id, product]),
+        const lineProductIds = [
+          ...new Set(
+            (order.lines ?? [])
+              .map((line) => line.productId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const lineProducts = await Promise.all(
+          lineProductIds.map((id) => getProduct(id).catch(() => null)),
         );
-        const storableProducts = productRows.data.filter(
-          (product) => product.isStorable && product.type !== "service",
+        const productMap = new Map<string, Product>(
+          lineProducts
+            .filter((product): product is NonNullable<typeof product> =>
+              Boolean(product),
+            )
+            .map((product) => [product.id, product]),
         );
 
-        setProducts(storableProducts);
         setWarehouses(warehouseRows.data);
         setOrderNumber(order.number);
         setHeader({
@@ -544,7 +549,6 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
         currencyCode={currency?.code}
         documentCurrencyId={header.currencyId}
         open={lineModalOpen}
-        products={products}
         warehouses={warehouses}
         onAdd={addLine}
         onClose={() => setLineModalOpen(false)}

@@ -60,6 +60,8 @@ export class ProductsController {
           ? undefined
           : String(query.isRovEquipment) === "true" ||
             query.isRovEquipment === true,
+      storableOnly:
+        String(query.storableOnly) === "true" || query.storableOnly === true,
       search: query.search,
       sortBy: query.sortBy,
       sortDir: query.sortDir,

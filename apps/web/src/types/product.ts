@@ -89,6 +89,7 @@ export interface ListProductsParams {
   forSaleOnly?: boolean;
   usageType?: ProductUsageType;
   isRovEquipment?: boolean;
+  storableOnly?: boolean;
   includeStock?: boolean;
   inStockOnly?: boolean;
   search?: string;

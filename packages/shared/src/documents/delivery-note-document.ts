@@ -77,7 +77,7 @@ function renderSerialEntriesHtml(
       .join("");
   }
 
-  return `<span class="serial-empty">—</span>`;
+  return `<span class="serial-empty">N/A</span>`;
 }
 
 export function renderDeliveryNoteDocumentHtml(
