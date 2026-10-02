@@ -5,6 +5,7 @@ import {
   Banner,
   BlockStack,
   Button,
+  ButtonGroup,
   Card,
   IndexTable,
   InlineStack,
@@ -130,7 +131,7 @@ export function ExpenseReimbursementsPage() {
       setApprovingClaim(null);
       setSelectedTab(APPROVED_TAB);
       setSuccess(
-        `${approvingClaim.number} approved and saved under Approved (to pay). Record reimbursement to post AED ${approvingClaim.amount} to Profit & Loss — approval alone does not appear on Expenses or P&L.`,
+        `${approvingClaim.number} approved and saved under Approved (to pay). Record reimbursement to post ${formatBaseMoney(approvingClaim.amount)} to the books and Expenses & Petty Cash.`,
       );
       await load();
     } catch (err) {
@@ -175,23 +176,39 @@ export function ExpenseReimbursementsPage() {
   const rows = filteredClaims.map((claim, index) => (
     <IndexTable.Row id={claim.id} key={claim.id} position={index}>
       <IndexTable.Cell>
-        <Button variant="plain" onClick={() => openDetail(claim)}>
-          {claim.number}
-        </Button>
+        <div className="expense-reimbursements-table__number">
+          <Button variant="plain" onClick={() => openDetail(claim)}>
+            {claim.number}
+          </Button>
+        </div>
       </IndexTable.Cell>
-      <IndexTable.Cell>{formatExpenseClaimDate(claim.expenseDate)}</IndexTable.Cell>
       <IndexTable.Cell>
-        <BlockStack gap="050">
-          <Text as="span" fontWeight="semibold">{claim.submitterName}</Text>
-          <Text as="span" tone="subdued" variant="bodySm">
+        <span className="expense-reimbursements-table__nowrap">
+          {formatExpenseClaimDate(claim.expenseDate)}
+        </span>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
+        <div className="expense-reimbursements-table__employee">
+          <Text as="span" fontWeight="semibold" truncate>
+            {claim.submitterName}
+          </Text>
+          <Text as="span" tone="subdued" variant="bodySm" truncate>
             {claim.submitterEmail}
           </Text>
-        </BlockStack>
+        </div>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text as="span" tone="subdued">{claim.categoryName ?? "—"}</Text>
+        <Text as="span" tone="subdued" truncate>
+          {claim.categoryName ?? "—"}
+        </Text>
       </IndexTable.Cell>
-      <IndexTable.Cell>{claim.description}</IndexTable.Cell>
+      <IndexTable.Cell>
+        <div className="expense-reimbursements-table__description" title={claim.description}>
+          <Text as="span" truncate>
+            {claim.description}
+          </Text>
+        </div>
+      </IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" alignment="end" numeric>
           {formatBaseMoney(claim.amount)}
@@ -208,12 +225,9 @@ export function ExpenseReimbursementsPage() {
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <InlineStack gap="150">
-          <Button size="slim" onClick={() => openDetail(claim)}>
-            Details
-          </Button>
+        <div className="expense-reimbursements-table__actions">
           {claim.status === "submitted" ? (
-            <>
+            <ButtonGroup>
               <Button
                 size="slim"
                 variant="primary"
@@ -224,11 +238,12 @@ export function ExpenseReimbursementsPage() {
               </Button>
               <Button
                 size="slim"
+                tone="critical"
                 onClick={() => handleRejectFromDetail(claim)}
               >
                 Reject
               </Button>
-            </>
+            </ButtonGroup>
           ) : null}
           {claim.status === "approved" ? (
             <Button
@@ -239,7 +254,12 @@ export function ExpenseReimbursementsPage() {
               Reimburse
             </Button>
           ) : null}
-        </InlineStack>
+          {claim.status !== "submitted" && claim.status !== "approved" ? (
+            <Button size="slim" onClick={() => openDetail(claim)}>
+              View
+            </Button>
+          ) : null}
+        </div>
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
@@ -272,11 +292,13 @@ export function ExpenseReimbursementsPage() {
         ) : null}
 
         <Banner tone="info">
-          Claims are kept on record in each tab — they do not disappear after
-          approval. <strong>Approve</strong> only marks ready to pay.{" "}
-          <strong>Reimburse</strong> posts to Operating Expenses (600000) and
-          then shows on Profit &amp; Loss. It will not appear under Expenses
-          &amp; Petty Cash (that page is for company-paid spend only).
+          Claims stay in each tab for audit — they do not disappear after
+          approval. <strong>Approve</strong> marks ready to pay.{" "}
+          <strong>Reimburse</strong> posts to Operating Expenses (600000), appears
+          on{" "}
+          <Link url="/dashboard/accounting/profit-loss">Profit &amp; Loss</Link>
+          , and on{" "}
+          <Link url="/dashboard/accounting/expenses">Expenses &amp; Petty Cash</Link>.
         </Banner>
 
         {summary.outstandingApprovedTotal > 0 ? (
@@ -367,7 +389,7 @@ export function ExpenseReimbursementsPage() {
                 ) : null}
               </BlockStack>
             ) : (
-              <div className="accounting-report-table">
+              <div className="accounting-report-table expense-reimbursements-table">
                 <IndexTable
                   selectable={false}
                   itemCount={filteredClaims.length}
@@ -380,7 +402,7 @@ export function ExpenseReimbursementsPage() {
                     { title: "Amount", alignment: "end" },
                     { title: "Status" },
                     { title: "Receipt" },
-                    { title: "Actions" },
+                    { title: "Actions", alignment: "end" },
                   ]}
                 >
                   {rows}
@@ -481,7 +503,7 @@ export function ExpenseReimbursementsPage() {
           const amount = reimbursingClaim?.amount ?? 0;
           setSelectedTab(REIMBURSED_TAB);
           setSuccess(
-            `${number} reimbursed and posted to Operating Expenses (${formatBaseMoney(amount)}). Check Profit & Loss — not listed under Expenses & Petty Cash.`,
+            `${number} reimbursed (${formatBaseMoney(amount)}). Posted to Operating Expenses — see Expenses & Petty Cash and Profit & Loss.`,
           );
           await load();
         }}

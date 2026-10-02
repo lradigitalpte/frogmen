@@ -36,10 +36,13 @@ import type { Product, ProductTab } from "@/types/product";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { useToast } from "@/components/providers/toast-provider";
+import { formatSerialSummaryPreview } from "@/lib/format-serial-summary";
 
 const tabs: { id: ProductTab; content: string }[] = [
   { id: "all", content: "All" },
@@ -52,7 +55,8 @@ const tabs: { id: ProductTab; content: string }[] = [
 ];
 
 const REDUNDANT_TABLE_TAGS = new Set(["goods", "for sale"]);
-const PRODUCTS_PER_PAGE = 16;
+const PRODUCT_PAGE_SIZES = [16, 25, 50, 100] as const;
+const productResourceName = { singular: "product", plural: "products" };
 
 function getTableDisplayTags(product: Product): string[] {
   const allTags = getProductDisplayTags(product);
@@ -119,6 +123,7 @@ export function ProductsListPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<number>(25);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(
     new Map(),
@@ -163,7 +168,7 @@ export function ProductsListPage() {
       const [result, stockResult] = await Promise.all([
         listProducts({
           page,
-          perPage: PRODUCTS_PER_PAGE,
+          perPage,
           search: debouncedQuery || undefined,
           archived: activeTab === "archived",
           type:
@@ -218,7 +223,7 @@ export function ProductsListPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, debouncedQuery, page]);
+  }, [activeTab, debouncedQuery, page, perPage]);
 
   useEffect(() => {
     loadProducts();
@@ -226,7 +231,7 @@ export function ProductsListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeTab, debouncedQuery]);
+  }, [activeTab, debouncedQuery, perPage]);
 
   async function handleArchive(id: string) {
     if (activeTab === "archived") {
@@ -345,7 +350,7 @@ export function ProductsListPage() {
     const serials = serialsByProduct.get(product.id) ?? [];
     const serialLabel =
       product.trackSerial && serials.length > 0
-        ? [...new Set(serials)].join(", ")
+        ? formatSerialSummaryPreview([...new Set(serials)].join(", "), 2)
         : null;
 
     const qty = stockByProduct.get(product.id) ?? 0;
@@ -493,7 +498,7 @@ export function ProductsListPage() {
               const serials = serialsByProduct.get(rootProduct.id) ?? [];
               const serialLabel =
                 rootProduct.trackSerial && serials.length > 0
-                  ? [...new Set(serials)].join(", ")
+                  ? formatSerialSummaryPreview([...new Set(serials)].join(", "), 2)
                   : null;
               return rootProduct.sku || serialLabel || " ";
             })()}
@@ -616,6 +621,21 @@ export function ProductsListPage() {
             setMode={setMode}
           />
 
+          <IndexTablePaginationBar
+            page={page}
+            perPage={perPage}
+            total={total}
+            resourceName={productResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            perPageOptions={[...PRODUCT_PAGE_SIZES]}
+            onPerPageChange={(next) => {
+              setPerPage(next);
+              setPage(1);
+            }}
+            placement="header"
+          />
+
           <IndexTable
             emptyState={emptyState}
             headings={[
@@ -627,16 +647,27 @@ export function ProductsListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * PRODUCTS_PER_PAGE < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "product", plural: "products" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage,
+              total,
+              onPageChange: setPage,
+              resourceName: productResourceName,
+            })}
+            resourceName={productResourceName}
           >
             {rowMarkup}
           </IndexTable>
+
+          <IndexTablePaginationBar
+            page={page}
+            perPage={perPage}
+            total={total}
+            resourceName={productResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
 

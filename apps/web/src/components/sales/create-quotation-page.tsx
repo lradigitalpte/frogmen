@@ -195,6 +195,7 @@ export function CreateQuotationPage() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
   const [catalogTotal, setCatalogTotal] = useState(0);
   const [deliveryFeeMode, setDeliveryFeeMode] = useState<DeliveryFeeMode>("none");
   const [deliveryFeeValue, setDeliveryFeeValue] = useState("");
@@ -283,26 +284,38 @@ export function CreateQuotationPage() {
 
   useEffect(() => {
     const timer = setTimeout(
-      () => setDebouncedCatalogSearch(catalogSearch),
+      () => setDebouncedCatalogSearch(catalogSearch.trim()),
       300,
     );
     return () => clearTimeout(timer);
   }, [catalogSearch]);
 
-  // Fetch Products from Backend
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [debouncedCatalogSearch]);
+
+  // Fetch Products from Backend (search queries the full catalog via API, not the 4 suggestions)
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     setProductsError(null);
+    const isSearch = Boolean(debouncedCatalogSearch);
     try {
       const result = await listProducts({
         search: debouncedCatalogSearch || undefined,
-        perPage: debouncedCatalogSearch ? 50 : 4,
+        page: isSearch ? catalogPage : 1,
+        perPage: isSearch ? 100 : 4,
+        sortBy: isSearch ? "name" : undefined,
+        sortDir: isSearch ? "asc" : undefined,
         forSaleOnly: true,
         rootOnly: true,
         includeStock: true,
         inStockOnly: true,
       });
-      setProducts(result.data);
+      setProducts((current) =>
+        isSearch && catalogPage > 1
+          ? [...current, ...result.data]
+          : result.data,
+      );
       setCatalogTotal(result.meta.total);
     } catch (err) {
       setProducts([]);
@@ -313,7 +326,7 @@ export function CreateQuotationPage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [debouncedCatalogSearch]);
+  }, [debouncedCatalogSearch, catalogPage]);
 
   useEffect(() => {
     void loadCurrencies();
@@ -932,11 +945,14 @@ export function CreateQuotationPage() {
                     <Text as="p" tone="subdued" variant="bodySm">
                       {productsLoading && products.length === 0
                         ? "Loading products..."
-                        : catalogTotal === 0
-                          ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
-                          : debouncedCatalogSearch
-                            ? `Showing ${products.length} of ${catalogTotal} matching product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`
-                            : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to find more.`}
+                        : catalogSearch.trim() &&
+                            catalogSearch.trim() !== debouncedCatalogSearch
+                          ? "Searching full catalog…"
+                          : catalogTotal === 0
+                            ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
+                            : debouncedCatalogSearch
+                              ? `Showing ${products.length} of ${catalogTotal} matching in-stock product${catalogTotal === 1 ? "" : "s"} across your catalog.${productsLoading ? " Updating…" : ""}`
+                              : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to search all ${catalogTotal} — not just these suggestions.`}
                     </Text>
                     {products.length > 0 ? (
                       <ProductCatalogSearchResults>
@@ -988,6 +1004,16 @@ export function CreateQuotationPage() {
                           )}
                         />
                       </ProductCatalogSearchResults>
+                    ) : null}
+                    {debouncedCatalogSearch &&
+                    products.length > 0 &&
+                    products.length < catalogTotal ? (
+                      <Button
+                        loading={productsLoading}
+                        onClick={() => setCatalogPage((page) => page + 1)}
+                      >
+                        {`Load more (${catalogTotal - products.length} remaining)`}
+                      </Button>
                     ) : null}
                   </BlockStack>
                 </Card>

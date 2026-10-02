@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Badge,
   Banner,
   BlockStack,
   Button,
@@ -36,6 +37,10 @@ function formatExpenseDate(value: string) {
 }
 
 function paymentSourceLabel(expense: ExpenseRecord) {
+  if (expense.source === "reimbursement") {
+    if (expense.paymentSource === "cash") return "Staff reimbursement · Cash";
+    return `Staff reimbursement · ${expense.bankAccountName ?? "Bank"}`;
+  }
   if (expense.paymentSource === "cash") return "Cash";
   return expense.bankAccountName ?? "Bank";
 }
@@ -131,7 +136,16 @@ export function ExpensesPage() {
           {expense.categoryName ?? "—"}
         </Text>
       </IndexTable.Cell>
-      <IndexTable.Cell>{expense.description}</IndexTable.Cell>
+      <IndexTable.Cell>
+        <InlineStack gap="200" blockAlign="center" wrap={false}>
+          <Text as="span" truncate>
+            {expense.description}
+          </Text>
+          {expense.source === "reimbursement" ? (
+            <Badge tone="info">Staff claim</Badge>
+          ) : null}
+        </InlineStack>
+      </IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" tone="subdued" variant="bodySm">
           {expense.reference || " "}
@@ -159,24 +173,33 @@ export function ExpensesPage() {
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <InlineStack gap="150">
+        {expense.source === "reimbursement" ? (
           <Button
             size="slim"
-            onClick={() => {
-              setEditingExpense(expense);
-              setModalOpen(true);
-            }}
+            url="/dashboard/accounting/expense-reimbursements"
           >
-            Edit
+            View claim
           </Button>
-          <Button
-            size="slim"
-            tone="critical"
-            onClick={() => setDeletingExpense(expense)}
-          >
-            Delete
-          </Button>
-        </InlineStack>
+        ) : (
+          <InlineStack gap="150" wrap={false}>
+            <Button
+              size="slim"
+              onClick={() => {
+                setEditingExpense(expense);
+                setModalOpen(true);
+              }}
+            >
+              Edit
+            </Button>
+            <Button
+              size="slim"
+              tone="critical"
+              onClick={() => setDeletingExpense(expense)}
+            >
+              Delete
+            </Button>
+          </InlineStack>
+        )}
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
@@ -217,10 +240,16 @@ export function ExpensesPage() {
 
         <Banner tone="info">
           <p>
-            Each entry posts automatically: <strong>Dr 600000 Operating Expenses</strong>,{" "}
-            <strong>Cr Cash (101501)</strong> or the selected <strong>bank GL account</strong>.
-            Expenses appear on your{" "}
-            <Link url="/dashboard/accounting/profit-loss">Profit & Loss</Link> report.
+            Company-paid spend and reimbursed staff claims post here:{" "}
+            <strong>Dr 600000 Operating Expenses</strong>,{" "}
+            <strong>Cr Cash (101501)</strong> or the selected{" "}
+            <strong>bank GL account</strong>. All amounts appear on{" "}
+            <Link url="/dashboard/accounting/profit-loss">Profit & Loss</Link>.
+            Staff claims are recorded from{" "}
+            <Link url="/dashboard/accounting/expense-reimbursements">
+              Expense reimbursements
+            </Link>{" "}
+            when you reimburse.
           </p>
         </Banner>
 

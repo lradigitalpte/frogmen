@@ -447,6 +447,45 @@ html:not([data-theme="dark"]) .Polaris-ShadowBevel {
   overflow: hidden;
 }
 
+.index-table-pagination-bar {
+  padding: 0.75rem 1rem;
+  background: color-mix(in oklch, var(--background) 96%, var(--foreground) 4%);
+}
+
+.index-table-pagination-bar--header {
+  border-bottom: 1px solid oklch(0.8452 0 0 / 0.55);
+}
+
+.index-table-pagination-bar--footer {
+  border-top: 1px solid oklch(0.8452 0 0 / 0.55);
+}
+
+.index-table-pagination-bar__per-page {
+  min-width: 9.5rem;
+}
+
+.stock-overview-row__meta {
+  display: block;
+  max-width: 14rem;
+}
+
+.app-index-surface .Polaris-IndexTable__PaginationWrapper {
+  padding: 0.65rem 1rem;
+  border-top: 1px solid oklch(0.8452 0 0 / 0.4);
+  background: color-mix(in oklch, var(--background) 96%, var(--foreground) 4%);
+}
+
+.app-index-surface .Polaris-Pagination__Label {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+[data-theme="dark"] .index-table-pagination-bar,
+[data-theme="dark"] .app-index-surface .Polaris-IndexTable__PaginationWrapper {
+  background: #1f1f1f;
+  border-color: #333333;
+}
+
 /* Compact report filter bar + stronger Polaris form text (light + dark) */
 .frogmen-report-filter {
   background: #ffffff;
@@ -5291,6 +5330,43 @@ textarea.Polaris-TextField__Input:focus {
 
 [data-theme="dark"] .accounting-report-table .Polaris-IndexTable {
   border-color: #333333;
+}
+
+.expense-reimbursements-table .Polaris-IndexTable__Table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.expense-reimbursements-table__number {
+  min-width: 7.5rem;
+  white-space: nowrap;
+}
+
+.expense-reimbursements-table__nowrap {
+  white-space: nowrap;
+}
+
+.expense-reimbursements-table__employee {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  max-width: 14rem;
+}
+
+.expense-reimbursements-table__description {
+  min-width: 0;
+  max-width: 18rem;
+}
+
+.expense-reimbursements-table__actions {
+  display: flex;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.expense-reimbursements-table .Polaris-IndexTable__TableCell {
+  vertical-align: middle;
 }
 
 .accounting-report-total {

@@ -10,6 +10,11 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const RECEIPTS_PAGE_SIZE = 16;
+const receiptResourceName = { singular: "receipt", plural: "receipts" };
 import { StatusBadge } from "@/components/ui/status-badge";
 import { listGoodsReceipts, type GoodsReceipt } from "@/lib/purchase-orders-api";
 
@@ -75,6 +80,15 @@ export function GoodsReceiptsListPage() {
         ) : null}
 
         <IndexSurface>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={RECEIPTS_PAGE_SIZE}
+            total={total}
+            resourceName={receiptResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
           <IndexTable
             emptyState={
               <EmptyState
@@ -98,16 +112,26 @@ export function GoodsReceiptsListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "receipt", plural: "receipts" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: RECEIPTS_PAGE_SIZE,
+              total,
+              onPageChange: setPage,
+              resourceName: receiptResourceName,
+            })}
+            resourceName={receiptResourceName}
           >
             {rowMarkup}
           </IndexTable>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={RECEIPTS_PAGE_SIZE}
+            total={total}
+            resourceName={receiptResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

@@ -15,6 +15,10 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const rovProjectResourceName = { singular: "project", plural: "projects" };
 import { listRovProjects } from "@/lib/rov-api";
 import type { RovProject, RovProjectStatus } from "@/types/rov";
 import { useBranchLabels } from "@/hooks/use-branch-labels";
@@ -186,9 +190,6 @@ export function RovProjectsListPage() {
     [router, debouncedQuery, activeStatus],
   );
 
-  const rangeStart = total === 0 ? 0 : (page - 1) * PER_PAGE + 1;
-  const rangeEnd = Math.min(page * PER_PAGE, total);
-
   return (
     <AppPage
       fullWidth
@@ -231,14 +232,15 @@ export function RovProjectsListPage() {
             setMode={setMode}
           />
 
-          {!loading && total > 0 ? (
-            <div className="rov-projects-list__summary">
-              <Text as="p" tone="subdued" variant="bodySm">
-                Showing {rangeStart} to {rangeEnd} of {total} result
-                {total === 1 ? "" : "s"}
-              </Text>
-            </div>
-          ) : null}
+          <IndexTablePaginationBar
+            page={page}
+            perPage={PER_PAGE}
+            total={total}
+            resourceName={rovProjectResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
 
           <IndexTable
             emptyState={emptyState}
@@ -255,16 +257,27 @@ export function RovProjectsListPage() {
             itemCount={total}
             loading={loading}
             selectable={false}
-            pagination={{
-              hasNext: page * PER_PAGE < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "project", plural: "projects" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: PER_PAGE,
+              total,
+              onPageChange: setPage,
+              resourceName: rovProjectResourceName,
+            })}
+            resourceName={rovProjectResourceName}
           >
             {rowMarkup}
           </IndexTable>
+
+          <IndexTablePaginationBar
+            page={page}
+            perPage={PER_PAGE}
+            total={total}
+            resourceName={rovProjectResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

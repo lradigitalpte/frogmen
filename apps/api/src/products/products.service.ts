@@ -373,6 +373,11 @@ export class ProductsService {
 
     const needsStock = Boolean(query.includeStock || query.inStockOnly);
 
+    const stockWhereClause =
+      query.inStockOnly && needsStock
+        ? and(whereClause, this.inStockOnlyCondition(organizationId))
+        : whereClause;
+
     if (!needsStock) {
       const [rows, totalResult] = await Promise.all([
         this.db
@@ -398,19 +403,29 @@ export class ProductsService {
       };
     }
 
-    const allRows = await this.db
-      .select()
-      .from(products)
-      .where(whereClause)
-      .orderBy(orderBy);
+    const [rows, totalResult] = await Promise.all([
+      this.db
+        .select()
+        .from(products)
+        .where(stockWhereClause)
+        .orderBy(orderBy)
+        .limit(perPage)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(products)
+        .where(stockWhereClause),
+    ]);
+
+    const total = Number(totalResult[0]?.total ?? 0);
 
     const { serialQuantities, bulkQuantities } =
       await this.loadAvailableQuantities(
         organizationId,
-        allRows.map((row) => row.id),
+        rows.map((row) => row.id),
       );
 
-    let enriched = allRows.map((row) => {
+    const data = rows.map((row) => {
       const alwaysAvailable = row.type === "service" || !row.isStorable;
       const availableQuantity = alwaysAvailable
         ? null
@@ -423,17 +438,6 @@ export class ProductsService {
       };
     });
 
-    if (query.inStockOnly) {
-      enriched = enriched.filter(
-        (row) =>
-          row.availableQuantity === null ||
-          Number(row.availableQuantity) > 0,
-      );
-    }
-
-    const total = enriched.length;
-    const data = enriched.slice(offset, offset + perPage);
-
     return {
       data,
       meta: {
@@ -443,6 +447,32 @@ export class ProductsService {
         totalPages: Math.ceil(total / perPage) || 1,
       },
     };
+  }
+
+  private inStockOnlyCondition(organizationId: string): SQL {
+    return or(
+      eq(products.type, "service"),
+      eq(products.isStorable, false),
+      and(
+        eq(products.trackSerial, true),
+        sql`exists (
+          select 1 from ${productUnits} pu
+          where pu.product_id = ${products.id}
+            and pu.organization_id = ${organizationId}
+            and pu.status = 'in_stock'
+        )`,
+      ),
+      and(
+        eq(products.trackSerial, false),
+        eq(products.isStorable, true),
+        sql`exists (
+          select 1 from ${stockLevels} sl
+          where sl.product_id = ${products.id}
+            and sl.organization_id = ${organizationId}
+            and sl.quantity::numeric > 0
+        )`,
+      ),
+    )!;
   }
 
   private async loadAvailableQuantities(

@@ -15,6 +15,8 @@ import { Building2, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -185,6 +187,15 @@ export function VendorsListPage() {
             onSelect={setSelectedTab}
             setMode={setMode}
           />
+          <IndexTablePaginationBar
+            page={page}
+            perPage={16}
+            total={total}
+            resourceName={{ singular: "vendor", plural: "vendors" }}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
           <IndexTable
             emptyState={
               <EmptyState
@@ -207,16 +218,26 @@ export function VendorsListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: 16,
+              total,
+              onPageChange: setPage,
+              resourceName: { singular: "vendor", plural: "vendors" },
+            })}
             resourceName={{ singular: "vendor", plural: "vendors" }}
           >
             {rowMarkup}
           </IndexTable>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={16}
+            total={total}
+            resourceName={{ singular: "vendor", plural: "vendors" }}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

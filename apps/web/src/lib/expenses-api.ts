@@ -21,6 +21,8 @@ export interface ExpenseRecord {
   categoryName?: string | null;
   receiptPath?: string | null;
   hasReceipt?: boolean;
+  source?: "manual" | "reimbursement";
+  expenseClaimId?: string | null;
 }
 
 export interface ExpensesListResponse {

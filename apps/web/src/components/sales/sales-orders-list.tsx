@@ -17,6 +17,14 @@ import { Calculator, FileCheck, ShoppingCart } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const SALES_ORDER_PAGE_SIZE = 16;
+const salesOrderResourceName = {
+  singular: "sales order",
+  plural: "sales orders",
+};
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
   orderInvoiceStatusLabel,
@@ -267,6 +275,16 @@ export function SalesOrdersListPage() {
             setMode={setMode}
           />
 
+          <IndexTablePaginationBar
+            page={page}
+            perPage={SALES_ORDER_PAGE_SIZE}
+            total={total}
+            resourceName={salesOrderResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
+
           <IndexTable
             emptyState={emptyState}
             headings={[
@@ -280,16 +298,26 @@ export function SalesOrdersListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "sales order", plural: "sales orders" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: SALES_ORDER_PAGE_SIZE,
+              total,
+              onPageChange: setPage,
+              resourceName: salesOrderResourceName,
+            })}
+            resourceName={salesOrderResourceName}
           >
             {rowMarkup}
           </IndexTable>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={SALES_ORDER_PAGE_SIZE}
+            total={total}
+            resourceName={salesOrderResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

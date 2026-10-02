@@ -19,6 +19,14 @@ import { FileText, ShoppingCart, TrendingUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const QUOTATION_PAGE_SIZE = 16;
+const quotationResourceName = {
+  singular: "quotation",
+  plural: "quotations",
+};
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
@@ -577,6 +585,16 @@ export function QuotationsListPage() {
             setMode={setMode}
           />
 
+          <IndexTablePaginationBar
+            page={page}
+            perPage={QUOTATION_PAGE_SIZE}
+            total={total}
+            resourceName={quotationResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
+
           <IndexTable
             emptyState={emptyState}
             headings={[
@@ -590,16 +608,27 @@ export function QuotationsListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "quotation", plural: "quotations" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: QUOTATION_PAGE_SIZE,
+              total,
+              onPageChange: setPage,
+              resourceName: quotationResourceName,
+            })}
+            resourceName={quotationResourceName}
           >
             {rowMarkup}
           </IndexTable>
+
+          <IndexTablePaginationBar
+            page={page}
+            perPage={QUOTATION_PAGE_SIZE}
+            total={total}
+            resourceName={quotationResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
 

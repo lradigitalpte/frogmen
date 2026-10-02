@@ -24,6 +24,14 @@ import {
 import { listStock } from "@/lib/products-api";
 import type { Warehouse, WarehouseTab } from "@/types/warehouse";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const WAREHOUSE_LIST_PAGE_SIZE = 16;
+const warehouseResourceName = {
+  singular: "warehouse",
+  plural: "warehouses",
+};
 
 const tabs: { id: WarehouseTab; content: string }[] = [
   { id: "all", content: "All" },
@@ -220,6 +228,16 @@ export function WarehousesListPage() {
             setMode={setMode}
           />
 
+          <IndexTablePaginationBar
+            page={page}
+            perPage={WAREHOUSE_LIST_PAGE_SIZE}
+            total={total}
+            resourceName={warehouseResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
+
           <IndexTable
             emptyState={emptyState}
             headings={[
@@ -230,16 +248,26 @@ export function WarehousesListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "warehouse", plural: "warehouses" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: WAREHOUSE_LIST_PAGE_SIZE,
+              total,
+              onPageChange: setPage,
+              resourceName: warehouseResourceName,
+            })}
+            resourceName={warehouseResourceName}
           >
             {rowMarkup}
           </IndexTable>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={WAREHOUSE_LIST_PAGE_SIZE}
+            total={total}
+            resourceName={warehouseResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

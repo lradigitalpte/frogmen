@@ -17,12 +17,23 @@ import { AlertTriangle, Boxes, Package, PackageX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const stockRowResourceName = {
+  singular: "stock row",
+  plural: "stock rows",
+};
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
+import {
+  formatSerialSummaryPreview,
+  isSerialSummaryTruncated,
+} from "@/lib/format-serial-summary";
 import { listStock } from "@/lib/products-api";
 import { listWarehouses } from "@/lib/warehouses-api";
 import type { StockOverviewRow } from "@/types/product";
@@ -122,6 +133,10 @@ export function StockOverviewPage() {
     });
   }, [activeTab, rows]);
 
+  const paginationTotal =
+    activeTab === "all" ? total : filteredRows.length;
+  const paginationPage = activeTab === "all" ? page : 1;
+
   const stats = useMemo(() => {
     let zeroCount = 0;
     let lowCount = 0;
@@ -212,11 +227,22 @@ export function StockOverviewPage() {
                 {row.productName}
               </Text>
             </Link>
-            <Text as="span" tone="subdued" variant="bodySm">
-              {row.trackSerial && row.serialSummary
-                ? row.serialSummary
-                : row.productSku || "No SKU"}
-            </Text>
+            <span
+              className="stock-overview-row__meta"
+              title={
+                row.trackSerial &&
+                row.serialSummary &&
+                isSerialSummaryTruncated(row.serialSummary)
+                  ? row.serialSummary
+                  : undefined
+              }
+            >
+              <Text as="span" tone="subdued" variant="bodySm" truncate>
+                {row.trackSerial && row.serialSummary
+                  ? formatSerialSummaryPreview(row.serialSummary, 2)
+                  : row.productSku || "No SKU"}
+              </Text>
+            </span>
           </BlockStack>
         </InlineStack>
       </IndexTable.Cell>
@@ -360,6 +386,16 @@ export function StockOverviewPage() {
             setMode={setMode}
           />
 
+          <IndexTablePaginationBar
+            page={paginationPage}
+            perPage={activeTab === "all" ? PER_PAGE : Math.max(filteredRows.length, 1)}
+            total={paginationTotal}
+            resourceName={stockRowResourceName}
+            loading={loading}
+            onPageChange={activeTab === "all" ? setPage : () => {}}
+            placement="header"
+          />
+
           <IndexTable
             emptyState={emptyState}
             headings={[
@@ -370,18 +406,33 @@ export function StockOverviewPage() {
               { title: "Type" },
               { title: "" },
             ]}
-            itemCount={activeTab === "all" ? total : filteredRows.length}
+            itemCount={paginationTotal}
             loading={loading}
-            pagination={{
-              hasNext: activeTab === "all" && page * PER_PAGE < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "stock row", plural: "stock rows" }}
+            pagination={
+              activeTab === "all"
+                ? buildIndexTablePagination({
+                    page,
+                    perPage: PER_PAGE,
+                    total,
+                    onPageChange: setPage,
+                    resourceName: stockRowResourceName,
+                  })
+                : undefined
+            }
+            resourceName={stockRowResourceName}
           >
             {rowMarkup}
           </IndexTable>
+
+          <IndexTablePaginationBar
+            page={paginationPage}
+            perPage={activeTab === "all" ? PER_PAGE : Math.max(filteredRows.length, 1)}
+            total={paginationTotal}
+            resourceName={stockRowResourceName}
+            loading={loading}
+            onPageChange={activeTab === "all" ? setPage : () => {}}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>

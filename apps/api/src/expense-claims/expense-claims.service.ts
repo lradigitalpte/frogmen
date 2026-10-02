@@ -20,6 +20,7 @@ import { DATABASE } from "../database/database.constants";
 import { UploadsService } from "../uploads/uploads.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import { ExpenseCategoriesService } from "../expenses/expense-categories.service";
+import { ExpensesService } from "../expenses/expenses.service";
 
 export type ExpenseClaimStatus =
   | "draft"
@@ -45,6 +46,7 @@ export class ExpenseClaimsService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly accountingService: AccountingService,
     private readonly expenseCategoriesService: ExpenseCategoriesService,
+    private readonly expensesService: ExpensesService,
     private readonly uploadsService: UploadsService,
   ) {}
 
@@ -433,6 +435,23 @@ export class ExpenseClaimsService {
         updatedAt: new Date(),
       })
       .where(eq(expenseClaims.id, id));
+
+    await this.expensesService.createLedgerEntryFromReimbursedClaim(
+      organizationId,
+      userId,
+      {
+        number: existing.number,
+        accountMoveId: moveId,
+        categoryId: existing.categoryId,
+        description: existing.description,
+        reference: existing.reference,
+        amount: existing.amount,
+        expenseDate: reimbursedDate,
+        paymentMethod,
+        bankAccountId: input.bankAccountId ?? null,
+        receiptPath: existing.receiptPath,
+      },
+    );
 
     return this.getById(organizationId, id);
   }

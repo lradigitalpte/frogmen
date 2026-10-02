@@ -100,6 +100,7 @@ export function CreateInvoicePage() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
   const [catalogTotal, setCatalogTotal] = useState(0);
 
   // Serial Selection State for serial-tracked items
@@ -202,24 +203,34 @@ export function CreateInvoicePage() {
 
   useEffect(() => {
     const timer = setTimeout(
-      () => setDebouncedCatalogSearch(catalogSearch),
+      () => setDebouncedCatalogSearch(catalogSearch.trim()),
       300,
     );
     return () => clearTimeout(timer);
   }, [catalogSearch]);
 
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [debouncedCatalogSearch]);
+
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
+    const isSearch = Boolean(debouncedCatalogSearch);
     try {
       const result = await listProducts({
         search: debouncedCatalogSearch || undefined,
-        perPage: 50,
+        page: catalogPage,
+        perPage: isSearch ? 100 : 50,
+        sortBy: "name",
+        sortDir: "asc",
         forSaleOnly: true,
         rootOnly: true,
         includeStock: true,
         inStockOnly: true,
       });
-      setProducts(result.data);
+      setProducts((current) =>
+        catalogPage > 1 ? [...current, ...result.data] : result.data,
+      );
       setCatalogTotal(result.meta.total);
     } catch {
       setProducts([]);
@@ -227,7 +238,7 @@ export function CreateInvoicePage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [debouncedCatalogSearch]);
+  }, [debouncedCatalogSearch, catalogPage]);
 
   useEffect(() => {
     if (!fromSalesOrder && selectedTab === 1) {
@@ -1039,9 +1050,14 @@ export function CreateInvoicePage() {
                     <Text as="p" tone="subdued" variant="bodySm">
                       {productsLoading && products.length === 0
                         ? "Loading products..."
-                        : catalogTotal === 0
-                          ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
-                          : `Showing ${products.length} of ${catalogTotal} in-stock product${catalogTotal === 1 ? "" : "s"} (linked components hidden).${productsLoading ? " Updating…" : ""}`}
+                        : catalogSearch.trim() &&
+                            catalogSearch.trim() !== debouncedCatalogSearch
+                          ? "Searching full catalog…"
+                          : catalogTotal === 0
+                            ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
+                            : debouncedCatalogSearch
+                              ? `Showing ${products.length} of ${catalogTotal} matching in-stock product${catalogTotal === 1 ? "" : "s"}.${productsLoading ? " Updating…" : ""}`
+                              : `Showing ${products.length} of ${catalogTotal} in-stock product${catalogTotal === 1 ? "" : "s"}. Search by name, SKU, or barcode to search the full catalog.`}
                     </Text>
                     {products.length > 0 ? (
                       <ProductCatalogSearchResults>
@@ -1093,6 +1109,14 @@ export function CreateInvoicePage() {
                           )}
                         />
                       </ProductCatalogSearchResults>
+                    ) : null}
+                    {products.length > 0 && products.length < catalogTotal ? (
+                      <Button
+                        loading={productsLoading}
+                        onClick={() => setCatalogPage((page) => page + 1)}
+                      >
+                        {`Load more (${catalogTotal - products.length} remaining)`}
+                      </Button>
                     ) : null}
                   </BlockStack>
                 </Card>

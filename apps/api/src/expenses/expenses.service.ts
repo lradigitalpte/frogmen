@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, notInArray } from "drizzle-orm";
 import {
   bankAccounts,
   expenseCategories,
+  expenseClaims,
   expenses,
   type Database,
 } from "@frog1/db";
@@ -29,6 +30,7 @@ export class ExpensesService {
 
   async list(organizationId: string) {
     await this.expenseCategoriesService.seedDefaults(organizationId);
+    await this.syncReimbursementLedgerEntries(organizationId);
 
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
@@ -38,6 +40,7 @@ export class ExpensesService {
         expense: expenses,
         categoryName: expenseCategories.name,
         bankAccountName: bankAccounts.name,
+        expenseClaimId: expenseClaims.id,
       })
       .from(expenses)
       .leftJoin(
@@ -45,6 +48,15 @@ export class ExpensesService {
         eq(expenseCategories.id, expenses.categoryId),
       )
       .leftJoin(bankAccounts, eq(bankAccounts.id, expenses.bankAccountId))
+      .leftJoin(
+        expenseClaims,
+        and(
+          eq(expenseClaims.accountMoveId, expenses.accountMoveId),
+          eq(expenseClaims.organizationId, organizationId),
+          eq(expenseClaims.status, "reimbursed"),
+          isNull(expenseClaims.deletedAt),
+        ),
+      )
       .where(
         and(
           eq(expenses.organizationId, organizationId),
@@ -91,6 +103,8 @@ export class ExpensesService {
         categoryName: row.categoryName,
         receiptPath: row.expense.receiptPath,
         hasReceipt: Boolean(row.expense.receiptPath),
+        expenseClaimId: row.expenseClaimId,
+        source: row.expenseClaimId ? ("reimbursement" as const) : ("manual" as const),
       };
     });
 
@@ -148,6 +162,116 @@ export class ExpensesService {
       hasReceipt: Boolean(row.expense.receiptPath),
       accountMoveId: row.expense.accountMoveId,
     };
+  }
+
+  async createLedgerEntryFromReimbursedClaim(
+    organizationId: string,
+    userId: string | undefined,
+    claim: {
+      number: string;
+      accountMoveId: string;
+      categoryId: string | null;
+      description: string;
+      reference: string | null;
+      amount: string;
+      expenseDate: string;
+      paymentMethod: string;
+      bankAccountId: string | null;
+      receiptPath: string | null;
+    },
+  ) {
+    const [existing] = await this.db
+      .select({ id: expenses.id })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.organizationId, organizationId),
+          eq(expenses.accountMoveId, claim.accountMoveId),
+          isNull(expenses.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      return existing;
+    }
+
+    const description = claim.description.startsWith("Reimbursement:")
+      ? claim.description
+      : `Reimbursement: ${claim.description}`;
+
+    const [created] = await this.db
+      .insert(expenses)
+      .values({
+        organizationId,
+        accountMoveId: claim.accountMoveId,
+        number: claim.number,
+        categoryId: claim.categoryId,
+        description,
+        reference: claim.reference,
+        amount: claim.amount,
+        expenseDate: claim.expenseDate,
+        paymentMethod: claim.paymentMethod,
+        bankAccountId: claim.bankAccountId,
+        receiptPath: claim.receiptPath,
+        createdBy: userId ?? null,
+      })
+      .returning();
+
+    return created;
+  }
+
+  private async syncReimbursementLedgerEntries(organizationId: string) {
+    const linkedExpenseMoves = await this.db
+      .select({ accountMoveId: expenses.accountMoveId })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.organizationId, organizationId),
+          isNull(expenses.deletedAt),
+        ),
+      );
+
+    const linkedMoveIds = linkedExpenseMoves
+      .map((row) => row.accountMoveId)
+      .filter(Boolean);
+
+    const missingClaims = await this.db
+      .select()
+      .from(expenseClaims)
+      .where(
+        and(
+          eq(expenseClaims.organizationId, organizationId),
+          eq(expenseClaims.status, "reimbursed"),
+          isNull(expenseClaims.deletedAt),
+          isNotNull(expenseClaims.accountMoveId),
+          isNotNull(expenseClaims.paymentMethod),
+          linkedMoveIds.length
+            ? notInArray(expenseClaims.accountMoveId, linkedMoveIds)
+            : undefined,
+        ),
+      )
+      .limit(100);
+
+    for (const claim of missingClaims) {
+      if (!claim.accountMoveId || !claim.paymentMethod) continue;
+
+      await this.createLedgerEntryFromReimbursedClaim(
+        organizationId,
+        claim.reimbursedByUserId ?? undefined,
+        {
+        number: claim.number,
+        accountMoveId: claim.accountMoveId,
+        categoryId: claim.categoryId,
+        description: claim.description,
+        reference: claim.reference,
+        amount: claim.amount,
+        expenseDate: claim.expenseDate,
+        paymentMethod: claim.paymentMethod,
+        bankAccountId: claim.bankAccountId,
+        receiptPath: claim.receiptPath,
+      });
+    }
   }
 
   async create(
@@ -235,6 +359,27 @@ export class ExpensesService {
     };
   }
 
+  private async assertManualExpense(organizationId: string, accountMoveId: string) {
+    const [claim] = await this.db
+      .select({ id: expenseClaims.id })
+      .from(expenseClaims)
+      .where(
+        and(
+          eq(expenseClaims.organizationId, organizationId),
+          eq(expenseClaims.accountMoveId, accountMoveId),
+          eq(expenseClaims.status, "reimbursed"),
+          isNull(expenseClaims.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (claim) {
+      throw new BadRequestException(
+        "Staff reimbursement entries are managed from Expense reimbursements",
+      );
+    }
+  }
+
   async update(
     organizationId: string,
     id: string,
@@ -250,6 +395,7 @@ export class ExpensesService {
     },
   ) {
     const existing = await this.getById(organizationId, id);
+    await this.assertManualExpense(organizationId, existing.accountMoveId);
 
     const amount =
       input.amount !== undefined ? roundMoney(input.amount) : existing.amount;
@@ -337,6 +483,7 @@ export class ExpensesService {
 
   async remove(organizationId: string, id: string) {
     const existing = await this.getById(organizationId, id);
+    await this.assertManualExpense(organizationId, existing.accountMoveId);
 
     await this.accountingService.reverseJournalMove(
       organizationId,

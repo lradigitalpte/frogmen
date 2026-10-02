@@ -219,7 +219,7 @@ export function AddProductLineModal({
       try {
         const result = await listProducts({
           search: debouncedSearch || undefined,
-          perPage: 25,
+          perPage: debouncedSearch ? 100 : 25,
           sortBy: "name",
           sortDir: "asc",
           forSaleOnly: true,

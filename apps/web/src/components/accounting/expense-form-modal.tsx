@@ -69,7 +69,7 @@ export function ExpenseFormModal({
   const [error, setError] = useState<string | null>(null);
 
   const requiresBankAccount =
-    paymentMethod !== "cash" && paymentMethod !== "cheque" && paymentMethod !== "custom";
+    paymentMethod !== "cash" && paymentMethod !== "cheque";
 
   const paidFromOptions = useMemo(() => [
     ...paymentMethods,

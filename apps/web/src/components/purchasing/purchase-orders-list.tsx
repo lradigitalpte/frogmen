@@ -15,6 +15,14 @@ import { ClipboardList, PackageCheck, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+
+const PO_LIST_PAGE_SIZE = 16;
+const purchaseOrderResourceName = {
+  singular: "purchase order",
+  plural: "purchase orders",
+};
 import { formatMoney } from "@/components/sales/format-money";
 import { KpiCard } from "@/components/ui/kpi-card";
 import {
@@ -201,6 +209,15 @@ export function PurchaseOrdersListPage() {
             onSelect={setSelectedTab}
             setMode={setMode}
           />
+          <IndexTablePaginationBar
+            page={page}
+            perPage={PO_LIST_PAGE_SIZE}
+            total={total}
+            resourceName={purchaseOrderResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="header"
+          />
           <IndexTable
             emptyState={
               <EmptyState
@@ -226,16 +243,26 @@ export function PurchaseOrdersListPage() {
             ]}
             itemCount={total}
             loading={loading}
-            pagination={{
-              hasNext: page * 16 < total,
-              hasPrevious: page > 1,
-              onNext: () => setPage((current) => current + 1),
-              onPrevious: () => setPage((current) => Math.max(1, current - 1)),
-            }}
-            resourceName={{ singular: "purchase order", plural: "purchase orders" }}
+            pagination={buildIndexTablePagination({
+              page,
+              perPage: PO_LIST_PAGE_SIZE,
+              total,
+              onPageChange: setPage,
+              resourceName: purchaseOrderResourceName,
+            })}
+            resourceName={purchaseOrderResourceName}
           >
             {rowMarkup}
           </IndexTable>
+          <IndexTablePaginationBar
+            page={page}
+            perPage={PO_LIST_PAGE_SIZE}
+            total={total}
+            resourceName={purchaseOrderResourceName}
+            loading={loading}
+            onPageChange={setPage}
+            placement="footer"
+          />
         </IndexSurface>
       </BlockStack>
     </AppPage>
