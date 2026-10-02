@@ -54,6 +54,8 @@ interface AddProductLineModalProps {
   priceAdjustmentEnabled?: boolean;
   salesPricing?: SalesPricingSettings;
   existingLines?: ExistingLineAllocation[];
+  /** When true, catalog is not stock-filtered and lines do not reserve inventory. */
+  isDropship?: boolean;
 }
 
 export function AddProductLineModal({
@@ -66,6 +68,7 @@ export function AddProductLineModal({
   priceAdjustmentEnabled = true,
   salesPricing,
   existingLines = [],
+  isDropship = false,
 }: AddProductLineModalProps) {
   const resolvedDefaultTaxRate =
     defaultTaxRate ?? salesPricing?.defaultVatRatePercent ?? 5;
@@ -106,6 +109,7 @@ export function AddProductLineModal({
     [],
   );
   const [loadingAttachedParts, setLoadingAttachedParts] = useState(false);
+  const [supplyReference, setSupplyReference] = useState("");
 
   const {
     currencyLoading,
@@ -124,9 +128,9 @@ export function AddProductLineModal({
   );
 
   const isInventoryTracked = useMemo(() => {
-    if (!selectedProduct) return false;
+    if (!selectedProduct || isDropship) return false;
     return selectedProduct.type === "goods" && selectedProduct.isStorable;
-  }, [selectedProduct]);
+  }, [selectedProduct, isDropship]);
 
   const availableQuantity = useMemo(
     () => (isInventoryTracked ? sumStockQuantity(productStock) : null),
@@ -187,6 +191,7 @@ export function AddProductLineModal({
     setLoadingAttachedParts(false);
     setError(null);
     setSaving(false);
+    setSupplyReference("");
   }, [resolvedDefaultTaxRate]);
 
   function applyAdjustedUnitPrice(basePrice: number) {
@@ -225,7 +230,7 @@ export function AddProductLineModal({
           forSaleOnly: true,
           rootOnly: true,
           includeStock: true,
-          inStockOnly: true,
+          inStockOnly: !isDropship,
         });
 
         if (!cancelled) {
@@ -245,7 +250,7 @@ export function AddProductLineModal({
     return () => {
       cancelled = true;
     };
-  }, [open, debouncedSearch, selectedTab, reset]);
+  }, [open, debouncedSearch, selectedTab, reset, isDropship]);
 
   async function selectProduct(product: Product) {
     setSelectedProduct(product);
@@ -255,7 +260,8 @@ export function AddProductLineModal({
     setProductStock(null);
     setError(null);
 
-    const isStockTracked = product.type === "goods" && product.isStorable;
+    const isStockTracked =
+      !isDropship && product.type === "goods" && product.isStorable;
 
     try {
       const converted = await convertProductForDocument(product);
@@ -377,7 +383,7 @@ export function AddProductLineModal({
       return;
     }
 
-    if (selectedProduct.trackSerial && !selectedUnit) {
+    if (!isDropship && selectedProduct.trackSerial && !selectedUnit) {
       setError("Select a serial number for this unit");
       return;
     }
@@ -398,9 +404,11 @@ export function AddProductLineModal({
     setError(null);
 
     try {
+      const supplyRef = supplyReference.trim();
       await onAdd({
         productId: selectedProduct.id,
-        productUnitId: selectedUnit?.id,
+        productUnitId: isDropship ? undefined : selectedUnit?.id,
+        supplyReference: isDropship && supplyRef ? supplyRef : undefined,
         description: description.trim() || selectedProduct.name,
         quantity: lineQty,
         unitPrice: linePrice,
@@ -410,24 +418,26 @@ export function AddProductLineModal({
         warrantyPolicyId: warrantyPolicyId || null,
       });
 
-      for (const childId of selectedAttachedPartIds) {
-        const child = attachedParts.find((part) => part.id === childId);
-        if (!child) continue;
+      if (!isDropship) {
+        for (const childId of selectedAttachedPartIds) {
+          const child = attachedParts.find((part) => part.id === childId);
+          if (!child) continue;
 
-        const childProduct = await getProduct(child.productId);
-        const converted = await convertProductForDocument(childProduct);
+          const childProduct = await getProduct(child.productId);
+          const converted = await convertProductForDocument(childProduct);
 
-        await onAdd({
-          productId: child.productId,
-          productUnitId: child.id,
-          description: `${child.productName} · S/N ${child.serialNumber}`,
-          quantity: 1,
-          unitPrice: Number(applyAdjustedUnitPrice(converted.unitPrice)),
-          discountPercent: lineDiscPct,
-          discountAmount: lineDiscAmtFixed,
-          taxRatePercent: lineTaxPct,
-          warrantyPolicyId: childProduct.defaultWarrantyPolicyId ?? null,
-        });
+          await onAdd({
+            productId: child.productId,
+            productUnitId: child.id,
+            description: `${child.productName} · S/N ${child.serialNumber}`,
+            quantity: 1,
+            unitPrice: Number(applyAdjustedUnitPrice(converted.unitPrice)),
+            discountPercent: lineDiscPct,
+            discountAmount: lineDiscAmtFixed,
+            taxRatePercent: lineTaxPct,
+            warrantyPolicyId: childProduct.defaultWarrantyPolicyId ?? null,
+          });
+        }
       }
 
       if (addAnother) {
@@ -573,48 +583,60 @@ export function AddProductLineModal({
                     <Text as="h3" variant="headingSm">
                       Serial number
                     </Text>
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      Choose which in-stock unit to attach to this quotation line.
-                    </Text>
-
-                    {loadingUnits ? (
-                      <Text as="p" tone="subdued">
-                        Loading available serials…
-                      </Text>
-                    ) : units.length === 0 ? (
-                      <Banner tone="warning">
-                        No in-stock serials for this product. Add units on the
-                        product page under Inventory → Products.
-                      </Banner>
-                    ) : (
-                      <ResourceList
-                        items={units}
-                        renderItem={(unit) => (
-                          <ResourceItem
-                            id={unit.id}
-                            onClick={() => selectUnit(unit)}
-                            accessibilityLabel={`Select serial ${unit.serialNumber}`}
-                          >
-                            <InlineStack align="space-between" blockAlign="center">
-                              <BlockStack gap="100">
-                                <Text as="span" variant="bodyMd" fontWeight="semibold">
-                                  {unit.serialNumber}
-                                </Text>
-                                {unit.notes ? (
-                                  <Text as="span" tone="subdued" variant="bodySm">
-                                    {unit.notes}
-                                  </Text>
-                                ) : null}
-                              </BlockStack>
-                              {selectedUnit?.id === unit.id ? (
-                                <Badge tone="success">Selected</Badge>
-                              ) : (
-                                <Badge>Click to select</Badge>
-                              )}
-                            </InlineStack>
-                          </ResourceItem>
-                        )}
+                    {isDropship ? (
+                      <TextField
+                        autoComplete="off"
+                        helpText="Optional — for the quote/PDF only; warehouse stock is not used."
+                        label="Serial / supplier reference (optional)"
+                        onChange={setSupplyReference}
+                        value={supplyReference}
                       />
+                    ) : (
+                      <>
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Choose which in-stock unit to attach to this quotation line.
+                        </Text>
+
+                        {loadingUnits ? (
+                          <Text as="p" tone="subdued">
+                            Loading available serials…
+                          </Text>
+                        ) : units.length === 0 ? (
+                          <Banner tone="warning">
+                            No in-stock serials for this product. Add units on the
+                            product page under Inventory → Products.
+                          </Banner>
+                        ) : (
+                          <ResourceList
+                            items={units}
+                            renderItem={(unit) => (
+                              <ResourceItem
+                                id={unit.id}
+                                onClick={() => selectUnit(unit)}
+                                accessibilityLabel={`Select serial ${unit.serialNumber}`}
+                              >
+                                <InlineStack align="space-between" blockAlign="center">
+                                  <BlockStack gap="100">
+                                    <Text as="span" variant="bodyMd" fontWeight="semibold">
+                                      {unit.serialNumber}
+                                    </Text>
+                                    {unit.notes ? (
+                                      <Text as="span" tone="subdued" variant="bodySm">
+                                        {unit.notes}
+                                      </Text>
+                                    ) : null}
+                                  </BlockStack>
+                                  {selectedUnit?.id === unit.id ? (
+                                    <Badge tone="success">Selected</Badge>
+                                  ) : (
+                                    <Badge>Click to select</Badge>
+                                  )}
+                                </InlineStack>
+                              </ResourceItem>
+                            )}
+                          />
+                        )}
+                      </>
                     )}
                   </BlockStack>
                 </Card>

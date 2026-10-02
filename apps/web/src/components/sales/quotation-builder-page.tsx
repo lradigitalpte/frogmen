@@ -382,10 +382,25 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
       ]}
       subtitle={header.customer?.name}
       title={quotation.number}
-      titleMetadata={stateBadge(quotation.state)}
+      titleMetadata={
+        <InlineStack gap="200">
+          {stateBadge(quotation.state)}
+          {quotation.isDropship ? (
+            <Badge tone="attention">Dropship</Badge>
+          ) : null}
+        </InlineStack>
+      }
     >
       <BlockStack gap="500">
         <QuotationStepIndicator currentStep={2} />
+
+        {quotation.isDropship ? (
+          <Banner tone="info">
+            Dropship quotation: add catalog products without warehouse stock. When
+            the invoice is posted, revenue hits accounting; inventory is not
+            reduced.
+          </Banner>
+        ) : null}
 
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
@@ -682,6 +697,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
       <AddProductLineModal
         customerIsLocal={customerIsLocal}
         documentCurrencyId={quotation.currencyId}
+        isDropship={Boolean(quotation.isDropship)}
         existingLines={(quotation.lines ?? []).map((line) => ({
           productId: line.productId ?? "",
           productUnitId: line.productUnitId,

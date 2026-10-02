@@ -5337,6 +5337,30 @@ textarea.Polaris-TextField__Input:focus {
   width: 100%;
 }
 
+.expense-journal-lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.expense-journal-lines th,
+.expense-journal-lines td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e1e3e5;
+  text-align: left;
+  vertical-align: top;
+}
+
+.expense-journal-lines__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .expense-journal-lines th,
+[data-theme="dark"] .expense-journal-lines td {
+  border-bottom-color: #333333;
+}
+
 .expense-reimbursements-table__number {
   min-width: 7.5rem;
   white-space: nowrap;

@@ -71,6 +71,9 @@ export class ProductsController {
         String(query.includeStock) === "true" || query.includeStock === true,
       inStockOnly:
         String(query.inStockOnly) === "true" || query.inStockOnly === true,
+      hasSalesHistory:
+        String(query.hasSalesHistory) === "true" ||
+        query.hasSalesHistory === true,
       page: query.page ? Number(query.page) : undefined,
       perPage: query.perPage ? Number(query.perPage) : undefined,
     });

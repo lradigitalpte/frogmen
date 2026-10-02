@@ -14,6 +14,7 @@ import {
 } from "@shopify/polaris";
 import { Banknote, Calendar, FileText, Receipt } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ExpenseDetailModal } from "@/components/accounting/expense-detail-modal";
 import { ExpenseFormModal } from "@/components/accounting/expense-form-modal";
 import { AppPage } from "@/components/layout/page";
 import { KpiCard } from "@/components/ui/kpi-card";
@@ -24,6 +25,7 @@ import {
   deleteExpense,
   getExpenseReceiptUrl,
   listExpenses,
+  type ExpenseDetail,
   type ExpenseRecord,
   type ExpensesListResponse,
 } from "@/lib/expenses-api";
@@ -37,12 +39,13 @@ function formatExpenseDate(value: string) {
 }
 
 function paymentSourceLabel(expense: ExpenseRecord) {
+  const source = expense.paymentSource ?? "bank";
   if (expense.source === "reimbursement") {
-    if (expense.paymentSource === "cash") return "Staff reimbursement · Cash";
-    return `Staff reimbursement · ${expense.bankAccountName ?? "Bank"}`;
+    if (source === "cash") return "Staff claim · Cash";
+    return `Staff claim · ${expense.bankAccountName ?? "Bank"}`;
   }
-  if (expense.paymentSource === "cash") return "Cash";
-  return expense.bankAccountName ?? "Bank";
+  if (source === "cash") return "Cash (101501)";
+  return expense.bankAccountName ?? expense.paymentSourceLabel ?? "Bank";
 }
 
 export function ExpensesPage() {
@@ -59,6 +62,7 @@ export function ExpensesPage() {
     null,
   );
   const [deleting, setDeleting] = useState(false);
+  const [viewingExpenseId, setViewingExpenseId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,9 +128,12 @@ export function ExpensesPage() {
   const expenseRows = data?.expenses.map((expense, index) => (
     <IndexTable.Row id={expense.id} key={expense.id} position={index}>
       <IndexTable.Cell>
-        <Text as="span" fontWeight="semibold">
+        <Button
+          variant="plain"
+          onClick={() => setViewingExpenseId(expense.id)}
+        >
           {expense.number}
-        </Text>
+        </Button>
       </IndexTable.Cell>
       <IndexTable.Cell>
         {formatExpenseDate(expense.expenseDate)}
@@ -173,33 +180,31 @@ export function ExpensesPage() {
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {expense.source === "reimbursement" ? (
-          <Button
-            size="slim"
-            url="/dashboard/accounting/expense-reimbursements"
-          >
-            View claim
+        <InlineStack gap="150" wrap={false}>
+          <Button size="slim" onClick={() => setViewingExpenseId(expense.id)}>
+            View
           </Button>
-        ) : (
-          <InlineStack gap="150" wrap={false}>
-            <Button
-              size="slim"
-              onClick={() => {
-                setEditingExpense(expense);
-                setModalOpen(true);
-              }}
-            >
-              Edit
-            </Button>
-            <Button
-              size="slim"
-              tone="critical"
-              onClick={() => setDeletingExpense(expense)}
-            >
-              Delete
-            </Button>
-          </InlineStack>
-        )}
+          {expense.source !== "reimbursement" ? (
+            <>
+              <Button
+                size="slim"
+                onClick={() => {
+                  setEditingExpense(expense);
+                  setModalOpen(true);
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                size="slim"
+                tone="critical"
+                onClick={() => setDeletingExpense(expense)}
+              >
+                Delete
+              </Button>
+            </>
+          ) : null}
+        </InlineStack>
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
@@ -337,6 +342,15 @@ export function ExpensesPage() {
           </BlockStack>
         </Card>
       </BlockStack>
+
+      <ExpenseDetailModal
+        expenseId={viewingExpenseId}
+        onClose={() => setViewingExpenseId(null)}
+        onEdit={(detail: ExpenseDetail) => {
+          setEditingExpense(detail);
+          setModalOpen(true);
+        }}
+      />
 
       <ExpenseFormModal
         open={modalOpen}

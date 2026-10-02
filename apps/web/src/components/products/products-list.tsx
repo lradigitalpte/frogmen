@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Checkbox,
+  ChoiceList,
   DropZone,
   EmptyState,
   IndexFilters,
@@ -124,6 +125,7 @@ export function ProductsListPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(25);
+  const [salesHistoryOnly, setSalesHistoryOnly] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(
     new Map(),
@@ -180,6 +182,7 @@ export function ProductsListPage() {
               ? activeTab
               : undefined,
           isRovEquipment: activeTab === "rov" ? true : undefined,
+          hasSalesHistory: salesHistoryOnly || undefined,
           sortBy: "name",
           sortDir: "asc",
         }),
@@ -223,7 +226,7 @@ export function ProductsListPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, debouncedQuery, page, perPage]);
+  }, [activeTab, debouncedQuery, page, perPage, salesHistoryOnly]);
 
   useEffect(() => {
     loadProducts();
@@ -231,7 +234,45 @@ export function ProductsListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeTab, debouncedQuery, perPage]);
+  }, [activeTab, debouncedQuery, perPage, salesHistoryOnly]);
+
+  const appliedFilters = useMemo(() => {
+    if (!salesHistoryOnly) return [];
+    return [
+      {
+        key: "salesHistory",
+        label: "Sales history: sold before",
+        onRemove: () => setSalesHistoryOnly(false),
+      },
+    ];
+  }, [salesHistoryOnly]);
+
+  const indexFilters = useMemo(
+    () => [
+      {
+        key: "salesHistory",
+        label: "Sales history",
+        filter: (
+          <ChoiceList
+            allowMultiple={false}
+            choices={[
+              { label: "All products", value: "all" },
+              {
+                label: "Sold before (confirmed order or posted invoice)",
+                value: "sold",
+              },
+            ]}
+            selected={[salesHistoryOnly ? "sold" : "all"]}
+            title="Sales history"
+            titleHidden
+            onChange={(value) => setSalesHistoryOnly(value[0] === "sold")}
+          />
+        ),
+        shortcut: true,
+      },
+    ],
+    [salesHistoryOnly],
+  );
 
   async function handleArchive(id: string) {
     if (activeTab === "archived") {
@@ -602,19 +643,26 @@ export function ProductsListPage() {
 
         <IndexSurface>
           <IndexFilters
+            appliedFilters={appliedFilters}
             canCreateNewView={false}
             cancelAction={{
-              onAction: () => setQuery(""),
+              onAction: () => {
+                setQuery("");
+                setSalesHistoryOnly(false);
+              },
               disabled: false,
               loading: false,
             }}
-            filters={[]}
+            filters={indexFilters}
             mode={mode}
             queryPlaceholder="Search products"
             queryValue={query}
             selected={selectedTab}
             tabs={tabs}
-            onClearAll={() => setQuery("")}
+            onClearAll={() => {
+              setQuery("");
+              setSalesHistoryOnly(false);
+            }}
             onQueryChange={setQuery}
             onQueryClear={() => setQuery("")}
             onSelect={setSelectedTab}
@@ -658,16 +706,6 @@ export function ProductsListPage() {
           >
             {rowMarkup}
           </IndexTable>
-
-          <IndexTablePaginationBar
-            page={page}
-            perPage={perPage}
-            total={total}
-            resourceName={productResourceName}
-            loading={loading}
-            onPageChange={setPage}
-            placement="footer"
-          />
         </IndexSurface>
       </BlockStack>
 

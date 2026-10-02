@@ -39,6 +39,7 @@ export function listProducts(params: ListProductsParams = {}) {
       storableOnly: params.storableOnly ? "true" : undefined,
       includeStock: params.includeStock ? "true" : undefined,
       inStockOnly: params.inStockOnly ? "true" : undefined,
+      hasSalesHistory: params.hasSalesHistory ? "true" : undefined,
     })}`,
   );
 }

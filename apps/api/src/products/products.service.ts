@@ -54,7 +54,11 @@ import {
 
   salesOrderLines,
 
+  salesOrders,
+
   invoiceLines,
+
+  invoices,
 
   purchaseOrderLines,
 
@@ -345,7 +349,28 @@ export class ProductsService {
 
     }
 
-
+    if (query.hasSalesHistory) {
+      filters.push(
+        or(
+          sql`exists (
+            select 1 from ${salesOrderLines} sol
+            inner join ${salesOrders} so on so.id = sol.sales_order_id
+            where sol.product_id = ${products.id}
+              and so.organization_id = ${organizationId}
+              and so.deleted_at is null
+              and so.state = 'confirmed'
+          )`,
+          sql`exists (
+            select 1 from ${invoiceLines} il
+            inner join ${invoices} inv on inv.id = il.invoice_id
+            where il.product_id = ${products.id}
+              and inv.organization_id = ${organizationId}
+              and inv.deleted_at is null
+              and inv.state = 'posted'
+          )`,
+        )!,
+      );
+    }
 
     const whereClause = and(...filters);
 

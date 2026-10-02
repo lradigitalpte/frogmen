@@ -4,12 +4,19 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, isNull, notInArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, isNotNull, isNull, notInArray } from "drizzle-orm";
 import {
+  accountMoveLines,
+  accountMoves,
   bankAccounts,
   expenseCategories,
   expenseClaims,
+  expensePaymentSources,
   expenses,
+  glAccounts,
+  journals,
+  users,
   type Database,
 } from "@frog1/db";
 import { roundMoney } from "@frog1/shared";
@@ -120,11 +127,27 @@ export class ExpensesService {
   }
 
   async getById(organizationId: string, id: string) {
+    const creatorUser = alias(users, "expense_creator");
+    const claimSubmitter = alias(users, "claim_submitter");
+    const claimReimburser = alias(users, "claim_reimburser");
+
     const [row] = await this.db
       .select({
         expense: expenses,
         categoryName: expenseCategories.name,
         bankAccountName: bankAccounts.name,
+        paymentSourceName: expensePaymentSources.name,
+        paymentSourceLastFour: expensePaymentSources.lastFour,
+        creatorName: creatorUser.name,
+        creatorEmail: creatorUser.email,
+        expenseClaimId: expenseClaims.id,
+        claimNumber: expenseClaims.number,
+        claimSubmittedAt: expenseClaims.submittedAt,
+        claimReimbursedAt: expenseClaims.reimbursedAt,
+        claimSubmitterName: claimSubmitter.name,
+        claimSubmitterEmail: claimSubmitter.email,
+        claimReimburserName: claimReimburser.name,
+        claimReimburserEmail: claimReimburser.email,
       })
       .from(expenses)
       .leftJoin(
@@ -132,6 +155,28 @@ export class ExpensesService {
         eq(expenseCategories.id, expenses.categoryId),
       )
       .leftJoin(bankAccounts, eq(bankAccounts.id, expenses.bankAccountId))
+      .leftJoin(
+        expensePaymentSources,
+        eq(expensePaymentSources.id, expenses.paymentSourceId),
+      )
+      .leftJoin(creatorUser, eq(creatorUser.id, expenses.createdBy))
+      .leftJoin(
+        expenseClaims,
+        and(
+          eq(expenseClaims.accountMoveId, expenses.accountMoveId),
+          eq(expenseClaims.organizationId, organizationId),
+          eq(expenseClaims.status, "reimbursed"),
+          isNull(expenseClaims.deletedAt),
+        ),
+      )
+      .leftJoin(
+        claimSubmitter,
+        eq(claimSubmitter.id, expenseClaims.submittedByUserId),
+      )
+      .leftJoin(
+        claimReimburser,
+        eq(claimReimburser.id, expenseClaims.reimbursedByUserId),
+      )
       .where(
         and(
           eq(expenses.id, id),
@@ -145,6 +190,51 @@ export class ExpensesService {
       throw new NotFoundException("Expense not found");
     }
 
+    const paymentSource =
+      row.expense.paymentMethod === "cash" ||
+      row.expense.paymentMethod === "cheque"
+        ? ("cash" as const)
+        : ("bank" as const);
+
+    const [moveHeader] = await this.db
+      .select({
+        moveDate: accountMoves.moveDate,
+        name: accountMoves.name,
+        reference: accountMoves.reference,
+        state: accountMoves.state,
+        postedAt: accountMoves.postedAt,
+        journalCode: journals.code,
+        journalName: journals.name,
+      })
+      .from(accountMoves)
+      .innerJoin(journals, eq(journals.id, accountMoves.journalId))
+      .where(
+        and(
+          eq(accountMoves.id, row.expense.accountMoveId),
+          eq(accountMoves.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    const journalLines = await this.db
+      .select({
+        accountId: glAccounts.id,
+        accountCode: glAccounts.code,
+        accountName: glAccounts.name,
+        label: accountMoveLines.label,
+        debit: accountMoveLines.debit,
+        credit: accountMoveLines.credit,
+        lineNumber: accountMoveLines.lineNumber,
+      })
+      .from(accountMoveLines)
+      .innerJoin(glAccounts, eq(glAccounts.id, accountMoveLines.accountId))
+      .where(eq(accountMoveLines.moveId, row.expense.accountMoveId))
+      .orderBy(asc(accountMoveLines.lineNumber));
+
+    const source = row.expenseClaimId
+      ? ("reimbursement" as const)
+      : ("manual" as const);
+
     return {
       id: row.expense.id,
       number: row.expense.number,
@@ -154,6 +244,12 @@ export class ExpensesService {
       amount: roundMoney(Number(row.expense.amount)),
       paymentMethod: row.expense.paymentMethod,
       paymentSourceId: row.expense.paymentSourceId,
+      paymentSource,
+      paymentSourceLabel: row.paymentSourceName
+        ? row.paymentSourceLastFour
+          ? `${row.paymentSourceName} ····${row.paymentSourceLastFour}`
+          : row.paymentSourceName
+        : null,
       bankAccountId: row.expense.bankAccountId,
       bankAccountName: row.bankAccountName,
       categoryId: row.expense.categoryId,
@@ -161,6 +257,49 @@ export class ExpensesService {
       receiptPath: row.expense.receiptPath,
       hasReceipt: Boolean(row.expense.receiptPath),
       accountMoveId: row.expense.accountMoveId,
+      source,
+      expenseClaimId: row.expenseClaimId,
+      createdAt: row.expense.createdAt.toISOString(),
+      updatedAt: row.expense.updatedAt.toISOString(),
+      recordedBy:
+        row.creatorName || row.creatorEmail
+          ? {
+              name: row.creatorName,
+              email: row.creatorEmail,
+            }
+          : null,
+      reimbursement:
+        row.expenseClaimId && source === "reimbursement"
+          ? {
+              claimId: row.expenseClaimId,
+              claimNumber: row.claimNumber,
+              submitterName: row.claimSubmitterName,
+              submitterEmail: row.claimSubmitterEmail,
+              reimbursedByName: row.claimReimburserName,
+              reimbursedByEmail: row.claimReimburserEmail,
+              submittedAt: row.claimSubmittedAt?.toISOString() ?? null,
+              reimbursedAt: row.claimReimbursedAt?.toISOString() ?? null,
+            }
+          : null,
+      journal: moveHeader
+        ? {
+            moveDate: moveHeader.moveDate,
+            name: moveHeader.name,
+            reference: moveHeader.reference,
+            state: moveHeader.state,
+            postedAt: moveHeader.postedAt?.toISOString() ?? null,
+            journalCode: moveHeader.journalCode,
+            journalName: moveHeader.journalName,
+            lines: journalLines.map((line) => ({
+              accountId: line.accountId,
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              label: line.label,
+              debit: roundMoney(Number(line.debit)),
+              credit: roundMoney(Number(line.credit)),
+            })),
+          }
+        : null,
     };
   }
 

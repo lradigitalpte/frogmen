@@ -502,7 +502,14 @@ export class InvoicesService {
 
     await this.recomputeInvoiceTotals(invoiceId, exchangeRate);
 
-    await this.validateInventoryBeforePost(organizationId, invoiceId);
+    const isDropship = await this.isInvoiceFromDropshipOrder(
+      organizationId,
+      invoiceId,
+    );
+
+    if (!isDropship) {
+      await this.validateInventoryBeforePost(organizationId, invoiceId);
+    }
 
     const [updated] = await this.db
       .update(invoices)
@@ -536,8 +543,10 @@ export class InvoicesService {
       `Invoice ${updated.number} posted`,
     );
 
-    await this.fulfillSerialUnitsOnPost(organizationId, invoiceId);
-    await this.fulfillBulkStockOnPost(organizationId, invoiceId);
+    if (!isDropship) {
+      await this.fulfillSerialUnitsOnPost(organizationId, invoiceId);
+      await this.fulfillBulkStockOnPost(organizationId, invoiceId);
+    }
     await this.warrantiesService.registerFromInvoicePost(
       organizationId,
       invoiceId,
@@ -1406,6 +1415,25 @@ export class InvoicesService {
         updatedAt: new Date(),
       })
       .where(eq(invoices.id, invoiceId));
+  }
+
+  private async isInvoiceFromDropshipOrder(
+    organizationId: string,
+    invoiceId: string,
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({ isDropship: salesOrders.isDropship })
+      .from(invoices)
+      .innerJoin(salesOrders, eq(salesOrders.id, invoices.salesOrderId))
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    return Boolean(row?.isDropship);
   }
 
   private async fulfillSerialUnitsOnPost(

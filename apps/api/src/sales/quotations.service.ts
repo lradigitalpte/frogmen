@@ -81,6 +81,8 @@ export interface CreateQuotationInput {
   internalNotes?: string;
   deliveryFeeAmount?: number | null;
   deliveryFeePercent?: number | null;
+  /** Supplier fulfills stock; warehouse serial/qty checks are skipped. */
+  isDropship?: boolean;
 }
 
 export interface UpdateQuotationInput {
@@ -119,6 +121,8 @@ export interface AddQuotationLineInput {
   discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
+  /** Placeholder serial / supplier ref when dropship (no warehouse unit). */
+  supplyReference?: string;
 }
 
 export interface CurrencyRow {
@@ -448,7 +452,7 @@ export class QuotationsService {
       dealSiblings,
       lines: lines.map((row) => ({
         ...row.line,
-        serialNumber: row.serialNumber,
+        serialNumber: row.serialNumber ?? row.line.supplyReference,
         productDescription: row.productDescription,
       })),
       activities,
@@ -491,6 +495,7 @@ export class QuotationsService {
         notes: input.notes ?? null,
         internalNotes: input.internalNotes ?? null,
         accessToken: randomUUID(),
+        isDropship: input.isDropship ?? false,
         ...this.resolveDeliveryFeeFields(input),
         createdByUserId: userId ?? null,
       })
@@ -514,26 +519,33 @@ export class QuotationsService {
   ) {
     const order = await this.getEditableOrder(organizationId, orderId);
     const product = await this.getProduct(organizationId, input.productId);
+    const dropship = order.isDropship;
 
     if (product.trackSerial) {
-      if (!input.productUnitId) {
-        throw new BadRequestException(
-          "Serial number is required for this product",
-        );
-      }
-
       if (input.quantity !== 1) {
         throw new BadRequestException(
           "Serial-tracked products must have quantity 1 per line",
         );
       }
 
-      await this.validateSerialUnit(
-        organizationId,
-        input.productId,
-        input.productUnitId,
-      );
-    } else if (product.type === "goods" && product.isStorable) {
+      if (!dropship) {
+        if (!input.productUnitId) {
+          throw new BadRequestException(
+            "Serial number is required for this product",
+          );
+        }
+
+        await this.validateSerialUnit(
+          organizationId,
+          input.productId,
+          input.productUnitId,
+        );
+      }
+    } else if (
+      !dropship &&
+      product.type === "goods" &&
+      product.isStorable
+    ) {
       await this.validateBulkStockAvailability(
         organizationId,
         input.productId,
@@ -560,12 +572,18 @@ export class QuotationsService {
 
     const lineNumber = (lastLine?.lineNumber ?? 0) + 1;
 
+    const supplyReference =
+      dropship && input.supplyReference?.trim()
+        ? input.supplyReference.trim().slice(0, 120)
+        : null;
+
     await this.db.insert(salesOrderLines).values({
       salesOrderId: orderId,
       lineNumber,
       productId: input.productId,
-      productUnitId: input.productUnitId ?? null,
+      productUnitId: dropship ? null : (input.productUnitId ?? null),
       warehouseId: input.warehouseId ?? null,
+      supplyReference,
       description: input.description?.trim() || product.name,
       quantity: String(input.quantity),
       unitPrice: String(input.unitPrice),
@@ -736,7 +754,7 @@ export class QuotationsService {
         ? input.taxRatePercent
         : Number(line.taxRatePercent);
 
-    if (line.productId) {
+    if (line.productId && !order.isDropship) {
       const product = await this.getProduct(organizationId, line.productId);
 
       if (product.trackSerial && quantity !== 1) {

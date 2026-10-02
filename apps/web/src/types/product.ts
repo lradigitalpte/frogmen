@@ -92,6 +92,7 @@ export interface ListProductsParams {
   storableOnly?: boolean;
   includeStock?: boolean;
   inStockOnly?: boolean;
+  hasSalesHistory?: boolean;
   search?: string;
   page?: number;
   perPage?: number;

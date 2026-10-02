@@ -14,7 +14,7 @@ export interface ExpenseRecord {
   amount: number;
   paymentMethod: string;
   paymentSourceId?: string | null;
-  paymentSource: "cash" | "bank";
+  paymentSource?: "cash" | "bank";
   bankAccountId?: string | null;
   bankAccountName?: string | null;
   categoryId?: string | null;
@@ -23,6 +23,44 @@ export interface ExpenseRecord {
   hasReceipt?: boolean;
   source?: "manual" | "reimbursement";
   expenseClaimId?: string | null;
+  paymentSourceLabel?: string | null;
+}
+
+export interface ExpenseJournalLine {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  label: string;
+  debit: number;
+  credit: number;
+}
+
+export interface ExpenseDetail extends ExpenseRecord {
+  accountMoveId: string;
+  paymentSource: "cash" | "bank";
+  createdAt: string;
+  updatedAt: string;
+  recordedBy: { name: string | null; email: string | null } | null;
+  reimbursement: {
+    claimId: string;
+    claimNumber: string | null;
+    submitterName: string | null;
+    submitterEmail: string | null;
+    reimbursedByName: string | null;
+    reimbursedByEmail: string | null;
+    submittedAt: string | null;
+    reimbursedAt: string | null;
+  } | null;
+  journal: {
+    moveDate: string;
+    name: string;
+    reference: string | null;
+    state: string;
+    postedAt: string | null;
+    journalCode: string;
+    journalName: string;
+    lines: ExpenseJournalLine[];
+  } | null;
 }
 
 export interface ExpensesListResponse {
@@ -40,7 +78,7 @@ export function listExpenses() {
 }
 
 export function getExpense(id: string) {
-  return apiFetch<ExpenseRecord>(`/api/v1/expenses/${id}`);
+  return apiFetch<ExpenseDetail>(`/api/v1/expenses/${id}`);
 }
 
 export function createExpense(input: {

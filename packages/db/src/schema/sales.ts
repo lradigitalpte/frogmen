@@ -176,6 +176,7 @@ export const salesOrders = pgTable(
     signedIp: varchar("signed_ip", { length: 50 }),
     signedEmail: varchar("signed_email", { length: 320 }),
     customerPoDocumentUrl: text("customer_po_document_url"),
+    isDropship: boolean("is_dropship").notNull().default(false),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -226,6 +227,7 @@ export const salesOrderLines = pgTable("sales_order_lines", {
     .notNull()
     .default("0"),
   warrantyPolicyId: uuid("warranty_policy_id"),
+  supplyReference: varchar("supply_reference", { length: 120 }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

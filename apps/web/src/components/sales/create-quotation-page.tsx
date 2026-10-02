@@ -226,6 +226,8 @@ export function CreateQuotationPage() {
     useState<DiscountMode>("percent");
   const [globalDiscountValue, setGlobalDiscountValue] = useState<string>("0");
   const [globalVatPercent, setGlobalVatPercent] = useState<string>("5");
+  const [isDropship, setIsDropship] = useState(false);
+  const [dropshipSupplyReference, setDropshipSupplyReference] = useState("");
 
   function applyGlobalDiscount(mode: DiscountMode, valueStr: string) {
     setGlobalDiscountMode(mode);
@@ -309,7 +311,7 @@ export function CreateQuotationPage() {
         forSaleOnly: true,
         rootOnly: true,
         includeStock: true,
-        inStockOnly: true,
+        inStockOnly: !isDropship,
       });
       setProducts((current) =>
         isSearch && catalogPage > 1
@@ -326,7 +328,7 @@ export function CreateQuotationPage() {
     } finally {
       setProductsLoading(false);
     }
-  }, [debouncedCatalogSearch, catalogPage]);
+  }, [debouncedCatalogSearch, catalogPage, isDropship]);
 
   useEffect(() => {
     void loadCurrencies();
@@ -345,8 +347,10 @@ export function CreateQuotationPage() {
     setInStockUnits([]);
     setSelectedProductStock(null);
     setQuantityWarning(null);
+    setDropshipSupplyReference("");
 
-    const isInventoryTracked = product.type === "goods" && product.isStorable;
+    const isInventoryTracked =
+      !isDropship && product.type === "goods" && product.isStorable;
     if (!isInventoryTracked) {
       setStockLoading(false);
       return;
@@ -376,9 +380,9 @@ export function CreateQuotationPage() {
   }
 
   const isSelectedProductInventoryTracked = useMemo(() => {
-    if (!selectedProduct) return false;
+    if (!selectedProduct || isDropship) return false;
     return selectedProduct.type === "goods" && selectedProduct.isStorable;
-  }, [selectedProduct]);
+  }, [selectedProduct, isDropship]);
 
   const selectedAvailableQuantity = useMemo(() => {
     if (!selectedProduct) {
@@ -417,6 +421,7 @@ export function CreateQuotationPage() {
     if (!selectedProduct) return;
 
     if (
+      !isDropship &&
       isSelectedProductInventoryTracked &&
       remainingForSelectedProduct !== null &&
       remainingForSelectedProduct <= 0
@@ -444,12 +449,16 @@ export function CreateQuotationPage() {
       return;
     }
 
-    const unit = inStockUnits.find((u) => u.id === selectedUnitId);
+    const unit = isDropship
+      ? undefined
+      : inStockUnits.find((u) => u.id === selectedUnitId);
+    const supplyRef = dropshipSupplyReference.trim();
     const draftLine: ConfiguredLineItem = {
       id: `line-${Date.now()}`,
       productId: selectedProduct.id,
       productUnitId: unit?.id,
-      serialNumber: unit?.serialNumber,
+      serialNumber: isDropship ? supplyRef || undefined : unit?.serialNumber,
+      supplyReference: isDropship && supplyRef ? supplyRef : undefined,
       name: selectedProduct.name,
       details: selectedProduct.description,
       sku: selectedProduct.sku || "N/A",
@@ -708,6 +717,7 @@ export function CreateQuotationPage() {
         paymentReference: values.paymentReference || undefined,
         notes: values.notes || undefined,
         internalNotes: values.internalNotes || undefined,
+        isDropship,
         ...buildDeliveryFeePayload(deliveryFeeMode, deliveryFeeValue),
       });
 
@@ -715,7 +725,8 @@ export function CreateQuotationPage() {
       for (const line of lines) {
         await addQuotationLine(quotation.id, {
           productId: line.productId,
-          productUnitId: line.productUnitId,
+          productUnitId: isDropship ? undefined : line.productUnitId,
+          supplyReference: line.supplyReference,
           description: line.name,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
@@ -892,8 +903,22 @@ export function CreateQuotationPage() {
                     onChange={setPriceAdjustmentEnabled}
                   />
 
+                  <Checkbox
+                    checked={isDropship}
+                    helpText="Pick any catalog product (including out of stock). Posted invoices update accounting only — your warehouse stock is not used."
+                    label="Dropship / broker sale (do not use my inventory)"
+                    onChange={(checked) => {
+                      setIsDropship(checked);
+                      setCatalogPage(1);
+                      setSelectedProduct(null);
+                    }}
+                  />
+
                   {pricingLabel ? (
                     <Badge tone="info">{pricingLabel}</Badge>
+                  ) : null}
+                  {isDropship ? (
+                    <Badge tone="attention">Dropship — inventory skipped</Badge>
                   ) : null}
 
                   <Button
@@ -949,10 +974,16 @@ export function CreateQuotationPage() {
                             catalogSearch.trim() !== debouncedCatalogSearch
                           ? "Searching full catalog…"
                           : catalogTotal === 0
-                            ? "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
+                            ? isDropship
+                              ? "No saleable products found in your catalog."
+                              : "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
                             : debouncedCatalogSearch
-                              ? `Showing ${products.length} of ${catalogTotal} matching in-stock product${catalogTotal === 1 ? "" : "s"} across your catalog.${productsLoading ? " Updating…" : ""}`
-                              : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to search all ${catalogTotal} — not just these suggestions.`}
+                              ? isDropship
+                                ? `Showing ${products.length} of ${catalogTotal} matching product${catalogTotal === 1 ? "" : "s"} (dropship — stock not required).${productsLoading ? " Updating…" : ""}`
+                                : `Showing ${products.length} of ${catalogTotal} matching in-stock product${catalogTotal === 1 ? "" : "s"} across your catalog.${productsLoading ? " Updating…" : ""}`
+                              : isDropship
+                                ? `${products.length} suggested product${products.length === 1 ? "" : "s"} from ${catalogTotal} in catalog. Search to browse all saleable items — out of stock is allowed.`
+                                : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to search all ${catalogTotal} — not just these suggestions.`}
                     </Text>
                     {products.length > 0 ? (
                       <ProductCatalogSearchResults>
@@ -1048,26 +1079,37 @@ export function CreateQuotationPage() {
                       )}
 
                       {selectedProduct.trackSerial ? (
-                        <BlockStack gap="200">
-                          <Text as="p" fontWeight="semibold">
-                            Choose the stock unit by serial number
-                          </Text>
-                          {stockLoading ? (
-                            <Text as="p" tone="subdued">Loading serial numbers...</Text>
-                          ) : inStockUnits.length === 0 ? (
-                            <Banner tone="warning">No in-stock serial numbers available.</Banner>
-                          ) : (
-                            <Select
-                              label="Available Serial Numbers"
-                              options={inStockUnits.map((u) => ({
-                                label: `${u.serialNumber} (${u.notes || "In Stock"})`,
-                                value: u.id,
-                              }))}
-                              value={selectedUnitId}
-                              onChange={setSelectedUnitId}
-                            />
-                          )}
-                        </BlockStack>
+                        isDropship ? (
+                          <TextField
+                            autoComplete="off"
+                            helpText="Optional reference for the quote (supplier serial, PO line, etc.). Does not reserve warehouse stock."
+                            label="Serial / supplier reference (optional)"
+                            onChange={setDropshipSupplyReference}
+                            placeholder="e.g. Supplier S/N TBD"
+                            value={dropshipSupplyReference}
+                          />
+                        ) : (
+                          <BlockStack gap="200">
+                            <Text as="p" fontWeight="semibold">
+                              Choose the stock unit by serial number
+                            </Text>
+                            {stockLoading ? (
+                              <Text as="p" tone="subdued">Loading serial numbers...</Text>
+                            ) : inStockUnits.length === 0 ? (
+                              <Banner tone="warning">No in-stock serial numbers available.</Banner>
+                            ) : (
+                              <Select
+                                label="Available Serial Numbers"
+                                options={inStockUnits.map((u) => ({
+                                  label: `${u.serialNumber} (${u.notes || "In Stock"})`,
+                                  value: u.id,
+                                }))}
+                                value={selectedUnitId}
+                                onChange={setSelectedUnitId}
+                              />
+                            )}
+                          </BlockStack>
+                        )
                       ) : null}
 
                       <InlineStack align="end" gap="200">
@@ -1078,6 +1120,9 @@ export function CreateQuotationPage() {
                             (isSelectedProductInventoryTracked &&
                               remainingForSelectedProduct !== null &&
                               remainingForSelectedProduct <= 0) ||
+                            (!isDropship &&
+                              selectedProduct.trackSerial &&
+                              (inStockUnits.length === 0 || !selectedUnitId)) ||
                             exchangeRateLoading
                           }
                           onClick={() => void handleAddSelectedProduct()}

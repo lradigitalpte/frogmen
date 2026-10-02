@@ -3,6 +3,8 @@ export interface ConfiguredLineItem {
   productId: string;
   productUnitId?: string;
   serialNumber?: string;
+  /** Dropship placeholder serial / supplier reference (no warehouse unit). */
+  supplyReference?: string;
   name: string;
   details?: string | null;
   sku: string;

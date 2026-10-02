@@ -53,6 +53,8 @@ export interface ListProductsQuery {
   includeStock?: boolean;
   /** Only return products with sellable stock (services/non-storable always included). */
   inStockOnly?: boolean;
+  /** Products on a confirmed sales order or posted invoice line. */
+  hasSalesHistory?: boolean;
   search?: string;
   page?: number;
   perPage?: number;

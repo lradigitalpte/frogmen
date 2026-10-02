@@ -706,7 +706,8 @@ export class WarrantiesService {
         deliveryNoteId: existingDeliveryNote?.id ?? null,
         productId: row.line.productId,
         productUnitId: row.line.productUnitId,
-        serialNumber: row.unit?.serialNumber ?? null,
+        serialNumber:
+          row.unit?.serialNumber ?? row.salesLine?.supplyReference ?? null,
         productName: row.product.name,
         customerId: invoice.customerId,
         customerName: row.customer?.name ?? null,

@@ -20,6 +20,7 @@ export interface QuotationLine {
   priceSubtotal: string;
   priceTax: string;
   priceTotal: string;
+  supplyReference?: string | null;
 }
 
 export interface QuotationActivity {
@@ -66,6 +67,7 @@ export interface Quotation {
   amountTaxBase?: string;
   amountTotalBase: string;
   invoiceStatus: "none" | "to_invoice" | "partial" | "invoiced";
+  isDropship?: boolean;
   dealId?: string | null;
   dealSiblings?: Array<{
     id: string;
@@ -119,6 +121,7 @@ export interface CreateQuotationInput {
   internalNotes?: string;
   deliveryFeeAmount?: number | null;
   deliveryFeePercent?: number | null;
+  isDropship?: boolean;
 }
 
 export interface UpdateQuotationInput {
@@ -149,6 +152,7 @@ export interface AddQuotationLineInput {
   discountAmount?: number;
   taxRatePercent?: number;
   warrantyPolicyId?: string | null;
+  supplyReference?: string;
 }
 
 export interface UpdateQuotationLineInput {
