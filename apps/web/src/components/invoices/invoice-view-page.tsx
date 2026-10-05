@@ -317,7 +317,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   if (loading && !invoice) {
     return (
       <AppPage title="Loading Invoice...">
-        <Text as="p" tone="subdued">Loading commercial invoice workspace...</Text>
+        <Text as="p" tone="subdued">Loading tax invoice workspace...</Text>
       </AppPage>
     );
   }
@@ -325,7 +325,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   if (!invoice) {
     return (
       <AppPage title="Invoice Not Found">
-        <Banner tone="critical">The requested commercial invoice could not be found.</Banner>
+        <Banner tone="critical">The requested tax invoice could not be found.</Banner>
       </AppPage>
     );
   }
@@ -361,7 +361,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
               }
             : undefined
       }
-      subtitle={`Commercial Document #${invoice.number} • Customer: ${invoice.customerName}`}
+      subtitle={`Tax Invoice #${invoice.number} • Customer: ${invoice.customerName}`}
       title={`Customer Invoice ${invoice.number}`}
     >
       <BlockStack gap="500">

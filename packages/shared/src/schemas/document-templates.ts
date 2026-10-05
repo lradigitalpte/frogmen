@@ -58,7 +58,7 @@ export const DEFAULT_DOCUMENT_TEMPLATES: Required<DocumentTemplateSettings> = {
   documentNumberingFormat: "alphanumeric_random",
   lineItemDetailsLayout: "bullets",
   quotationTitle: "Quotation",
-  invoiceTitle: "Commercial Invoice",
+  invoiceTitle: "Tax Invoice",
   footerText: "Thank you for your business.",
   termsAndConditions:
     "Payment is due within the agreed terms. Goods remain the property of the seller until paid in full.",
@@ -87,6 +87,24 @@ export const DEFAULT_DOCUMENT_TEMPLATES: Required<DocumentTemplateSettings> = {
   reminderEmailBodyIntro:
     "Dear {{customerName}},\n\nThis is a friendly reminder that invoice {{number}} for {{outstanding}} is due on {{dueDate}}.\n\nPlease arrange payment at your earliest convenience.\n\nThank you,\n{{companyName}}",
 };
+
+function normalizeDocumentTitle(
+  value: string | undefined,
+  fallback: string,
+  options?: { commercialInvoiceToTaxInvoice?: boolean },
+): string {
+  const resolved = (value?.trim() || fallback).trim();
+  if (
+    options?.commercialInvoiceToTaxInvoice &&
+    resolved.toLowerCase() === "commercial invoice"
+  ) {
+    return "Tax Invoice";
+  }
+  if (resolved.toLowerCase() === "commercial quotation") {
+    return "Quotation";
+  }
+  return resolved;
+}
 
 export function parseOrgDocumentTemplates(
   metadata: string | null | undefined,
@@ -117,10 +135,15 @@ export function resolveDocumentTemplates(
     lineItemDetailsLayout:
       settings.lineItemDetailsLayout ??
       DEFAULT_DOCUMENT_TEMPLATES.lineItemDetailsLayout,
-    quotationTitle:
-      settings.quotationTitle ?? DEFAULT_DOCUMENT_TEMPLATES.quotationTitle,
-    invoiceTitle:
-      settings.invoiceTitle ?? DEFAULT_DOCUMENT_TEMPLATES.invoiceTitle,
+    quotationTitle: normalizeDocumentTitle(
+      settings.quotationTitle,
+      DEFAULT_DOCUMENT_TEMPLATES.quotationTitle,
+    ),
+    invoiceTitle: normalizeDocumentTitle(
+      settings.invoiceTitle,
+      DEFAULT_DOCUMENT_TEMPLATES.invoiceTitle,
+      { commercialInvoiceToTaxInvoice: true },
+    ),
     footerText: settings.footerText ?? DEFAULT_DOCUMENT_TEMPLATES.footerText,
     termsAndConditions:
       settings.termsAndConditions ??

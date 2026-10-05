@@ -1362,7 +1362,7 @@ export function CreateQuotationPage() {
                   <InlineStack align="space-between" blockAlign="center">
                     <BlockStack gap="100">
                       <Text as="h1" variant="headingLg">
-                        Commercial Quotation Preview
+                        Quotation Preview
                       </Text>
                       <Text as="p" tone="subdued">
                         Customer: {values.customer?.name ?? "Frank / Subsea Ltd"} • Date: {formatDisplayDate(values.quoteDate)}
@@ -1382,7 +1382,7 @@ export function CreateQuotationPage() {
 
                   <Divider />
 
-                  {/* Commercial Invoice Table */}
+                  {/* Line items summary table */}
                   <div className="frogmen-recent-table-wrapper">
                     <table className="frogmen-recent-table">
                       <thead>

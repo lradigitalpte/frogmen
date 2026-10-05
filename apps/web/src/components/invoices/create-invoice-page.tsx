@@ -1381,7 +1381,7 @@ export function CreateInvoicePage() {
                   <InlineStack align="space-between" blockAlign="center">
                     <BlockStack gap="050">
                       <Text as="h1" variant="headingLg">
-                        Commercial Invoice Financial Summary
+                        Tax Invoice Financial Summary
                       </Text>
                       <Text as="p" tone="subdued">
                         Customer: {customerName} • Email: {customerEmail} • PO Ref: {poReference}

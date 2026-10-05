@@ -496,7 +496,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                   {docLabel} #{quotation.number}
                 </Text>
                 <Text as="p" tone="subdued">
-                  {quotation.internalReference || quotation.customerReference || "Commercial quotation"}
+                  {quotation.internalReference || quotation.customerReference || "Quotation"}
                 </Text>
               </BlockStack>
               <Badge tone={isConfirmed ? "success" : isSent ? "info" : isCancelled ? "critical" : undefined}>
