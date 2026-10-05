@@ -179,6 +179,13 @@ export function renderQuotationDocumentHtml(
     .join(", ");
   const quoteDateLabel = formatDocumentDate(quotation.quoteDate);
   const validityDateLabel = formatDocumentDate(quotation.validityDate);
+  const poNumber = quotation.customerReference?.trim() || "";
+  const officialPoMetaRow = poNumber
+    ? `<span>PO No.</span><b>${escapeHtml(poNumber)}</b>`
+    : "";
+  const standardPoMetaLine = poNumber
+    ? `<p class="muted">PO No.: ${escapeHtml(poNumber)}</p>`
+    : "";
   const vatLabel = formatVatLabel(quotation.lines);
   const trnLabel = formatTrnLabel(profile.taxId);
 
@@ -355,6 +362,7 @@ ${paidStampCss}
 <span>Date</span><b>${escapeHtml(quoteDateLabel)}</b>
 <span>Amount</span><b>${money(quotation.amountTotal)}</b>
 <span>${isInvoice ? "Due date" : isPurchaseOrder ? "Expected" : "Valid until"}</span><b>${escapeHtml(validityDateLabel)}</b>
+${officialPoMetaRow}
 </div></div></div>
 <div class="company"><strong>${escapeHtml(branding.name)}</strong>${companyLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
 <div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? "Tax Invoice To:" : isPurchaseOrder ? "Purchase Order To:" : "Quotation To:"}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
@@ -478,7 +486,8 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
       <h2 class="doc-title">${escapeHtml(title)}</h2>
       <p class="doc-number">#${escapeHtml(quotation.number)}</p>
       <p class="muted">Date: ${escapeHtml(quoteDateLabel)}</p>
-      ${validityDateLabel ? `<p class="muted">Valid until: ${escapeHtml(validityDateLabel)}</p>` : ""}
+      ${validityDateLabel ? `<p class="muted">${isInvoice ? "Due date" : "Valid until"}: ${escapeHtml(validityDateLabel)}</p>` : ""}
+      ${standardPoMetaLine}
     </div>
   </div>
 
