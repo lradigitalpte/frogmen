@@ -311,14 +311,14 @@ export function renderQuotationDocumentHtml(
 <style>
 *{box-sizing:border-box}
 body{margin:0;padding:20px 24px;font:11.5px Arial,Helvetica,sans-serif;color:#202735;background:#fff;border-top:6px solid #1d2d62}
-.top{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:20px;align-items:center;margin-bottom:4px}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,42%);gap:20px;align-items:center;margin-bottom:4px}
 .brand-logo{display:block;width:auto;height:95px;max-width:210px;object-fit:contain;object-position:left center}
 .brand-fallback{width:95px;height:95px;background:#1d2d62;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:32px}
 .doc-title{text-align:right;color:#17275b;font-size:24px;line-height:1.1;margin:0 0 8px;letter-spacing:.01em}
-.meta{display:grid;grid-template-columns:1.05fr .95fr;border:1px solid #3568a9;overflow:hidden}
-.meta span,.meta b{padding:6px 9px;font-size:11.5px}
-.meta span{color:#fff;background:#3568a9;border-bottom:1px solid #fff}
-.meta b{text-align:right;font-weight:600;border-bottom:1px solid #d7e3f2;background:#fff}
+.meta{display:grid;grid-template-columns:max-content minmax(0,1fr);border:1px solid #3568a9;overflow:hidden;width:100%}
+.meta span,.meta b{padding:6px 10px;font-size:11.5px;line-height:1.35}
+.meta span{color:#fff;background:#3568a9;border-bottom:1px solid #fff;white-space:nowrap}
+.meta b{text-align:right;font-weight:600;border-bottom:1px solid #d7e3f2;background:#fff;white-space:nowrap;font-variant-numeric:tabular-nums}
 .meta span:nth-last-child(2),.meta b:last-child{border-bottom:0}
 .company{margin:10px 0 12px;line-height:1.4}
 .company strong{display:block;color:#17275b;margin-bottom:4px;font-size:12.5px}
