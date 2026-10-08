@@ -126,9 +126,9 @@ export function PurchaseOrderVendorDiscountForm({
   if (lineCount === 0) {
     return (
       <PurchaseOrderSectionCard
-        description="Add product lines first, then apply one vendor discount to the combined line total. It appears on the PO PDF and reduces the order subtotal before freight."
+        description="Add product lines first, then apply one discount to the combined line total. It appears on the PO PDF and reduces the order subtotal before freight."
         icon={Layers}
-        title="Vendor discount"
+        title="Discount"
         tone="charges"
       >
         <Text as="p" tone="subdued">
@@ -141,9 +141,9 @@ export function PurchaseOrderVendorDiscountForm({
 
   return (
     <PurchaseOrderSectionCard
-      description="Applied to the sum of all product lines (before freight). Shown on the vendor PO PDF as a single discount."
+      description="Applied to the sum of all product lines (before freight). Shown on the PO PDF as Discount (percent)."
       icon={Layers}
-      title="Vendor discount"
+      title="Discount"
       tone="charges"
     >
       <FormLayout>

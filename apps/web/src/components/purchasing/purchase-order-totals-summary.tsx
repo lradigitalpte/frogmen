@@ -20,6 +20,7 @@ interface PurchaseOrderTotalsSummaryProps {
   amountTotal: number;
   title?: string;
   chargeBreakdown?: PurchaseOrderChargeBreakdownItem[];
+  discountPercentLabel?: number | null;
 }
 
 export function PurchaseOrderTotalsSummary({
@@ -33,6 +34,7 @@ export function PurchaseOrderTotalsSummary({
   amountTotal,
   title = "Total PO cost",
   chargeBreakdown = [],
+  discountPercentLabel = null,
 }: PurchaseOrderTotalsSummaryProps) {
   const fmt = (value: number) => formatMoney(String(value), currencyCode);
   const showChargeLines = chargeBreakdown.length > 0;
@@ -65,7 +67,10 @@ export function PurchaseOrderTotalsSummary({
               </div>
               <div className="quotation-summary-row">
                 <Text as="span" tone="subdued" variant="bodySm">
-                  Vendor discount
+                  Discount
+                  {discountPercentLabel != null && discountPercentLabel > 0
+                    ? ` (${discountPercentLabel}%)`
+                    : ""}
                 </Text>
                 <Text as="span" tone="success">
                   −{fmt(lineDiscount)}

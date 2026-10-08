@@ -426,6 +426,7 @@ export class DocumentRendererService {
       }),
       notes: header.order.notes,
       lineNetSubtotal: String(lineNetSubtotal),
+      orderDiscountPercent: header.order.discountPercent,
       deliveryFee: freight > 0 ? String(freight) : null,
       deliveryFeePercent: header.order.freightPercent,
       otherCharges: null,

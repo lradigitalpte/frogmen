@@ -177,6 +177,28 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
     );
   }, [order?.lines]);
 
+  const lineGross = useMemo(() => {
+    if (!order?.lines?.length) return 0;
+    return order.lines.reduce(
+      (sum, line) =>
+        sum + Number(line.quantity) * Number(line.unitPrice),
+      0,
+    );
+  }, [order?.lines]);
+
+  const lineDiscount = Math.max(0, lineGross - lineNet);
+
+  const discountPercentLabel = useMemo(() => {
+    const headerPercent = Number(order?.discountPercent ?? 0);
+    if (headerPercent > 0) {
+      return headerPercent;
+    }
+    if (lineGross <= 0 || lineDiscount <= 0) {
+      return null;
+    }
+    return Number(((lineDiscount / lineGross) * 100).toFixed(2));
+  }, [lineDiscount, lineGross, order?.discountPercent]);
+
   const freight = useMemo(
     () =>
       resolveDeliveryFee(
@@ -726,8 +748,8 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           <BlockStack key={activity.id} gap="100">
                             <Text as="p">{activity.message}</Text>
                             <Text as="span" tone="subdued" variant="bodySm">
-                              {new Date(activity.createdAt).toLocaleString()} ·
-                              by {formatActivityActor(activity)}
+                              {formatAppDateTime(activity.createdAt)} · by{" "}
+                              {formatActivityActor(activity)}
                             </Text>
                             {index < noteActivities.length - 1 ? (
                               <Divider />
@@ -761,7 +783,7 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           </StatusBadge>
                         </InlineStack>
                         <Text as="span" tone="subdued" variant="bodySm">
-                          {new Date(activity.createdAt).toLocaleString()} · by{" "}
+                          {formatAppDateTime(activity.createdAt)} · by{" "}
                           {formatActivityActor(activity)}
                         </Text>
                         {index < activities.length - 1 ? <Divider /> : null}
@@ -806,9 +828,34 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                   </BlockStack>
 
                   <div className="quotation-summary-panel__rows">
+                    {lineDiscount > 0 ? (
+                      <>
+                        <div className="quotation-summary-row">
+                          <Text as="span" tone="subdued" variant="bodySm">
+                            Lines (before discount)
+                          </Text>
+                          <Text as="span">
+                            {formatMoney(String(lineGross), currencyCode)}
+                          </Text>
+                        </div>
+                        <div className="quotation-summary-row">
+                          <Text as="span" tone="subdued" variant="bodySm">
+                            Discount
+                            {discountPercentLabel != null
+                              ? ` (${discountPercentLabel}%)`
+                              : ""}
+                          </Text>
+                          <Text as="span" tone="success">
+                            −{formatMoney(String(lineDiscount), currencyCode)}
+                          </Text>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="quotation-summary-row">
                       <Text as="span" tone="subdued" variant="bodySm">
-                        Line subtotal
+                        {lineDiscount > 0
+                          ? "Line subtotal (after discount)"
+                          : "Line subtotal"}
                       </Text>
                       <Text as="span">
                         {formatMoney(String(lineNet), currencyCode)}
@@ -961,7 +1008,7 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                       Confirmed
                     </Text>
                     <Text as="span">
-                      {new Date(order.confirmedAt).toLocaleString()}
+                      {formatAppDateTime(order.confirmedAt)}
                     </Text>
                   </BlockStack>
                 </Card>

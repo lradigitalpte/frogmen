@@ -91,6 +91,7 @@ export interface CreatePurchaseOrderInput {
   otherChargesAmount?: number | null;
   targetMarginPercent?: number | null;
   additionalCharges?: PurchaseOrderNamedChargeInput[];
+  lines?: AddPurchaseOrderLineInput[];
 }
 
 export interface UpdatePurchaseOrderInput {
@@ -403,14 +404,25 @@ export class PurchaseOrdersService {
       await this.syncPurchaseOrderCharges(order.id, input.additionalCharges);
     }
 
-    if (
-      freightAmount ||
-      freightPercent ||
-      discountAmount ||
-      discountPercent ||
+    if (input.lines?.length) {
+      await this.insertPurchaseOrderLines(
+        organizationId,
+        order.id,
+        input.lines,
+        { recompute: false },
+      );
+    }
+
+    const shouldRecomputeTotals =
+      (input.lines?.length ?? 0) > 0 ||
+      Boolean(freightAmount) ||
+      Boolean(freightPercent) ||
+      Boolean(discountAmount) ||
+      Boolean(discountPercent) ||
       Number(otherChargesAmount) > 0 ||
-      (input.additionalCharges?.length ?? 0) > 0
-    ) {
+      (input.additionalCharges?.length ?? 0) > 0;
+
+    if (shouldRecomputeTotals) {
       await this.recomputeOrderTotals(organizationId, order.id, {
         currencyId: input.currencyId,
         exchangeRate: String(exchangeRate),
@@ -533,33 +545,57 @@ export class PurchaseOrdersService {
     orderId: string,
     input: AddPurchaseOrderLineInput,
   ) {
+    await this.insertPurchaseOrderLines(organizationId, orderId, [input], {
+      recompute: true,
+    });
+    return this.getById(organizationId, orderId);
+  }
+
+  private async insertPurchaseOrderLines(
+    organizationId: string,
+    orderId: string,
+    inputs: AddPurchaseOrderLineInput[],
+    options: { recompute?: boolean } = {},
+  ) {
+    if (inputs.length === 0) {
+      return;
+    }
+
     const order = await this.getEditableOrder(organizationId, orderId);
-    const product = await this.productsService.getById(
-      organizationId,
-      input.productId,
+
+    const productIds = [...new Set(inputs.map((line) => line.productId))];
+    const warehouseIds = [...new Set(inputs.map((line) => line.warehouseId))];
+
+    const [products, warehouses] = await Promise.all([
+      Promise.all(
+        productIds.map((id) =>
+          this.productsService.getById(organizationId, id),
+        ),
+      ),
+      Promise.all(
+        warehouseIds.map((id) =>
+          this.warehousesService.getById(organizationId, id),
+        ),
+      ),
+    ]);
+
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const warehouseById = new Map(
+      warehouses.map((warehouse) => [warehouse.id, warehouse]),
     );
 
-    if (product.type === "service") {
-      throw new BadRequestException(
-        "Service products cannot be added to purchase orders",
-      );
+    for (const product of products) {
+      if (product.type === "service") {
+        throw new BadRequestException(
+          "Service products cannot be added to purchase orders",
+        );
+      }
+      if (!product.isStorable) {
+        throw new BadRequestException(
+          "Only storable products can be purchased",
+        );
+      }
     }
-
-    if (!product.isStorable) {
-      throw new BadRequestException(
-        "Only storable products can be purchased",
-      );
-    }
-
-    await this.warehousesService.getById(organizationId, input.warehouseId);
-
-    const amounts = calculateLineAmounts({
-      quantity: input.quantity,
-      unitPrice: input.unitPrice,
-      discountPercent: input.discountPercent ?? 0,
-      discountAmount: input.discountAmount ?? 0,
-      taxRatePercent: input.taxRatePercent ?? 0,
-    });
 
     const [lastLine] = await this.db
       .select({ lineNumber: purchaseOrderLines.lineNumber })
@@ -568,27 +604,46 @@ export class PurchaseOrdersService {
       .orderBy(desc(purchaseOrderLines.lineNumber))
       .limit(1);
 
-    const lineNumber = (lastLine?.lineNumber ?? 0) + 1;
+    let lineNumber = lastLine?.lineNumber ?? 0;
 
-    await this.db.insert(purchaseOrderLines).values({
-      purchaseOrderId: orderId,
-      lineNumber,
-      productId: input.productId,
-      warehouseId: input.warehouseId,
-      description: input.description?.trim() || product.name,
-      quantity: String(input.quantity),
-      unitPrice: String(input.unitPrice),
-      discountPercent: String(input.discountPercent ?? 0),
-      discountAmount: String(input.discountAmount ?? 0),
-      taxRatePercent: String(input.taxRatePercent ?? 0),
-      priceSubtotal: String(amounts.priceSubtotal),
-      priceTax: String(amounts.priceTax),
-      priceTotal: String(amounts.priceTotal),
+    const rows = inputs.map((input) => {
+      const product = productById.get(input.productId);
+      const warehouse = warehouseById.get(input.warehouseId);
+      if (!product || !warehouse) {
+        throw new BadRequestException("Invalid product or warehouse on PO line");
+      }
+
+      lineNumber += 1;
+      const amounts = calculateLineAmounts({
+        quantity: input.quantity,
+        unitPrice: input.unitPrice,
+        discountPercent: input.discountPercent ?? 0,
+        discountAmount: input.discountAmount ?? 0,
+        taxRatePercent: input.taxRatePercent ?? 0,
+      });
+
+      return {
+        purchaseOrderId: orderId,
+        lineNumber,
+        productId: input.productId,
+        warehouseId: input.warehouseId,
+        description: input.description?.trim() || product.name,
+        quantity: String(input.quantity),
+        unitPrice: String(input.unitPrice),
+        discountPercent: String(input.discountPercent ?? 0),
+        discountAmount: String(input.discountAmount ?? 0),
+        taxRatePercent: String(input.taxRatePercent ?? 0),
+        priceSubtotal: String(amounts.priceSubtotal),
+        priceTax: String(amounts.priceTax),
+        priceTotal: String(amounts.priceTotal),
+      };
     });
 
-    await this.recomputeOrderTotals(organizationId, orderId, order);
+    await this.db.insert(purchaseOrderLines).values(rows);
 
-    return this.getById(organizationId, orderId);
+    if (options.recompute !== false) {
+      await this.recomputeOrderTotals(organizationId, orderId, order);
+    }
   }
 
   async updateLine(

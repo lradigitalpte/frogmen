@@ -207,6 +207,17 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
     [lines, chargesPayload],
   );
 
+  const discountPercentLabel = useMemo(() => {
+    const headerPercent = Number(chargesPayload.discountPercent ?? 0);
+    if (headerPercent > 0) {
+      return headerPercent;
+    }
+    if (totals.lineDiscount <= 0 || totals.lineGross <= 0) {
+      return null;
+    }
+    return Number(((totals.lineDiscount / totals.lineGross) * 100).toFixed(2));
+  }, [chargesPayload.discountPercent, totals.lineDiscount, totals.lineGross]);
+
   const marginLines = useMemo(
     () =>
       lines.map((line) => ({
@@ -487,6 +498,7 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
                 <PurchaseOrderTotalsSummary
                   chargeBreakdown={chargeBreakdown}
                   currencyCode={currency?.code}
+                  discountPercentLabel={discountPercentLabel}
                   {...totals}
                 />
                 <Button fullWidth variant="primary" onClick={goToProducts}>
@@ -566,6 +578,7 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
                 <PurchaseOrderTotalsSummary
                   chargeBreakdown={chargeBreakdown}
                   currencyCode={currency?.code}
+                  discountPercentLabel={discountPercentLabel}
                   {...totals}
                 />
                 <Button

@@ -45,7 +45,6 @@ import {
   type PurchaseOrderChargeValues,
 } from "@/lib/purchase-order-utils";
 import {
-  addPurchaseOrderLine,
   createPurchaseOrder,
   updatePurchaseOrder,
 } from "@/lib/purchase-orders-api";
@@ -131,6 +130,17 @@ export function CreatePurchaseOrderPage() {
       ),
     [lines, chargesPayload],
   );
+
+  const discountPercentLabel = useMemo(() => {
+    const headerPercent = Number(chargesPayload.discountPercent ?? 0);
+    if (headerPercent > 0) {
+      return headerPercent;
+    }
+    if (totals.lineDiscount <= 0 || totals.lineGross <= 0) {
+      return null;
+    }
+    return Number(((totals.lineDiscount / totals.lineGross) * 100).toFixed(2));
+  }, [chargesPayload.discountPercent, totals.lineDiscount, totals.lineGross]);
 
   const marginLines = useMemo(
     () =>
@@ -281,11 +291,7 @@ export function CreatePurchaseOrderPage() {
         otherChargesAmount: chargesPayload.otherChargesAmount,
         targetMarginPercent: chargesPayload.targetMarginPercent,
         additionalCharges: orderScopedCharges,
-      });
-
-      let latestOrder = order;
-      for (const line of lines) {
-        latestOrder = await addPurchaseOrderLine(order.id, {
+        lines: lines.map((line) => ({
           productId: line.productId,
           warehouseId: line.warehouseId,
           description: line.description,
@@ -293,18 +299,19 @@ export function CreatePurchaseOrderPage() {
           unitPrice: line.unitPrice,
           discountPercent: 0,
           discountAmount: 0,
-        });
-      }
+        })),
+      });
 
       const additionalCharges = mapChargesToServerLines(
         lines,
-        latestOrder.lines ?? [],
+        order.lines ?? [],
       );
 
-      await updatePurchaseOrder(order.id, {
-        ...chargesPayload,
-        additionalCharges,
-      });
+      if (additionalCharges.length > 0) {
+        await updatePurchaseOrder(order.id, {
+          additionalCharges,
+        });
+      }
 
       showSuccess(`Purchase order ${order.number} created.`);
       router.push(`/dashboard/purchasing/orders/${order.id}`);
@@ -434,6 +441,7 @@ export function CreatePurchaseOrderPage() {
                 <PurchaseOrderTotalsSummary
                   chargeBreakdown={chargeBreakdown}
                   currencyCode={currency?.code}
+                  discountPercentLabel={discountPercentLabel}
                   {...totals}
                 />
                 <Button fullWidth variant="primary" onClick={goToProducts}>
@@ -513,6 +521,7 @@ export function CreatePurchaseOrderPage() {
                 <PurchaseOrderTotalsSummary
                   chargeBreakdown={chargeBreakdown}
                   currencyCode={currency?.code}
+                  discountPercentLabel={discountPercentLabel}
                   {...totals}
                 />
                 <Button

@@ -46,6 +46,8 @@ export interface QuotationDocumentData {
   customerAddress: string[];
   notes: string | null;
   lineNetSubtotal?: string | null;
+  /** PO header discount % (shown on PDF discount row when set). */
+  orderDiscountPercent?: string | null;
   deliveryFee?: string | null;
   deliveryFeePercent?: string | null;
   otherCharges?: string | null;
@@ -279,8 +281,13 @@ export function renderQuotationDocumentHtml(
     const deliveryFeeRow = quotation.deliveryFee
       ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
       : "";
+    const poDiscountPercentLabel =
+      quotation.orderDiscountPercent != null &&
+      Number(quotation.orderDiscountPercent) > 0
+        ? Number(quotation.orderDiscountPercent).toString()
+        : totalDiscountLabel;
     const discountRows = totalDiscount > 0
-      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>${isPurchaseOrder ? "Vendor discount" : `Commercial discount (${escapeHtml(totalDiscountLabel)}%)`}</span><span>-${money(totalDiscount)}</span></div>`
+      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>${isPurchaseOrder ? `Discount (${escapeHtml(poDiscountPercentLabel)}%)` : `Commercial discount (${escapeHtml(totalDiscountLabel)}%)`}</span><span>-${money(totalDiscount)}</span></div>`
       : "";
     const otherChargesRow =
       !isPurchaseOrder && quotation.additionalChargeLines?.length
@@ -390,8 +397,13 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
   const deliveryFeeRow = quotation.deliveryFee
     ? `<div class="totals-row"><span class="muted">${escapeHtml(deliveryFeeLabel)}</span><span>+${formatDocumentMoney(quotation.deliveryFee, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";
+  const poDiscountPercentLabel =
+    quotation.orderDiscountPercent != null &&
+    Number(quotation.orderDiscountPercent) > 0
+      ? Number(quotation.orderDiscountPercent).toString()
+      : totalDiscountLabel;
   const discountRows = totalDiscount > 0
-    ? `<div class="totals-row"><span class="muted">Gross subtotal</span><span>${formatDocumentMoney(grossSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div><div class="totals-row"><span class="muted">Commercial discount (${escapeHtml(totalDiscountLabel)}%)</span><span>-${formatDocumentMoney(totalDiscount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
+    ? `<div class="totals-row"><span class="muted">Gross subtotal</span><span>${formatDocumentMoney(grossSubtotal, quotation.currencySymbol, quotation.decimalPlaces)}</span></div><div class="totals-row"><span class="muted">${isPurchaseOrder ? `Discount (${escapeHtml(poDiscountPercentLabel)}%)` : `Commercial discount (${escapeHtml(totalDiscountLabel)}%)`}</span><span>-${formatDocumentMoney(totalDiscount, quotation.currencySymbol, quotation.decimalPlaces)}</span></div>`
     : "";
   const additionalChargeRows =
     !isPurchaseOrder && quotation.additionalChargeLines?.length

@@ -222,6 +222,16 @@ export function createPurchaseOrder(input: {
     scope: "order" | "line";
     purchaseOrderLineId?: string | null;
   }>;
+  lines?: Array<{
+    productId: string;
+    warehouseId: string;
+    description?: string;
+    quantity: number;
+    unitPrice: number;
+    discountPercent?: number;
+    discountAmount?: number;
+    taxRatePercent?: number;
+  }>;
 }) {
   return apiFetch<PurchaseOrder>("/api/v1/purchase-orders", {
     method: "POST",
