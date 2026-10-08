@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 import { formatQuantity } from "@/lib/format-quantity";
 import { LineItemDescription } from "@/components/sales/line-item-description";
 import { todayIsoDate } from "@/components/sales/format-money";
@@ -536,7 +537,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                     Invoice Date
                   </Text>
                   <Text as="span" fontWeight="semibold">
-                    {invoice.invoiceDate}
+                    {formatAppDate(invoice.invoiceDate)}
                   </Text>
                 </BlockStack>
               </Grid.Cell>
@@ -558,7 +559,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                     Due Date
                   </Text>
                   <Text as="span" fontWeight="semibold">
-                    {invoice.dueDate || "—"}
+                    {invoice.dueDate ? formatAppDate(invoice.dueDate) : "—"}
                   </Text>
                 </BlockStack>
               </Grid.Cell>
@@ -798,7 +799,9 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                     <BlockStack gap="100">
                       <Text as="span" tone="subdued" variant="bodySm">Payment Due Date</Text>
                       <Text as="span" fontWeight="semibold">
-                        {invoice.dueDate || "Immediate / Not set"}
+                        {invoice.dueDate
+                          ? formatAppDate(invoice.dueDate)
+                          : "Immediate / Not set"}
                       </Text>
                     </BlockStack>
                   </Grid.Cell>
@@ -822,7 +825,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                             {invoice.activities.map((act) => (
                               <tr key={act.id}>
                                 <td style={{ color: "var(--p-color-text-subdued)" }}>
-                                  {new Date(act.createdAt).toLocaleString()}
+                                  {formatAppDateTime(act.createdAt)}
                                 </td>
                                 <td>
                                   <Badge

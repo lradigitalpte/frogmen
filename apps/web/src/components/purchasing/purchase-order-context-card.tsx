@@ -7,16 +7,11 @@ import {
   Text,
 } from "@shopify/polaris";
 import { formatMoney } from "@/components/sales/format-money";
+import { formatAppDate } from "@/lib/format-date";
 
 function formatDisplayDate(value: string) {
   if (!value) return " ";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 interface PurchaseOrderContextCardProps {

@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { formatPostalAddressLines } from "@frog1/shared";
 import { AppPage } from "@/components/layout/page";
+import { formatAppDate } from "@/lib/format-date";
 import { formatMoney } from "@/components/sales/format-money";
 import {
   purchaseOrderStateLabel,
@@ -236,7 +237,7 @@ export function ViewVendorPage({ vendorId }: { vendorId: string }) {
           onAction: () => router.push("/dashboard/purchasing/orders/new"),
         },
       ]}
-      subtitle={`Supplier #${vendor.id.slice(0, 8)} • Added ${new Date(vendor.createdAt).toLocaleDateString()}`}
+      subtitle={`Supplier #${vendor.id.slice(0, 8)} • Added ${formatAppDate(vendor.createdAt)}`}
       title={vendor.name}
     >
       <BlockStack gap="500">
@@ -371,7 +372,7 @@ export function ViewVendorPage({ vendorId }: { vendorId: string }) {
                       </Link>
                     </IndexTable.Cell>
                     <IndexTable.Cell>
-                      {new Date(order.orderDate).toLocaleDateString()}
+                      {formatAppDate(order.orderDate)}
                     </IndexTable.Cell>
                     <IndexTable.Cell>
                       <StatusBadge variant={purchaseOrderStateVariant(order.state)}>

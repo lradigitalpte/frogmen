@@ -1,5 +1,7 @@
 "use client";
 
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
+
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   contactStatusLabel,
@@ -110,12 +112,7 @@ export function LeadTable({
                     <div className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {lead.lastContactedAt
-                        ? new Date(lead.lastContactedAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
+                        ? formatAppDateTime(lead.lastContactedAt)
                         : lead.contacted
                           ? "Recorded"
                           : "Not Contacted"}
@@ -163,10 +160,7 @@ export function LeadTable({
                       }`}
                     >
                       <Calendar className="h-3 w-3" />
-                      {new Date(lead.nextFollowUp).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {formatAppDate(lead.nextFollowUp)}
                       {isFollowUpOverdue && (
                         <span className="bg-destructive/15 text-destructive text-[10px] px-1.5 py-0.2 rounded font-bold">
                           DUE

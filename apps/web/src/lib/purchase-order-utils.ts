@@ -1,6 +1,7 @@
 import {
   buildPoLandedUnitCostsByLineId,
   computeLandedUnitCost,
+  resolveLineDiscount,
   suggestSellingPrice,
   type PurchaseOrderNamedChargeForLandedCost,
 } from "@frog1/shared";
@@ -47,7 +48,28 @@ export interface PurchaseOrderLineOption {
 export interface PurchaseOrderLineForTotals {
   quantity: number;
   unitPrice: number;
+  discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
+}
+
+export function purchaseOrderLineGross(line: {
+  quantity: number;
+  unitPrice: number;
+}) {
+  return line.quantity * line.unitPrice;
+}
+
+export function purchaseOrderLineNet(line: PurchaseOrderLineForTotals) {
+  const gross = purchaseOrderLineGross(line);
+  return roundMoney(
+    gross -
+      resolveLineDiscount(
+        gross,
+        line.discountAmount ?? 0,
+        line.discountPercent ?? 0,
+      ),
+  );
 }
 
 function roundMoney(value: number) {
@@ -224,9 +246,13 @@ export function computePurchaseOrderTotals(
   lines: PurchaseOrderLineForTotals[],
   payload: PurchaseOrderChargesPayload,
 ) {
-  const lineNet = roundMoney(
-    lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
+  const lineGross = roundMoney(
+    lines.reduce((sum, line) => sum + purchaseOrderLineGross(line), 0),
   );
+  const lineNet = roundMoney(
+    lines.reduce((sum, line) => sum + purchaseOrderLineNet(line), 0),
+  );
+  const lineDiscount = roundMoney(Math.max(0, lineGross - lineNet));
   const freight = resolveDeliveryFee(
     lineNet,
     payload.freightAmount,
@@ -239,7 +265,7 @@ export function computePurchaseOrderTotals(
     : Number(payload.otherChargesAmount ?? 0) || 0;
   const amountTax = roundMoney(
     lines.reduce((sum, line) => {
-      const subtotal = line.quantity * line.unitPrice;
+      const subtotal = purchaseOrderLineNet(line);
       const taxRate = line.taxRatePercent ?? 0;
       return sum + subtotal * (taxRate / 100);
     }, 0),
@@ -248,6 +274,8 @@ export function computePurchaseOrderTotals(
   const amountTotal = roundMoney(amountUntaxed + amountTax);
 
   return {
+    lineGross,
+    lineDiscount,
     lineNet,
     freight,
     other: namedTotal,
@@ -262,6 +290,7 @@ export interface PurchaseOrderMarginLine {
   productName: string;
   quantity: number;
   unitPrice: number;
+  lineSubtotal?: number;
   sellingPrice?: number | null;
 }
 
@@ -281,7 +310,7 @@ export function computePurchaseOrderMarginPreview(
 ): PurchaseOrderMarginRow[] {
   const lineInputs = lines.map((line) => ({
     id: line.id,
-    priceSubtotal: line.quantity * line.unitPrice,
+    priceSubtotal: line.lineSubtotal ?? purchaseOrderLineNet(line),
     unitPrice: line.unitPrice,
     quantity: line.quantity,
   }));

@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { formatAppDate } from "@/lib/format-date";
 
 export type AlertStatus = "Overdue" | "Due Soon" | "Credit Risk";
 export type AlertSeverity = "critical" | "warning" | "info";
@@ -208,16 +209,7 @@ export function normalizeAlertsSummary(summary: AlertsSummary): AlertsSummary {
 }
 
 export function formatAlertDate(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 export function formatReminderSent(value?: string) {

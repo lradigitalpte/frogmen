@@ -28,6 +28,7 @@ import {
   SendIcon,
   ViewIcon,
 } from "@shopify/polaris-icons";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
@@ -416,8 +417,8 @@ export function CampaignDetailPage() {
               <div style={{ textAlign: "right" }}>
                 <Text variant="bodySm" as="span" tone="subdued">
                   {campaign?.sentAt
-                    ? `Dispatched on ${new Date(campaign.sentAt).toLocaleString()}`
-                    : `Created on ${new Date(campaign?.createdAt || Date.now()).toLocaleDateString()}`}
+                    ? `Dispatched on ${formatAppDateTime(campaign.sentAt)}`
+                    : `Created on ${formatAppDate(campaign?.createdAt ?? new Date().toISOString())}`}
                 </Text>
               </div>
             </div>

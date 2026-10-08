@@ -16,6 +16,7 @@ import {
   Text,
   useIndexResourceState,
 } from "@shopify/polaris";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 import {
   CheckIcon,
   DeleteIcon,
@@ -168,18 +169,9 @@ export function CampaignsListPage() {
 
   const rowMarkup = data?.items.map((campaign, index) => {
     const formattedDate = campaign.sentAt
-      ? new Date(campaign.sentAt).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
+      ? formatAppDateTime(campaign.sentAt)
       : campaign.scheduledAt
-        ? `Scheduled: ${new Date(campaign.scheduledAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })}`
+        ? `Scheduled: ${formatAppDate(campaign.scheduledAt)}`
         : "Draft";
 
     const canSend = campaign.status === "draft" || campaign.status === "failed";

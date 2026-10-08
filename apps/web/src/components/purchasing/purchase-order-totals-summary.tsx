@@ -11,6 +11,8 @@ export interface PurchaseOrderChargeBreakdownItem {
 
 interface PurchaseOrderTotalsSummaryProps {
   currencyCode?: string;
+  lineGross?: number;
+  lineDiscount?: number;
   lineNet: number;
   freight: number;
   other: number;
@@ -22,6 +24,8 @@ interface PurchaseOrderTotalsSummaryProps {
 
 export function PurchaseOrderTotalsSummary({
   currencyCode,
+  lineGross = 0,
+  lineDiscount = 0,
   lineNet,
   freight,
   other,
@@ -51,9 +55,27 @@ export function PurchaseOrderTotalsSummary({
 
       <div className="po-sidebar-total__body">
         <div className="quotation-summary-panel__rows">
+          {lineDiscount > 0 ? (
+            <>
+              <div className="quotation-summary-row">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Lines (before discount)
+                </Text>
+                <Text as="span">{fmt(lineGross)}</Text>
+              </div>
+              <div className="quotation-summary-row">
+                <Text as="span" tone="subdued" variant="bodySm">
+                  Vendor discount
+                </Text>
+                <Text as="span" tone="success">
+                  −{fmt(lineDiscount)}
+                </Text>
+              </div>
+            </>
+          ) : null}
           <div className="quotation-summary-row">
             <Text as="span" tone="subdued" variant="bodySm">
-              Line subtotal
+              {lineDiscount > 0 ? "Line subtotal (after discount)" : "Line subtotal"}
             </Text>
             <Text as="span">{fmt(lineNet)}</Text>
           </div>

@@ -10,6 +10,7 @@ import {
 import { History } from "lucide-react";
 import { formatMoney } from "@/components/sales/format-money";
 import type { ProductUnitCostHistoryEvent } from "@/types/product";
+import { formatAppDateTime } from "@/lib/format-date";
 
 interface ProductUnitCostHistoryCardProps {
   events: ProductUnitCostHistoryEvent[];
@@ -40,10 +41,7 @@ function referenceUrl(event: ProductUnitCostHistoryEvent): string | null {
 }
 
 function formatEventDate(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return formatAppDateTime(iso) || iso;
 }
 
 export function ProductUnitCostHistoryCard({

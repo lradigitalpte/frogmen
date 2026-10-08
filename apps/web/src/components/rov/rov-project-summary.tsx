@@ -3,6 +3,7 @@
 import { Badge, BlockStack, Card, Text } from "@shopify/polaris";
 import { Building2, Calendar, Globe, MapPin, User } from "lucide-react";
 import { useRovAssetSrc } from "./use-rov-asset-src";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 import type { RovProject, RovProjectStatus } from "@/types/rov";
 
 function formatStatus(status: RovProjectStatus) {
@@ -22,26 +23,12 @@ function statusTone(
 
 function formatDate(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatAppDateTime(value) || value;
 }
 
 interface DetailFieldProps {

@@ -1,5 +1,7 @@
 "use client";
 
+import { formatAppDate } from "@/lib/format-date";
+
 import { useRef, useState } from "react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -238,10 +240,7 @@ export function LeadKanban({
                           <Clock className="h-3 w-3 shrink-0" />
                           <span>
                             {lead.lastContactedAt
-                              ? new Date(lead.lastContactedAt).toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                })
+                              ? formatAppDate(lead.lastContactedAt)
                               : "Uncontacted"}
                           </span>
                         </div>

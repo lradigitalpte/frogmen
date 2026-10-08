@@ -1,3 +1,4 @@
+import { formatAppDate } from "../format-date";
 import { escapeHtml, textToHtmlParagraphs } from "./email-layout";
 import type { EmailDesignConfig } from "../schemas/email-marketing";
 
@@ -363,7 +364,7 @@ export function renderMarketingEmailHtml(options: RenderMarketingEmailOptions): 
               <span style="font-size:15px;font-weight:800;letter-spacing:0.02em;color:${isDark ? "#34d399" : design.primaryColor};">${escapeHtml(design.brandName)}</span>
             </td>
             <td align="right">
-              <span style="font-size:12px;font-weight:500;color:${activeFooterText};">${new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>
+              <span style="font-size:12px;font-weight:500;color:${activeFooterText};">${escapeHtml(formatAppDate(new Date().toISOString().slice(0, 10)))}</span>
             </td>
           </tr>
         </table>

@@ -25,16 +25,11 @@ import {
   type ProfitLossReport,
 } from "@/lib/accounting-api";
 import { downloadCsv } from "@/lib/export-csv";
+import { formatAppDate } from "@/lib/format-date";
 import { MinusCircle, TrendingDown, TrendingUp } from "lucide-react";
 
 function formatReportPeriod(dateFrom: string, dateTo: string) {
-  const fmt = (value: string) =>
-    new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  return `${fmt(dateFrom)} – ${fmt(dateTo)}`;
+  return `${formatAppDate(dateFrom)} – ${formatAppDate(dateTo)}`;
 }
 
 export function ProfitLossPage() {

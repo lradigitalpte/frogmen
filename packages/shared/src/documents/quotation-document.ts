@@ -2,6 +2,7 @@ import type { CompanyProfileSettings } from "../schemas/company-settings";
 import { resolveCompanyProfile } from "../schemas/company-settings";
 import type { DocumentTemplateSettings } from "../schemas/document-templates";
 import { resolveDocumentTemplates } from "../schemas/document-templates";
+import { formatAppDate } from "../format-date";
 import { formatQuantity } from "../format-quantity";
 import { formatCountryLabel } from "../locations";
 import {
@@ -88,17 +89,7 @@ export function formatDocumentMoney(
 }
 
 export function formatDocumentDate(value: string | null | undefined): string {
-  if (!value) {
-    return "";
-  }
-
-  const iso = value.slice(0, 10);
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!match) {
-    return value;
-  }
-
-  return `${match[3]}-${match[2]}-${match[1]}`;
+  return formatAppDate(value);
 }
 
 export function formatTrnLabel(taxId: string | null | undefined): string | undefined {
@@ -188,6 +179,13 @@ export function renderQuotationDocumentHtml(
     : "";
   const vatLabel = formatVatLabel(quotation.lines);
   const trnLabel = formatTrnLabel(profile.taxId);
+  const buyerBillingLines = [
+    profile.address,
+    [profile.city, country].filter(Boolean).join(", "),
+    trnLabel,
+    profile.phone ? `Phone: ${profile.phone}` : null,
+    profile.email ? `Email: ${profile.email}` : null,
+  ].filter((line): line is string => Boolean(line));
 
   const paymentDetailsHtml = showPaymentDetails
     ? renderDocumentPaymentDetailsHtml({
@@ -245,7 +243,7 @@ export function renderQuotationDocumentHtml(
         <td>${renderLineItemDescriptionHtml(line.description, line.details, templates.lineItemDetailsLayout)}</td>
         <td class="num">${escapeHtml(formatQuantity(line.quantity))}</td>
         <td class="num">${money(line.unitPrice)}</td>
-        <td class="num">${money(Number(line.quantity) * Number(line.unitPrice))}</td>
+        <td class="num">${money(Number(line.priceSubtotal ?? Number(line.quantity) * Number(line.unitPrice)))}</td>
       </tr>`).join("");
     const notes = (quotation.notes || [
       templates.defaultPaymentTerms && `Payment terms: ${templates.defaultPaymentTerms}`,
@@ -282,7 +280,7 @@ export function renderQuotationDocumentHtml(
       ? `<div class="row"><span>${escapeHtml(deliveryFeeLabel)}</span><span>${money(quotation.deliveryFee)}</span></div>`
       : "";
     const discountRows = totalDiscount > 0
-      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>Commercial discount (${escapeHtml(totalDiscountLabel)}%)</span><span>-${money(totalDiscount)}</span></div>`
+      ? `<div class="row"><span>Gross subtotal</span><span>${money(grossSubtotal)}</span></div><div class="row"><span>${isPurchaseOrder ? "Vendor discount" : `Commercial discount (${escapeHtml(totalDiscountLabel)}%)`}</span><span>-${money(totalDiscount)}</span></div>`
       : "";
     const otherChargesRow =
       !isPurchaseOrder && quotation.additionalChargeLines?.length
@@ -367,7 +365,7 @@ ${officialPoMetaRow}
 </div></div></div>
 <div class="company"><strong>${escapeHtml(branding.name)}</strong>${companyLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
 <div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? "Tax Invoice To:" : isPurchaseOrder ? "Purchase Order To:" : "Quotation To:"}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
-<div><p class="address-title">Billing Address:</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div></div></div>
+<div><p class="address-title">${isPurchaseOrder ? "Bill to (buyer):" : "Billing Address:"}</p><div class="address-box">${isPurchaseOrder ? `<p><strong>${escapeHtml(branding.name)}</strong></p>${buyerBillingLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}` : `<p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}`}</div></div></div>
 <table><colgroup><col class="col-sn" /><col /><col class="col-qty" /><col class="col-price" /><col class="col-total" /></colgroup>
 <thead><tr><th style="text-align:center;width:44px;">S/N</th><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead>
 <tbody>${officialRows}</tbody></table>
@@ -418,11 +416,17 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
     quotation.customerPhone ? `Phone: ${quotation.customerPhone}` : null,
     quotation.customerEmail ? `Email: ${quotation.customerEmail}` : null,
   ].filter((l): l is string => Boolean(l));
-  const stdBillingLines = quotation.customerAddress.length
-    ? [...quotation.customerAddress, ...stdContactLines].map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")
-    : stdContactLines.length
-      ? stdContactLines.map((l) => `<p class="muted">${escapeHtml(l)}</p>`).join("")
-      : `<p class="muted">No billing address provided</p>`;
+  const stdBillingLines = isPurchaseOrder
+    ? buyerBillingLines
+        .map((line) => `<p class="muted">${escapeHtml(line)}</p>`)
+        .join("")
+    : quotation.customerAddress.length
+      ? [...quotation.customerAddress, ...stdContactLines]
+          .map((line) => `<p class="muted">${escapeHtml(line)}</p>`)
+          .join("")
+      : stdContactLines.length
+        ? stdContactLines.map((l) => `<p class="muted">${escapeHtml(l)}</p>`).join("")
+        : `<p class="muted">No billing address provided</p>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -494,15 +498,15 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
 
   <div class="grid">
     <div>
-      <p class="section-label">${title.toLowerCase().includes("invoice") ? "Tax invoice to" : "Quotation to"}</p>
+      <p class="section-label">${isPurchaseOrder ? "Vendor" : title.toLowerCase().includes("invoice") ? "Tax invoice to" : "Quotation to"}</p>
       <p><strong>${escapeHtml(quotation.customerName)}</strong></p>
       ${quotation.customerEmail ? `<p class="muted">${escapeHtml(quotation.customerEmail)}</p>` : ""}
       ${quotation.customerTaxId ? `<p class="muted">Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}
       ${quotation.customerAddress.map((line) => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
     </div>
     <div>
-      <p class="section-label">Billing address:</p>
-      <p><strong>${escapeHtml(quotation.customerName)}</strong></p>
+      <p class="section-label">${isPurchaseOrder ? "Bill to (buyer)" : "Billing address"}:</p>
+      <p><strong>${escapeHtml(isPurchaseOrder ? branding.name : quotation.customerName)}</strong></p>
       ${stdBillingLines}
       ${quotation.paymentReference ? `<p>Payment ref: ${escapeHtml(quotation.paymentReference)}</p>` : ""}
       ${quotation.customerReference ? `<p>Customer ref: ${escapeHtml(quotation.customerReference)}</p>` : ""}

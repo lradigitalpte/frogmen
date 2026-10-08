@@ -2,6 +2,7 @@
 
 import DOMPurify from "dompurify";
 import { useEffect, useState } from "react";
+import { formatAppDate } from "@/lib/format-date";
 
 export function ReportBodyContent({ content }: { content: string }) {
   const trimmed = content.trim();
@@ -41,17 +42,9 @@ export function severityClass(severity: string | null | undefined) {
 
 export function formatReportDateRange(start?: string | null, end?: string | null) {
   if (!start) return null;
-  const startLabel = new Date(start).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const startLabel = formatAppDate(start);
   if (!end) return startLabel;
-  const endLabel = new Date(end).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const endLabel = formatAppDate(end);
   return `${startLabel} – ${endLabel}`;
 }
 

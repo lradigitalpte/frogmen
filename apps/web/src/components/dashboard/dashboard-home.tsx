@@ -35,11 +35,10 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { formatAppDate } from "@/lib/format-date";
 
 function formatInvoiceDate(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatAppDate(value) || value;
 }
 
 function invoiceStatusLabel(invoice: Invoice) {
@@ -172,7 +171,10 @@ export function DashboardHome() {
             invoice.status !== "cancelled";
         })
         .reduce((sum, invoice) => sum + (Number(invoice.amountTotalBase ?? invoice.amountTotal) || 0), 0);
-      return { label: date.toLocaleDateString(undefined, { month: "short" }), amount };
+      return {
+        label: formatAppDate(date.toISOString().slice(0, 10)),
+        amount,
+      };
     });
   }, [allInvoices]);
   const maxMonthlySales = Math.max(...monthlySales.map((month) => month.amount), 1);

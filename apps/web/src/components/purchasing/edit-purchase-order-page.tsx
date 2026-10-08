@@ -74,6 +74,8 @@ function lineFromOrderLine(
     description: line.description,
     quantity: Number(line.quantity),
     unitPrice: Number(line.unitPrice),
+    discountPercent: Number(line.discountPercent ?? 0),
+    discountAmount: Number(line.discountAmount ?? 0),
     productName: line.productName ?? line.description,
     productSku: line.productSku,
     sellingPrice,
@@ -189,6 +191,8 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
         lines.map((line) => ({
           quantity: line.quantity,
           unitPrice: line.unitPrice,
+          discountPercent: line.discountPercent,
+          discountAmount: line.discountAmount,
         })),
         chargesPayload,
       ),
@@ -310,6 +314,8 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
+            discountPercent: line.discountPercent ?? 0,
+            discountAmount: line.discountAmount ?? 0,
           });
         } else {
           await addPurchaseOrderLine(orderId, {
@@ -318,6 +324,8 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
+            discountPercent: line.discountPercent ?? 0,
+            discountAmount: line.discountAmount ?? 0,
           });
         }
       }

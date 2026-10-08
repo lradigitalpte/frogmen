@@ -1,3 +1,5 @@
+import { formatAppDateTime } from "@/lib/format-date";
+
 export function getCustomerInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
 
@@ -33,8 +35,5 @@ export function formatCustomerDate(value: string | null | undefined) {
     return " ";
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatAppDateTime(value) || " ";
 }

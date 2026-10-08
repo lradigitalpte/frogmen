@@ -10,6 +10,7 @@ import {
 import { DeleteIcon } from "@shopify/polaris-icons";
 import { formatMoney } from "@/components/sales/format-money";
 import { formatQuantity } from "@/lib/format-quantity";
+import { purchaseOrderLineNet } from "@/lib/purchase-order-utils";
 
 export interface PurchaseOrderDraftLine {
   id: string;
@@ -18,6 +19,8 @@ export interface PurchaseOrderDraftLine {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountPercent?: number;
+  discountAmount?: number;
   productName: string;
   productSku?: string | null;
   sellingPrice?: number | null;
@@ -43,10 +46,22 @@ export function PurchaseOrderDraftLinesTable({
       >
         <p>
           Add products with quantity, unit cost, and the warehouse where goods
-          will be received. Purchase orders use cost only   no VAT or discounts.
+          will be received. Add an optional vendor discount per line (% or fixed amount).
         </p>
       </EmptyState>
     );
+  }
+
+  function formatDiscount(line: PurchaseOrderDraftLine) {
+    const amount = line.discountAmount ?? 0;
+    if (amount > 0) {
+      return formatMoney(String(amount), currencyCode);
+    }
+    const pct = line.discountPercent ?? 0;
+    if (pct > 0) {
+      return `${pct}%`;
+    }
+    return "—";
   }
 
   const rowMarkup = lines.map((line, index) => (
@@ -79,8 +94,13 @@ export function PurchaseOrderDraftLinesTable({
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
+        <Text as="span" alignment="end" tone="subdued">
+          {formatDiscount(line)}
+        </Text>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
         <Text as="span" alignment="end" fontWeight="semibold" numeric>
-          {formatMoney(String(line.quantity * line.unitPrice), currencyCode)}
+          {formatMoney(String(purchaseOrderLineNet(line)), currencyCode)}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -102,6 +122,7 @@ export function PurchaseOrderDraftLinesTable({
         { title: "Receive into" },
         { title: "Qty", alignment: "end" },
         { title: "Unit cost", alignment: "end" },
+        { title: "Discount", alignment: "end" },
         { title: "Line total", alignment: "end" },
         { title: "" },
       ]}

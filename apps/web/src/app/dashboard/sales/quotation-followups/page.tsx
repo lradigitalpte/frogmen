@@ -18,6 +18,7 @@ import {
 } from "@shopify/polaris";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { formatAppDateTime } from "@/lib/format-date";
 import { useToast } from "@/components/providers/toast-provider";
 import {
   getQuotationFollowups,
@@ -201,7 +202,7 @@ export default function QuotationFollowupsPage() {
                 <IndexTable.Cell><Text as="span" fontWeight="semibold">{item.number}</Text></IndexTable.Cell>
                 <IndexTable.Cell><BlockStack gap="050"><Text as="span">{item.customerName}</Text><Text as="span" tone="subdued" variant="bodySm">{item.customerEmail ?? "No customer email"}</Text></BlockStack></IndexTable.Cell>
                 <IndexTable.Cell>{item.daysSinceSent} days</IndexTable.Cell>
-                <IndexTable.Cell>{item.followupCount}{item.lastFollowupAt ? ` · ${new Date(item.lastFollowupAt).toLocaleDateString()}` : ""}</IndexTable.Cell>
+                <IndexTable.Cell>{item.followupCount}{item.lastFollowupAt ? ` · ${formatAppDateTime(item.lastFollowupAt)}` : ""}</IndexTable.Cell>
                 <IndexTable.Cell><Badge tone={item.state === "signed" ? "success" : "attention"}>{item.state === "signed" ? "Signed" : "Awaiting signature"}</Badge></IndexTable.Cell>
                 <IndexTable.Cell><InlineStack gap="200"><Button url={`/dashboard/sales/quotations/${item.id}`}>View</Button>{item.state === "sent" ? <Button variant="primary" disabled={!item.customerEmail} onClick={() => openSend(item)}>Send follow-up</Button> : null}</InlineStack></IndexTable.Cell>
               </IndexTable.Row>

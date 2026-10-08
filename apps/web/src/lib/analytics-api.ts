@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { formatAppDate } from "@/lib/format-date";
 
 export interface DateRange {
   from: string;
@@ -140,11 +141,9 @@ export function pctChange(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-/** Format month string 'YYYY-MM' to short label e.g. 'Aug' */
+/** Format month string 'YYYY-MM' as DD/MM/YYYY (first of month). */
 export function monthLabel(ym: string): string {
-  const [year, month] = ym.split("-");
-  const d = new Date(Number(year), Number(month) - 1, 1);
-  return d.toLocaleDateString(undefined, { month: "short" });
+  return formatAppDate(`${ym}-01`) || ym;
 }
 
 /** Preset date ranges for the filter bar */

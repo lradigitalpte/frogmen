@@ -1,3 +1,4 @@
+import { formatAppDate } from "../format-date";
 import { severityLabel } from "../severity";
 
 export interface InspectionReportPayload {
@@ -84,13 +85,7 @@ function escapeHtml(value: string): string {
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value) || "—";
 }
 
 function severityClass(severity: string): string {

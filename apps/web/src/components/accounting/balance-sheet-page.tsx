@@ -25,14 +25,11 @@ import {
   type BalanceSheetReport,
 } from "@/lib/accounting-api";
 import { downloadCsv } from "@/lib/export-csv";
+import { formatAppDate } from "@/lib/format-date";
 import { Landmark, Scale, Wallet } from "lucide-react";
 
 function formatAsOfDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value);
 }
 
 export function BalanceSheetPage() {

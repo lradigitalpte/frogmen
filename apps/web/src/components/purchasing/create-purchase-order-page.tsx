@@ -117,6 +117,8 @@ export function CreatePurchaseOrderPage() {
         lines.map((line) => ({
           quantity: line.quantity,
           unitPrice: line.unitPrice,
+          discountPercent: line.discountPercent,
+          discountAmount: line.discountAmount,
         })),
         chargesPayload,
       ),
@@ -266,6 +268,8 @@ export function CreatePurchaseOrderPage() {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
+          discountPercent: line.discountPercent ?? 0,
+          discountAmount: line.discountAmount ?? 0,
         });
       }
 

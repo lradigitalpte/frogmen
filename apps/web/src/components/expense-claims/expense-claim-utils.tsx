@@ -2,24 +2,15 @@
 
 import { Badge } from "@shopify/polaris";
 import type { ExpenseClaimStatus } from "@/lib/expense-claims-api";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 
 export function formatExpenseClaimDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 export function formatExpenseClaimDateTime(value: string | null | undefined) {
   if (!value) return "—";
-  return new Date(value).toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatAppDateTime(value) || value;
 }
 
 export function formatExpenseClaimActor(

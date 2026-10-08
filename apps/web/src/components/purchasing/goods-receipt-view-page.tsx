@@ -41,16 +41,11 @@ import {
   type GoodsReceipt,
   type GoodsReceiptLine,
 } from "@/lib/purchase-orders-api";
+import { formatAppDate } from "@/lib/format-date";
 
 function formatDisplayDate(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 function receiptStateLabel(state: GoodsReceipt["state"]) {

@@ -15,6 +15,7 @@ import {
   updateLeadStage,
 } from "@/lib/leads-api";
 import type { Lead, LeadStage } from "@/types/lead";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 import { LogContactModal } from "./log-contact-modal";
 import { EditLeadModal } from "./edit-lead-modal";
 import {
@@ -251,12 +252,7 @@ export function LeadDetailModal({
                     }`}
                   >
                     {lead.nextFollowUp
-                      ? new Date(lead.nextFollowUp).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                      ? formatAppDateTime(lead.nextFollowUp)
                       : "None Scheduled"}
                   </div>
                 </div>
@@ -393,12 +389,7 @@ export function LeadDetailModal({
                             </span>
                             <span className="text-[11px] flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              {new Date(log.date).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                              {formatAppDateTime(log.date)}
                             </span>
                           </div>
 

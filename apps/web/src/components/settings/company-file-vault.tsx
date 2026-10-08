@@ -24,6 +24,7 @@ import type {
   VaultFolder,
   VaultStats,
 } from "@/lib/file-vault-api";
+import { formatAppDate } from "@/lib/format-date";
 import {
   ArrowLeft,
   ChevronRight,
@@ -645,7 +646,7 @@ export function CompanyFileVault() {
                               {fileCount} file{fileCount !== 1 ? "s" : ""}
                             </td>
                             <td className="py-3 px-4 text-muted-foreground">
-                              {new Date(folder.createdAt).toLocaleDateString()}
+                              {formatAppDate(folder.createdAt)}
                             </td>
                             <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
@@ -832,7 +833,7 @@ export function CompanyFileVault() {
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">{file.uploadedBy || "Team Member"}</td>
                         <td className="py-3 px-4 text-muted-foreground">
-                          {new Date(file.createdAt).toLocaleDateString()}
+                          {formatAppDate(file.createdAt)}
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">

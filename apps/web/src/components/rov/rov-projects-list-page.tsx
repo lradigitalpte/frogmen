@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
 import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
 import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+import { formatAppDate } from "@/lib/format-date";
 
 const rovProjectResourceName = { singular: "project", plural: "projects" };
 import { listRovProjects } from "@/lib/rov-api";
@@ -50,13 +51,7 @@ function formatStatus(status: RovProjectStatus) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 export function RovProjectsListPage() {

@@ -22,6 +22,7 @@ import {
 } from "@/lib/customers-api";
 import type { Customer } from "@/types/customer";
 import { AppPage } from "@/components/layout/page";
+import { formatAppDate } from "@/lib/format-date";
 import { CustomerAvatar } from "@/components/customers/customer-avatar";
 import { useToast } from "@/components/providers/toast-provider";
 
@@ -158,7 +159,7 @@ export function ViewCustomerPage({ id, customerId }: ViewCustomerPageProps) {
                   </InlineStack>
                   <Text as="p" tone="subdued">
                     {customer.reference ? `${customer.reference} • ` : ""}
-                    Registered {new Date(customer.createdAt).toLocaleDateString()}
+                    Registered {formatAppDate(customer.createdAt)}
                   </Text>
                 </BlockStack>
               </InlineStack>

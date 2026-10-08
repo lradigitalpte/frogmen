@@ -22,6 +22,7 @@ import {
 } from "@shopify/polaris-icons";
 import { useEffect, useMemo, useState } from "react";
 import { formatQuantity } from "@/lib/format-quantity";
+import { formatAppDate } from "@/lib/format-date";
 import {
   getSoldUnitCandidates,
   type SoldUnitCandidate,
@@ -347,8 +348,8 @@ export function ReceiveSerialEntry({
                     <IndexTable.Cell>
                       <Text as="span" tone="subdued" variant="bodySm">
                         {c.invoiceDate
-                          ? new Date(c.invoiceDate).toLocaleDateString()
-                          : new Date(c.updatedAt).toLocaleDateString()}
+                          ? formatAppDate(c.invoiceDate)
+                          : formatAppDate(c.updatedAt)}
                       </Text>
                     </IndexTable.Cell>
                     <IndexTable.Cell>

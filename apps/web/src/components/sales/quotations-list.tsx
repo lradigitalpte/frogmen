@@ -21,6 +21,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
 import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
 import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+import { formatAppDate } from "@/lib/format-date";
 
 const QUOTATION_PAGE_SIZE = 16;
 const quotationResourceName = {
@@ -307,7 +308,11 @@ export function QuotationsListPage() {
                   </InlineStack>
                   <InlineStack gap="200" blockAlign="center">
                     <Text as="span" variant="bodySm" tone="subdued">
-                      Latest: {latestItem?.number} ({latestItem?.quoteDate})
+                      Latest: {latestItem?.number} (
+                      {latestItem?.quoteDate
+                        ? formatAppDate(latestItem.quoteDate)
+                        : "—"}
+                      )
                     </Text>
                     <Text as="span" variant="bodySm" fontWeight="semibold" tone="subdued">
                       {isCollapsed ? "[Click to Expand]" : "[Click to Collapse]"}
@@ -356,7 +361,7 @@ export function QuotationsListPage() {
                     )}
                   </BlockStack>
                 </IndexTable.Cell>
-                <IndexTable.Cell>{quotation.quoteDate}</IndexTable.Cell>
+                <IndexTable.Cell>{formatAppDate(quotation.quoteDate)}</IndexTable.Cell>
                 {showBranchColumn ? (
                   <IndexTable.Cell>{branchLabel(quotation.branchId)}</IndexTable.Cell>
                 ) : null}
@@ -451,7 +456,7 @@ export function QuotationsListPage() {
             )}
           </BlockStack>
         </IndexTable.Cell>
-        <IndexTable.Cell>{quotation.quoteDate}</IndexTable.Cell>
+        <IndexTable.Cell>{formatAppDate(quotation.quoteDate)}</IndexTable.Cell>
         {showBranchColumn ? (
           <IndexTable.Cell>{branchLabel(quotation.branchId)}</IndexTable.Cell>
         ) : null}

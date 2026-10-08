@@ -9,6 +9,7 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
+import { resolveLineDiscount } from "@frog1/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "@/components/sales/format-money";
 import { AppSearchSelect } from "@/components/ui/app-search-select";
@@ -23,6 +24,8 @@ export interface AddPurchaseOrderLineInput {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountPercent?: number;
+  discountAmount?: number;
   productName: string;
   productSku?: string | null;
   sellingPrice?: number | null;
@@ -61,6 +64,10 @@ export function AddPurchaseOrderLineModal({
   );
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("0");
+  const [discountMode, setDiscountMode] = useState<"none" | "percent" | "amount">(
+    "none",
+  );
+  const [discountValue, setDiscountValue] = useState("0");
   const [pricingError, setPricingError] = useState<string | null>(null);
   const wasOpenRef = useRef(false);
 
@@ -94,6 +101,8 @@ export function AddPurchaseOrderLineModal({
       setWarehouseId(initialWarehouseId ?? warehouses[0]?.id ?? "");
       setQuantity("1");
       setUnitPrice("0");
+      setDiscountMode("none");
+      setDiscountValue("0");
       setPricingError(null);
     }
     wasOpenRef.current = open;
@@ -159,7 +168,15 @@ export function AddPurchaseOrderLineModal({
     };
   }, [convertProductForDocument, documentCurrencyId, open, product?.id]);
 
-  const lineTotal = (Number(quantity) || 0) * (Number(unitPrice) || 0);
+  const lineGross = (Number(quantity) || 0) * (Number(unitPrice) || 0);
+  const parsedDiscount = Math.max(0, Number(discountValue) || 0);
+  const lineDiscount =
+    discountMode === "percent"
+      ? resolveLineDiscount(lineGross, 0, parsedDiscount)
+      : discountMode === "amount"
+        ? resolveLineDiscount(lineGross, parsedDiscount, 0)
+        : 0;
+  const lineTotal = Math.round((lineGross - lineDiscount) * 100) / 100;
   const displayCurrencyCode = currencyCode ?? documentCurrencyCode;
   const unitCostHelpText = product
     ? `Catalog cost ${formatProductCatalogCost(product)} converted to ${displayCurrencyCode}`
@@ -185,6 +202,8 @@ export function AddPurchaseOrderLineModal({
       description: product.name,
       quantity: qty,
       unitPrice: price,
+      discountPercent: discountMode === "percent" ? parsedDiscount : 0,
+      discountAmount: discountMode === "amount" ? parsedDiscount : 0,
       productName: product.name,
       productSku: product.sku,
       sellingPrice:
@@ -270,11 +289,38 @@ export function AddPurchaseOrderLineModal({
                 onChange={setUnitPrice}
               />
             </FormLayout.Group>
+            <FormLayout.Group>
+              <Select
+                label="Vendor discount"
+                options={[
+                  { label: "None", value: "none" },
+                  { label: "Percent (%)", value: "percent" },
+                  { label: "Fixed amount", value: "amount" },
+                ]}
+                value={discountMode}
+                onChange={(value) => {
+                  setDiscountMode(value as "none" | "percent" | "amount");
+                  if (value === "none") {
+                    setDiscountValue("0");
+                  }
+                }}
+              />
+              <TextField
+                autoComplete="off"
+                disabled={discountMode === "none"}
+                label={discountMode === "amount" ? "Discount amount" : "Discount %"}
+                prefix={discountMode === "amount" ? pricePrefix : undefined}
+                suffix={discountMode === "percent" ? "%" : undefined}
+                type="number"
+                value={discountMode === "none" ? "" : discountValue}
+                onChange={setDiscountValue}
+              />
+            </FormLayout.Group>
           </FormLayout>
 
           <div className="quotation-summary-panel__total">
             <Text as="span" tone="subdued">
-              Line total
+              Line total{lineDiscount > 0 ? " (after discount)" : ""}
             </Text>
             <Text as="span" fontWeight="bold" variant="headingMd">
               {formatMoney(String(lineTotal), displayCurrencyCode)}

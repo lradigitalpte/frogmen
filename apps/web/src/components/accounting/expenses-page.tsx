@@ -29,14 +29,7 @@ import {
   type ExpenseRecord,
   type ExpensesListResponse,
 } from "@/lib/expenses-api";
-
-function formatExpenseDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+import { formatAppDate } from "@/lib/format-date";
 
 function paymentSourceLabel(expense: ExpenseRecord) {
   const source = expense.paymentSource ?? "bank";
@@ -136,7 +129,7 @@ export function ExpensesPage() {
         </Button>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {formatExpenseDate(expense.expenseDate)}
+        {formatAppDate(expense.expenseDate)}
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" tone="subdued">

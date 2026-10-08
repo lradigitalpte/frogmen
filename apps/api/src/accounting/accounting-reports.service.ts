@@ -14,7 +14,7 @@ import {
   products,
   type Database,
 } from "@frog1/db";
-import { roundMoney } from "@frog1/shared";
+import { formatAppDate, roundMoney } from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { AccountingProvisionerService } from "./accounting-provisioner.service";
 
@@ -74,8 +74,7 @@ function endOfWeek(date: Date) {
 }
 
 function formatWeekLabel(start: Date, end: Date) {
-  const fmt = (value: Date) =>
-    value.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const fmt = (value: Date) => formatAppDate(value.toISOString().slice(0, 10));
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
@@ -314,10 +313,7 @@ export class AccountingReportsService {
     const balances: number[] = [];
     for (const [key, balance] of weekBuckets.entries()) {
       const date = parseIsoDate(key);
-      labels.push(
-        date?.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) ??
-          key,
-      );
+      labels.push(date ? formatAppDate(key) : key);
       balances.push(balance);
     }
 
@@ -384,10 +380,7 @@ export class AccountingReportsService {
     const values: number[] = [];
     for (const [key, amount] of weekBuckets.entries()) {
       const date = parseIsoDate(key);
-      labels.push(
-        date?.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) ??
-          key,
-      );
+      labels.push(date ? formatAppDate(key) : key);
       values.push(amount);
     }
 
@@ -448,7 +441,7 @@ export class AccountingReportsService {
       const date = new Date(end.getFullYear(), end.getMonth() - 5 + index, 1);
       return {
         key: date.toISOString().slice(0, 7),
-        label: date.toLocaleDateString("en-GB", { month: "short" }),
+        label: formatAppDate(date.toISOString().slice(0, 10)),
         revenue: 0,
         expenses: 0,
       };

@@ -48,16 +48,16 @@ import {
   type PurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { useToast } from "@/components/providers/toast-provider";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 
 function formatDisplayDate(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatAppDate(value.includes("T") ? value : value) || value;
+}
+
+function formatDisplayDateTime(value: string | null | undefined) {
+  if (!value) return " ";
+  return formatAppDateTime(value) || value;
 }
 
 function formatActivityActor(activity: PurchaseActivity) {
@@ -421,7 +421,7 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           {order.vendorEmail
                             ? `${order.vendorEmail} • `
                             : ""}
-                          Created {formatDisplayDate(order.createdAt)}
+                          Created {formatDisplayDateTime(order.createdAt)}
                         </Text>
                       </BlockStack>
                     </InlineStack>

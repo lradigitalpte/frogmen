@@ -20,6 +20,7 @@ export interface PurchaseOrderLine {
   qtyRemaining?: number;
   unitPrice: string;
   discountPercent: string;
+  discountAmount?: string;
   taxRatePercent: string;
   priceSubtotal: string;
   priceTax: string;
@@ -261,6 +262,7 @@ export function addPurchaseOrderLine(
     quantity: number;
     unitPrice: number;
     discountPercent?: number;
+    discountAmount?: number;
     taxRatePercent?: number;
   },
 ) {
@@ -278,8 +280,9 @@ export function updatePurchaseOrderLine(
     description: string;
     quantity: number;
     unitPrice: number;
-    discountPercent: number;
-    taxRatePercent: number;
+    discountPercent?: number;
+    discountAmount?: number;
+    taxRatePercent?: number;
   }>,
 ) {
   return apiFetch<PurchaseOrder>(

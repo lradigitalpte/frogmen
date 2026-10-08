@@ -59,6 +59,7 @@ import {
 } from "@/components/sales/edit-configured-line-modal";
 import type { ConfiguredLineItem } from "@/types/configured-line-item";
 import { useToast } from "@/components/providers/toast-provider";
+import { formatAppDate } from "@/lib/format-date";
 import {
   formatDiscountLabel,
   type DiscountMode,
@@ -113,13 +114,7 @@ function emptyHeader(): QuotationHeaderValues {
 
 function formatDisplayDate(value: string) {
   if (!value) return " ";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 function ProfitSummaryPanel({

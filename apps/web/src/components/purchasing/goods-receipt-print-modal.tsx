@@ -8,6 +8,7 @@ import {
 } from "@shopify/polaris";
 import type { GoodsReceipt } from "@/lib/purchase-orders-api";
 import { formatReceiveQuantity } from "@/components/purchasing/receive-serial-entry";
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 
 interface GoodsReceiptPrintModalProps {
   open: boolean;
@@ -17,9 +18,10 @@ interface GoodsReceiptPrintModalProps {
 
 function formatPrintDate(value: string | null | undefined) {
   if (!value) return " ";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  if (value.includes("T")) {
+    return formatAppDateTime(value) || value;
+  }
+  return formatAppDate(value) || value;
 }
 
 function buildPrintHtml(receipt: GoodsReceipt) {

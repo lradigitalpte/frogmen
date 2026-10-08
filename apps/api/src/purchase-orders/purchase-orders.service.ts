@@ -107,6 +107,7 @@ export interface AddPurchaseOrderLineInput {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
 }
 
@@ -116,6 +117,7 @@ export interface UpdatePurchaseOrderLineInput {
   quantity?: number;
   unitPrice?: number;
   discountPercent?: number;
+  discountAmount?: number;
   taxRatePercent?: number;
 }
 
@@ -532,6 +534,7 @@ export class PurchaseOrdersService {
       quantity: input.quantity,
       unitPrice: input.unitPrice,
       discountPercent: input.discountPercent ?? 0,
+      discountAmount: input.discountAmount ?? 0,
       taxRatePercent: input.taxRatePercent ?? 0,
     });
 
@@ -553,6 +556,7 @@ export class PurchaseOrdersService {
       quantity: String(input.quantity),
       unitPrice: String(input.unitPrice),
       discountPercent: String(input.discountPercent ?? 0),
+      discountAmount: String(input.discountAmount ?? 0),
       taxRatePercent: String(input.taxRatePercent ?? 0),
       priceSubtotal: String(amounts.priceSubtotal),
       priceTax: String(amounts.priceTax),
@@ -595,6 +599,10 @@ export class PurchaseOrdersService {
     const unitPrice = input.unitPrice ?? Number(line.unitPrice);
     const discountPercent =
       input.discountPercent ?? Number(line.discountPercent);
+    const discountAmount =
+      input.discountAmount !== undefined
+        ? input.discountAmount
+        : Number(line.discountAmount ?? 0);
     const taxRatePercent =
       input.taxRatePercent ?? Number(line.taxRatePercent);
 
@@ -602,6 +610,7 @@ export class PurchaseOrdersService {
       quantity,
       unitPrice,
       discountPercent,
+      discountAmount,
       taxRatePercent,
     });
 
@@ -617,6 +626,7 @@ export class PurchaseOrdersService {
         quantity: String(quantity),
         unitPrice: String(unitPrice),
         discountPercent: String(discountPercent),
+        discountAmount: String(discountAmount),
         taxRatePercent: String(taxRatePercent),
         priceSubtotal: String(amounts.priceSubtotal),
         priceTax: String(amounts.priceTax),

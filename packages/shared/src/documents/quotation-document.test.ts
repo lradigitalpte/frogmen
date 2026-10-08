@@ -6,9 +6,9 @@ import {
 } from "./quotation-document";
 
 describe("formatDocumentDate", () => {
-  it("converts ISO dates to DD-MM-YYYY", () => {
-    expect(formatDocumentDate("2026-08-17")).toBe("17-08-2026");
-    expect(formatDocumentDate("2026-08-17T09:30:00.000Z")).toBe("17-08-2026");
+  it("converts ISO dates to DD/MM/YYYY", () => {
+    expect(formatDocumentDate("2026-08-17")).toBe("17/08/2026");
+    expect(formatDocumentDate("2026-08-17T09:30:00.000Z")).toBe("17/08/2026");
   });
 
   it("returns empty for missing values", () => {

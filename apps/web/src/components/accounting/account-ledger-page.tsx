@@ -39,6 +39,7 @@ import {
   type AccountLedgerReport,
   type JournalMoveDetail,
 } from "@/lib/accounting-api";
+import { formatAppDate } from "@/lib/format-date";
 import { Landmark, Receipt, Scale } from "lucide-react";
 
 interface AccountLedgerPageProps {
@@ -46,11 +47,7 @@ interface AccountLedgerPageProps {
 }
 
 function formatLedgerDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value);
 }
 
 function sourceUrl(entry: AccountLedgerEntry) {

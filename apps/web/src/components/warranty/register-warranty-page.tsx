@@ -38,17 +38,14 @@ import {
 } from "@/lib/warranty-api";
 import type { Customer } from "@/types/customer";
 import type { Product } from "@/types/product";
+import { formatAppDate } from "@/lib/format-date";
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
 function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatAppDate(value) || value;
 }
 
 function DetailLine({

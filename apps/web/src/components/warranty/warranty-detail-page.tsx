@@ -15,6 +15,7 @@ import { AppPage } from "@/components/layout/page";
 import { formatQuantity } from "@/lib/format-quantity";
 import { getWarranty, type WarrantyRegistration } from "@/lib/warranty-api";
 
+import { formatAppDate } from "@/lib/format-date";
 import { ConfirmDeliveryModal } from "./confirm-delivery-modal";
 
 interface WarrantyDetailPageProps {
@@ -23,7 +24,7 @@ interface WarrantyDetailPageProps {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
-  return new Date(`${value}T00:00:00`).toLocaleDateString();
+  return formatAppDate(value) || "—";
 }
 
 function statusTone(

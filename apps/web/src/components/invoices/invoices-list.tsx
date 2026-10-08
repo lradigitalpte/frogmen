@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/status-badge";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount } from "@/lib/currency-utils";
+import { formatAppDate } from "@/lib/format-date";
 import { computeOutstandingInBase } from "@frog1/shared";
 import {
   listInvoices,
@@ -135,8 +136,8 @@ export function InvoicesListPage() {
           </Text>
         </BlockStack>
       </IndexTable.Cell>
-      <IndexTable.Cell>{inv.invoiceDate}</IndexTable.Cell>
-      <IndexTable.Cell>{inv.dueDate}</IndexTable.Cell>
+      <IndexTable.Cell>{formatAppDate(inv.invoiceDate)}</IndexTable.Cell>
+      <IndexTable.Cell>{inv.dueDate ? formatAppDate(inv.dueDate) : "—"}</IndexTable.Cell>
       {showBranchColumn ? (
         <IndexTable.Cell>{branchLabel(inv.branchId)}</IndexTable.Cell>
       ) : null}

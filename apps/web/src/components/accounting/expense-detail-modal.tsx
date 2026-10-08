@@ -19,27 +19,7 @@ import {
   getExpenseReceiptUrl,
   type ExpenseDetail,
 } from "@/lib/expenses-api";
-
-function formatExpenseDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
 
 function paymentMethodLabel(detail: ExpenseDetail) {
   switch (detail.paymentMethod) {
@@ -204,7 +184,7 @@ export function ExpenseDetailModal({
                     {formatBaseMoney(detail.amount)}
                   </Text>
                 </DetailRow>
-                <DetailRow label="Date">{formatExpenseDate(detail.expenseDate)}</DetailRow>
+                <DetailRow label="Date">{formatAppDate(detail.expenseDate)}</DetailRow>
                 <DetailRow label="Category">{detail.categoryName ?? "—"}</DetailRow>
                 <DetailRow label="Description">{detail.description}</DetailRow>
                 <DetailRow label="Reference">
@@ -240,10 +220,10 @@ export function ExpenseDetailModal({
                         "—"}
                     </DetailRow>
                     <DetailRow label="Reimbursed at">
-                      {formatDateTime(detail.reimbursement.reimbursedAt)}
+                      {formatAppDateTime(detail.reimbursement.reimbursedAt)}
                     </DetailRow>
                     <DetailRow label="Claim submitted">
-                      {formatDateTime(detail.reimbursement.submittedAt)}
+                      {formatAppDateTime(detail.reimbursement.submittedAt)}
                     </DetailRow>
                   </>
                 ) : (
@@ -257,7 +237,7 @@ export function ExpenseDetailModal({
                       <DetailRow label="Email">{detail.recordedBy.email}</DetailRow>
                     ) : null}
                     <DetailRow label="Recorded at">
-                      {formatDateTime(detail.createdAt)}
+                      {formatAppDateTime(detail.createdAt)}
                     </DetailRow>
                   </>
                 )}
@@ -279,7 +259,7 @@ export function ExpenseDetailModal({
                     </Text>
                     <Text as="p" tone="subdued" variant="bodySm">
                       {detail.journal.journalCode} · {detail.journal.journalName}{" "}
-                      · {formatExpenseDate(detail.journal.moveDate)}
+                      · {formatAppDate(detail.journal.moveDate)}
                       {detail.journal.reference
                         ? ` · Ref ${detail.journal.reference}`
                         : ""}

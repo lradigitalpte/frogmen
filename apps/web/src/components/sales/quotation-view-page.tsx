@@ -25,6 +25,7 @@ import { DocumentPreviewModal } from "@/components/documents/document-preview-mo
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { LineItemDescription } from "@/components/sales/line-item-description";
+import { formatAppDate } from "@/lib/format-date";
 import { formatQuantity } from "@/lib/format-quantity";
 import { copyText } from "@/lib/clipboard";
 import { formatDiscountLabel, resolveDeliveryFee } from "@/lib/line-item-utils";
@@ -414,7 +415,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
       backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }}
       primaryAction={primaryAction}
       secondaryActions={secondaryActions}
-      subtitle={`Customer: ${quotation.customerName ?? " "} • Date: ${quotation.quoteDate}`}
+      subtitle={`Customer: ${quotation.customerName ?? " "} • Date: ${formatAppDate(quotation.quoteDate)}`}
       title={`${docLabel} ${quotation.number}`}
     >
       <BlockStack gap="500">
@@ -525,7 +526,7 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                     Quotation Date
                   </Text>
                   <Text as="span" fontWeight="semibold">
-                    {quotation.quoteDate}
+                    {formatAppDate(quotation.quoteDate)}
                   </Text>
                 </BlockStack>
               </Grid.Cell>
@@ -536,7 +537,9 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                     Expiration Date
                   </Text>
                   <Text as="span" fontWeight="semibold">
-                    {quotation.validityDate ?? " "}
+                    {quotation.validityDate
+                      ? formatAppDate(quotation.validityDate)
+                      : " "}
                   </Text>
                 </BlockStack>
               </Grid.Cell>

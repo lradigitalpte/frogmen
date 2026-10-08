@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
 import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
 import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+import { formatAppDate } from "@/lib/format-date";
 
 const SALES_ORDER_PAGE_SIZE = 16;
 const salesOrderResourceName = {
@@ -172,7 +173,7 @@ export function SalesOrdersListPage() {
             </Text>
           </BlockStack>
         </IndexTable.Cell>
-        <IndexTable.Cell>{order.quoteDate}</IndexTable.Cell>
+        <IndexTable.Cell>{formatAppDate(order.quoteDate)}</IndexTable.Cell>
         <IndexTable.Cell>
           <StatusBadge variant="success">Confirmed Order</StatusBadge>
         </IndexTable.Cell>

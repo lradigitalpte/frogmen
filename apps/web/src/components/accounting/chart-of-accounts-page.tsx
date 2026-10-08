@@ -23,6 +23,7 @@ import {
   getChartOfAccounts,
   type ChartOfAccount,
 } from "@/lib/accounting-api";
+import { formatAppDate } from "@/lib/format-date";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   asset_receivable: "Receivable",
@@ -51,11 +52,7 @@ function accountTypeLabel(type: string) {
 }
 
 function formatAsOfDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatAppDate(value);
 }
 
 export function ChartOfAccountsPage() {
