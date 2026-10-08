@@ -90,6 +90,59 @@ export function allocateFixedDiscount(
   return shares.sort((a, b) => a.index - b.index).map((share) => share.cents / 100);
 }
 
+export interface PurchaseOrderLineGrossInput {
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface PurchaseOrderLineDiscountAllocation {
+  discountPercent: number;
+  discountAmount: number;
+}
+
+/** Apply one PO-level vendor discount across product lines (after all lines exist). */
+export function distributePurchaseOrderVendorDiscount(
+  lines: PurchaseOrderLineGrossInput[],
+  discountPercent?: number | null,
+  discountAmount?: number | null,
+): PurchaseOrderLineDiscountAllocation[] {
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const percent =
+    discountPercent != null && Number.isFinite(Number(discountPercent))
+      ? Number(discountPercent)
+      : 0;
+  const amount =
+    discountAmount != null && Number.isFinite(Number(discountAmount))
+      ? Number(discountAmount)
+      : 0;
+
+  if (percent > 0) {
+    return lines.map(() => ({
+      discountPercent: percent,
+      discountAmount: 0,
+    }));
+  }
+
+  if (amount > 0) {
+    const grossAmounts = lines.map(
+      (line) => line.quantity * line.unitPrice,
+    );
+    const shares = allocateFixedDiscount(grossAmounts, amount);
+    return shares.map((share) => ({
+      discountPercent: 0,
+      discountAmount: share,
+    }));
+  }
+
+  return lines.map(() => ({
+    discountPercent: 0,
+    discountAmount: 0,
+  }));
+}
+
 export function sumDocumentAmounts(
   lines: Array<{
     priceSubtotal: number;

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CurrencyConversionError } from "./errors";
 import { requireRate } from "./require-rate";
-import { allocateFixedDiscount, convertAmount, roundMoney, sumDocumentAmounts } from "./money";
+import {
+  allocateFixedDiscount,
+  convertAmount,
+  distributePurchaseOrderVendorDiscount,
+  roundMoney,
+  sumDocumentAmounts,
+} from "./money";
 import { computeOutstandingInBase } from "./outstanding";
 import { convertPaymentToInvoiceAmount } from "./payments";
 
@@ -32,6 +38,38 @@ describe("allocateFixedDiscount", () => {
 
   it("caps the discount at the quotation gross", () => {
     expect(allocateFixedDiscount([50, 25], 100)).toEqual([50, 25]);
+  });
+});
+
+describe("distributePurchaseOrderVendorDiscount", () => {
+  it("applies percent to every line", () => {
+    const result = distributePurchaseOrderVendorDiscount(
+      [
+        { quantity: 2, unitPrice: 100 },
+        { quantity: 1, unitPrice: 50 },
+      ],
+      10,
+      null,
+    );
+    expect(result).toEqual([
+      { discountPercent: 10, discountAmount: 0 },
+      { discountPercent: 10, discountAmount: 0 },
+    ]);
+  });
+
+  it("splits a fixed discount by line gross", () => {
+    const result = distributePurchaseOrderVendorDiscount(
+      [
+        { quantity: 1, unitPrice: 600 },
+        { quantity: 1, unitPrice: 400 },
+      ],
+      null,
+      200,
+    );
+    expect(result).toEqual([
+      { discountPercent: 0, discountAmount: 120 },
+      { discountPercent: 0, discountAmount: 80 },
+    ]);
   });
 });
 

@@ -442,6 +442,7 @@ export class DocumentRendererService {
         quantity: row.line.quantity,
         unitPrice: row.line.unitPrice,
         discountPercent: row.line.discountPercent,
+        discountAmount: row.line.discountAmount,
         taxRatePercent: row.line.taxRatePercent,
         priceSubtotal: row.line.priceSubtotal,
       })),

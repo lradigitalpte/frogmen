@@ -21,7 +21,6 @@ import { Building2, Package, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
-import { LineItemDescription } from "@/components/sales/line-item-description";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { PurchaseOrderNextSteps } from "@/components/purchasing/purchase-order-next-steps";
@@ -545,21 +544,29 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
                           >
                             <IndexTable.Cell>
                               <BlockStack gap="050">
-                                <LineItemDescription
-                                  details={line.productDescription}
-                                  productId={line.productId}
-                                  title={line.productName ?? line.description}
-                                />
+                                {line.productId ? (
+                                  <Link
+                                    url={`/dashboard/inventory/products/${line.productId}`}
+                                  >
+                                    <Text as="span" fontWeight="semibold">
+                                      {line.productName ?? line.description}
+                                    </Text>
+                                  </Link>
+                                ) : (
+                                  <Text as="span" fontWeight="semibold">
+                                    {line.productName ?? line.description}
+                                  </Text>
+                                )}
                                 {line.productSku ? (
                                   <Text as="span" tone="subdued" variant="bodySm">
-                                    {line.productSku}
+                                    SKU {line.productSku}
                                   </Text>
                                 ) : null}
                               </BlockStack>
                             </IndexTable.Cell>
                             <IndexTable.Cell>
-                              <Text as="span" tone="subdued">
-                                {line.warehouseName ?? " "}
+                              <Text as="span" tone="subdued" variant="bodySm">
+                                {shortWarehouseLabel(line.warehouseName)}
                               </Text>
                             </IndexTable.Cell>
                             <IndexTable.Cell>
@@ -1105,4 +1112,15 @@ export function PurchaseOrderViewPage({ orderId }: { orderId: string }) {
       </Modal>
     </AppPage>
   );
+}
+
+function shortWarehouseLabel(name: string | null | undefined) {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) {
+    return " ";
+  }
+  if (trimmed.length <= 32) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 29)}…`;
 }

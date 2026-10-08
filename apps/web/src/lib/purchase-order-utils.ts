@@ -1,6 +1,7 @@
 import {
   buildPoLandedUnitCostsByLineId,
   computeLandedUnitCost,
+  distributePurchaseOrderVendorDiscount,
   resolveLineDiscount,
   suggestSellingPrice,
   type PurchaseOrderNamedChargeForLandedCost,
@@ -21,6 +22,8 @@ export interface PurchaseOrderNamedChargeRow {
 export interface PurchaseOrderChargeValues {
   freightMode: FreightMode;
   freightValue: string;
+  vendorDiscountMode: FreightMode;
+  vendorDiscountValue: string;
   additionalCharges: PurchaseOrderNamedChargeRow[];
   targetMarginPercent: string;
 }
@@ -35,6 +38,8 @@ export interface PurchaseOrderNamedChargePayload {
 export interface PurchaseOrderChargesPayload {
   freightAmount?: number | null;
   freightPercent?: number | null;
+  discountAmount?: number | null;
+  discountPercent?: number | null;
   otherChargesAmount?: number | null;
   targetMarginPercent?: number | null;
   additionalCharges?: PurchaseOrderNamedChargePayload[];
@@ -80,6 +85,8 @@ export function emptyPurchaseOrderCharges(): PurchaseOrderChargeValues {
   return {
     freightMode: "none",
     freightValue: "",
+    vendorDiscountMode: "none",
+    vendorDiscountValue: "",
     additionalCharges: [],
     targetMarginPercent: "",
   };
@@ -160,6 +167,10 @@ export function buildPurchaseOrderChargesPayload(
 
   return {
     ...buildFreightPayload(charges.freightMode, charges.freightValue),
+    ...buildVendorDiscountPayload(
+      charges.vendorDiscountMode,
+      charges.vendorDiscountValue,
+    ),
     otherChargesAmount,
     targetMarginPercent:
       Number.isFinite(targetMargin) && targetMargin > 0 ? targetMargin : null,
@@ -167,9 +178,70 @@ export function buildPurchaseOrderChargesPayload(
   };
 }
 
+export function buildVendorDiscountPayload(
+  mode: FreightMode,
+  value: string,
+): Pick<PurchaseOrderChargesPayload, "discountAmount" | "discountPercent"> {
+  if (mode === "none") {
+    return {
+      discountAmount: null,
+      discountPercent: null,
+    };
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return {
+      discountAmount: null,
+      discountPercent: null,
+    };
+  }
+
+  if (mode === "amount") {
+    return {
+      discountAmount: parsed,
+      discountPercent: null,
+    };
+  }
+
+  return {
+    discountAmount: null,
+    discountPercent: parsed,
+  };
+}
+
+function hasOrderVendorDiscount(payload: PurchaseOrderChargesPayload) {
+  const amount = Number(payload.discountAmount ?? 0);
+  const percent = Number(payload.discountPercent ?? 0);
+  return amount > 0 || percent > 0;
+}
+
+export function applyOrderVendorDiscountToLines<T extends PurchaseOrderLineForTotals>(
+  lines: T[],
+  payload: PurchaseOrderChargesPayload,
+): T[] {
+  if (!hasOrderVendorDiscount(payload)) {
+    return lines;
+  }
+
+  const allocations = distributePurchaseOrderVendorDiscount(
+    lines,
+    payload.discountPercent,
+    payload.discountAmount,
+  );
+
+  return lines.map((line, index) => ({
+    ...line,
+    discountPercent: allocations[index]?.discountPercent ?? 0,
+    discountAmount: allocations[index]?.discountAmount ?? 0,
+  }));
+}
+
 export function chargesFromPurchaseOrder(order: {
   freightAmount?: string | null;
   freightPercent?: string | null;
+  discountAmount?: string | null;
+  discountPercent?: string | null;
   otherChargesAmount?: string | null;
   targetMarginPercent?: string | null;
   additionalCharges?: Array<{
@@ -182,10 +254,14 @@ export function chargesFromPurchaseOrder(order: {
 }): PurchaseOrderChargeValues {
   const freightAmount = Number(order.freightAmount ?? 0);
   const freightPercent = Number(order.freightPercent ?? 0);
+  const discountAmount = Number(order.discountAmount ?? 0);
+  const discountPercent = Number(order.discountPercent ?? 0);
   const targetMarginPercent = Number(order.targetMarginPercent ?? 0);
 
   let freightMode: FreightMode = "none";
   let freightValue = "";
+  let vendorDiscountMode: FreightMode = "none";
+  let vendorDiscountValue = "";
 
   if (Number.isFinite(freightAmount) && freightAmount > 0) {
     freightMode = "amount";
@@ -193,6 +269,14 @@ export function chargesFromPurchaseOrder(order: {
   } else if (Number.isFinite(freightPercent) && freightPercent > 0) {
     freightMode = "percent";
     freightValue = String(freightPercent);
+  }
+
+  if (Number.isFinite(discountAmount) && discountAmount > 0) {
+    vendorDiscountMode = "amount";
+    vendorDiscountValue = String(discountAmount);
+  } else if (Number.isFinite(discountPercent) && discountPercent > 0) {
+    vendorDiscountMode = "percent";
+    vendorDiscountValue = String(discountPercent);
   }
 
   const additionalCharges =
@@ -220,6 +304,8 @@ export function chargesFromPurchaseOrder(order: {
   return {
     freightMode,
     freightValue,
+    vendorDiscountMode,
+    vendorDiscountValue,
     additionalCharges,
     targetMarginPercent:
       Number.isFinite(targetMarginPercent) && targetMarginPercent > 0
@@ -246,11 +332,12 @@ export function computePurchaseOrderTotals(
   lines: PurchaseOrderLineForTotals[],
   payload: PurchaseOrderChargesPayload,
 ) {
+  const pricedLines = applyOrderVendorDiscountToLines(lines, payload);
   const lineGross = roundMoney(
-    lines.reduce((sum, line) => sum + purchaseOrderLineGross(line), 0),
+    pricedLines.reduce((sum, line) => sum + purchaseOrderLineGross(line), 0),
   );
   const lineNet = roundMoney(
-    lines.reduce((sum, line) => sum + purchaseOrderLineNet(line), 0),
+    pricedLines.reduce((sum, line) => sum + purchaseOrderLineNet(line), 0),
   );
   const lineDiscount = roundMoney(Math.max(0, lineGross - lineNet));
   const freight = resolveDeliveryFee(
@@ -264,7 +351,7 @@ export function computePurchaseOrderTotals(
       )
     : Number(payload.otherChargesAmount ?? 0) || 0;
   const amountTax = roundMoney(
-    lines.reduce((sum, line) => {
+    pricedLines.reduce((sum, line) => {
       const subtotal = purchaseOrderLineNet(line);
       const taxRate = line.taxRatePercent ?? 0;
       return sum + subtotal * (taxRate / 100);

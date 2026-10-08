@@ -109,6 +109,89 @@ export function PurchaseOrderFreightForm({
   );
 }
 
+/** Tab 1 — vendor discount on line subtotal (after product lines exist). */
+export function PurchaseOrderVendorDiscountForm({
+  values,
+  currency,
+  disabled,
+  lineCount,
+  onChange,
+}: PurchaseOrderChargesFormBaseProps & { lineCount: number }) {
+  const pricePrefix = currencyInputPrefix(currency);
+
+  function patch(partial: Partial<PurchaseOrderChargeValues>) {
+    onChange({ ...values, ...partial });
+  }
+
+  if (lineCount === 0) {
+    return (
+      <PurchaseOrderSectionCard
+        description="Add product lines first, then apply one vendor discount to the combined line total. It appears on the PO PDF and reduces the order subtotal before freight."
+        icon={Layers}
+        title="Vendor discount"
+        tone="charges"
+      >
+        <Text as="p" tone="subdued">
+          Use Add product line above, then set a percent or fixed discount on the
+          whole order.
+        </Text>
+      </PurchaseOrderSectionCard>
+    );
+  }
+
+  return (
+    <PurchaseOrderSectionCard
+      description="Applied to the sum of all product lines (before freight). Shown on the vendor PO PDF as a single discount."
+      icon={Layers}
+      title="Vendor discount"
+      tone="charges"
+    >
+      <FormLayout>
+        <FormLayout.Group>
+          <Select
+            disabled={disabled}
+            label="Discount type"
+            options={[
+              { label: "None", value: "none" },
+              { label: "Percent of lines", value: "percent" },
+              { label: "Fixed amount", value: "amount" },
+            ]}
+            value={values.vendorDiscountMode}
+            onChange={(vendorDiscountMode) =>
+              patch({
+                vendorDiscountMode: vendorDiscountMode as FreightMode,
+                ...(vendorDiscountMode === "none"
+                  ? { vendorDiscountValue: "" }
+                  : {}),
+              })
+            }
+          />
+          {values.vendorDiscountMode !== "none" ? (
+            <TextField
+              autoComplete="off"
+              disabled={disabled}
+              label={
+                values.vendorDiscountMode === "amount"
+                  ? "Discount amount"
+                  : "Discount percent"
+              }
+              prefix={
+                values.vendorDiscountMode === "amount" ? pricePrefix : undefined
+              }
+              suffix={values.vendorDiscountMode === "percent" ? "%" : undefined}
+              type="number"
+              value={values.vendorDiscountValue}
+              onChange={(vendorDiscountValue) => patch({ vendorDiscountValue })}
+            />
+          ) : (
+            <div />
+          )}
+        </FormLayout.Group>
+      </FormLayout>
+    </PurchaseOrderSectionCard>
+  );
+}
+
 /** Tab 1 — named charges, after product lines exist. */
 export function PurchaseOrderAdditionalChargesForm({
   values,

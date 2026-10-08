@@ -23,6 +23,7 @@ export interface PurchaseOrderDraftLine {
   discountAmount?: number;
   productName: string;
   productSku?: string | null;
+  productDescription?: string | null;
   sellingPrice?: number | null;
   warehouseName: string;
 }
@@ -46,7 +47,8 @@ export function PurchaseOrderDraftLinesTable({
       >
         <p>
           Add products with quantity, unit cost, and the warehouse where goods
-          will be received. Add an optional vendor discount per line (% or fixed amount).
+          will be received. Set a vendor discount on the whole order below after
+          you add lines.
         </p>
       </EmptyState>
     );

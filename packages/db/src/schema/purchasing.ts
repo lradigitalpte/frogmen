@@ -87,6 +87,8 @@ export const purchaseOrders = pgTable(
     notes: text("notes"),
     freightAmount: numeric("freight_amount", { precision: 18, scale: 2 }),
     freightPercent: numeric("freight_percent", { precision: 8, scale: 4 }),
+    discountAmount: numeric("discount_amount", { precision: 18, scale: 2 }),
+    discountPercent: numeric("discount_percent", { precision: 8, scale: 4 }),
     otherChargesAmount: numeric("other_charges_amount", {
       precision: 18,
       scale: 2,

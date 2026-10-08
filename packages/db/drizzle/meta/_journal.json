@@ -281,6 +281,13 @@
       "when": 1788869000000,
       "tag": "0038_purchase_order_line_discount_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788869100000,
+      "tag": "0039_purchase_order_vendor_discount",
+      "breakpoints": true
     }
   ]
 }

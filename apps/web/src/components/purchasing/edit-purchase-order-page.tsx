@@ -14,17 +14,18 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
-import { AddPurchaseOrderLineModal } from "@/components/purchasing/add-purchase-order-line-modal";
+import type { AddPurchaseOrderLineInput } from "@/components/purchasing/add-purchase-order-line-modal";
+import { PurchaseOrderCatalogSection } from "@/components/purchasing/purchase-order-catalog-section";
 import {
   PurchaseOrderAdditionalChargesForm,
   PurchaseOrderFreightForm,
+  PurchaseOrderVendorDiscountForm,
 } from "@/components/purchasing/purchase-order-charges-form";
+import { EditPurchaseOrderLineModal } from "@/components/purchasing/edit-purchase-order-line-modal";
+import { PurchaseOrderDraftLinesList } from "@/components/purchasing/purchase-order-draft-lines-list";
 import { PurchaseOrderContextCard } from "@/components/purchasing/purchase-order-context-card";
 import { PurchaseOrderVendorTermsForm } from "@/components/purchasing/purchase-order-vendor-terms-form";
-import {
-  PurchaseOrderDraftLinesTable,
-  type PurchaseOrderDraftLine,
-} from "@/components/purchasing/purchase-order-draft-lines-table";
+import type { PurchaseOrderDraftLine } from "@/components/purchasing/purchase-order-draft-lines-table";
 import {
   PurchaseOrderHeaderForm,
   type PurchaseOrderHeaderValues,
@@ -39,6 +40,7 @@ import { Package, ShoppingCart } from "lucide-react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { getProduct } from "@/lib/products-api";
 import {
+  applyOrderVendorDiscountToLines,
   buildPurchaseOrderChargesPayload,
   chargesFromPurchaseOrder,
   computePurchaseOrderTotals,
@@ -78,6 +80,7 @@ function lineFromOrderLine(
     discountAmount: Number(line.discountAmount ?? 0),
     productName: line.productName ?? line.description,
     productSku: line.productSku,
+    productDescription: line.productDescription,
     sellingPrice,
     warehouseName: line.warehouseName ?? "",
   };
@@ -109,7 +112,7 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
   const [originalLineIds, setOriginalLineIds] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [lines, setLines] = useState<PurchaseOrderDraftLine[]>([]);
-  const [lineModalOpen, setLineModalOpen] = useState(false);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -185,14 +188,19 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
     [charges],
   );
 
+  const pricedLines = useMemo(
+    () => applyOrderVendorDiscountToLines(lines, chargesPayload),
+    [lines, chargesPayload],
+  );
+
   const totals = useMemo(
     () =>
       computePurchaseOrderTotals(
         lines.map((line) => ({
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          discountPercent: line.discountPercent,
-          discountAmount: line.discountAmount,
+          discountPercent: 0,
+          discountAmount: 0,
         })),
         chargesPayload,
       ),
@@ -255,13 +263,27 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
       .filter(Boolean) as PurchaseOrderChargeBreakdownItem[];
   }, [chargeLineOptions, charges.additionalCharges]);
 
-  function addLine(input: Omit<PurchaseOrderDraftLine, "id">) {
-    setLines((current) => [...current, { ...input, id: crypto.randomUUID() }]);
+  function addLine(input: AddPurchaseOrderLineInput) {
+    setLines((current) => [
+      ...current,
+      { ...input, id: crypto.randomUUID() },
+    ]);
+  }
+
+  function saveLine(updated: PurchaseOrderDraftLine) {
+    setLines((current) =>
+      current.map((line) => (line.id === updated.id ? updated : line)),
+    );
   }
 
   function removeLine(lineId: string) {
     setLines((current) => current.filter((line) => line.id !== lineId));
   }
+
+  const editingLine = useMemo(
+    () => lines.find((line) => line.id === editingLineId) ?? null,
+    [editingLineId, lines],
+  );
 
   function validateHeader(): string | null {
     if (!header.vendor) return "Select a vendor first.";
@@ -314,8 +336,8 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
-            discountPercent: line.discountPercent ?? 0,
-            discountAmount: line.discountAmount ?? 0,
+            discountPercent: 0,
+            discountAmount: 0,
           });
         } else {
           await addPurchaseOrderLine(orderId, {
@@ -324,8 +346,8 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
             description: line.description,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
-            discountPercent: line.discountPercent ?? 0,
-            discountAmount: line.discountAmount ?? 0,
+            discountPercent: 0,
+            discountAmount: 0,
           });
         }
       }
@@ -416,14 +438,7 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
               }
             />
 
-        <InlineStack align="space-between" blockAlign="center">
-          <Tabs selected={selectedTab} tabs={pageTabs} onSelect={setSelectedTab} />
-          {selectedTab === 1 ? (
-            <Button variant="primary" onClick={() => setLineModalOpen(true)}>
-              Add product line
-            </Button>
-          ) : null}
-        </InlineStack>
+        <Tabs selected={selectedTab} tabs={pageTabs} onSelect={setSelectedTab} />
 
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
@@ -486,24 +501,40 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
           <Layout>
             <Layout.Section>
               <BlockStack gap="400">
-                <BlockStack gap="100">
-                  <Text as="h2" variant="headingMd">
-                    Products to receive
-                  </Text>
-                  <Text as="p" tone="subdued">
-                    {lines.length === 0
-                      ? "Add products with quantity, unit cost, and destination warehouse."
-                      : `${lines.length} line${lines.length === 1 ? "" : "s"} · ${unitCount} unit${unitCount === 1 ? "" : "s"} · ${warehouseCount} warehouse${warehouseCount === 1 ? "" : "s"}`}
-                  </Text>
-                </BlockStack>
+                <PurchaseOrderCatalogSection
+                  currencyCode={currency?.code}
+                  documentCurrencyId={header.currencyId}
+                  warehouses={warehouses}
+                  onAdd={addLine}
+                />
 
-                <Card padding="0">
-                  <PurchaseOrderDraftLinesTable
-                    currencyCode={currency?.code}
-                    lines={lines}
-                    onRemove={removeLine}
-                  />
+                <Card>
+                  <BlockStack gap="400">
+                    <BlockStack gap="100">
+                      <Text as="h2" variant="headingMd">
+                        Line items ({lines.length})
+                      </Text>
+                      <Text as="p" tone="subdued">
+                        {lines.length === 0
+                          ? "Configured lines appear here as summary cards."
+                          : `${lines.length} line${lines.length === 1 ? "" : "s"} · ${unitCount} unit${unitCount === 1 ? "" : "s"} · ${warehouseCount} warehouse${warehouseCount === 1 ? "" : "s"}`}
+                      </Text>
+                    </BlockStack>
+                    <PurchaseOrderDraftLinesList
+                      currencyCode={currency?.code}
+                      lines={pricedLines}
+                      onEdit={setEditingLineId}
+                      onRemove={removeLine}
+                    />
+                  </BlockStack>
                 </Card>
+
+                <PurchaseOrderVendorDiscountForm
+                  currency={currency}
+                  lineCount={lines.length}
+                  onChange={setCharges}
+                  values={charges}
+                />
 
                 <PurchaseOrderAdditionalChargesForm
                   currency={currency}
@@ -553,13 +584,16 @@ export function EditPurchaseOrderPage({ orderId }: { orderId: string }) {
         </div>
       </BlockStack>
 
-      <AddPurchaseOrderLineModal
+      <EditPurchaseOrderLineModal
         currencyCode={currency?.code}
-        documentCurrencyId={header.currencyId}
-        open={lineModalOpen}
+        line={editingLine}
+        open={Boolean(editingLine)}
         warehouses={warehouses}
-        onAdd={addLine}
-        onClose={() => setLineModalOpen(false)}
+        onClose={() => setEditingLineId(null)}
+        onSave={(line) => {
+          saveLine(line);
+          setEditingLineId(null);
+        }}
       />
     </AppPage>
   );

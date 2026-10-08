@@ -74,6 +74,8 @@ export interface PurchaseOrder {
   notes: string | null;
   freightAmount: string | null;
   freightPercent: string | null;
+  discountAmount?: string | null;
+  discountPercent?: string | null;
   otherChargesAmount: string;
   targetMarginPercent?: string | null;
   amountUntaxed: string;
@@ -210,6 +212,8 @@ export function createPurchaseOrder(input: {
   notes?: string;
   freightAmount?: number | null;
   freightPercent?: number | null;
+  discountAmount?: number | null;
+  discountPercent?: number | null;
   otherChargesAmount?: number | null;
   targetMarginPercent?: number | null;
   additionalCharges?: Array<{
@@ -237,6 +241,8 @@ export function updatePurchaseOrder(
     notes: string | null;
     freightAmount?: number | null;
     freightPercent?: number | null;
+    discountAmount?: number | null;
+    discountPercent?: number | null;
     otherChargesAmount?: number | null;
     targetMarginPercent?: number | null;
     additionalCharges?: Array<{

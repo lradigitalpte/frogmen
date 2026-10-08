@@ -34,8 +34,14 @@ import {
   warehouses,
   type Database,
 } from "@frog1/db";
-import { applyTemplatePlaceholders, buildPoLandedUnitCostsByLineId, roundMoney, suggestSellingPrice } from "@frog1/shared";
-import { sumDocumentAmounts } from "@frog1/shared";
+import {
+  applyTemplatePlaceholders,
+  buildPoLandedUnitCostsByLineId,
+  distributePurchaseOrderVendorDiscount,
+  roundMoney,
+  suggestSellingPrice,
+  sumDocumentAmounts,
+} from "@frog1/shared";
 import { DATABASE } from "../database/database.constants";
 import { ExchangeRatesService } from "../currencies/exchange-rates.service";
 import { VendorsService } from "../vendors/vendors.service";
@@ -80,6 +86,8 @@ export interface CreatePurchaseOrderInput {
   notes?: string;
   freightAmount?: number | null;
   freightPercent?: number | null;
+  discountAmount?: number | null;
+  discountPercent?: number | null;
   otherChargesAmount?: number | null;
   targetMarginPercent?: number | null;
   additionalCharges?: PurchaseOrderNamedChargeInput[];
@@ -95,6 +103,8 @@ export interface UpdatePurchaseOrderInput {
   notes?: string | null;
   freightAmount?: number | null;
   freightPercent?: number | null;
+  discountAmount?: number | null;
+  discountPercent?: number | null;
   otherChargesAmount?: number | null;
   targetMarginPercent?: number | null;
   additionalCharges?: PurchaseOrderNamedChargeInput[];
@@ -352,6 +362,12 @@ export class PurchaseOrdersService {
       freightAmount: input.freightAmount ?? null,
       freightPercent: input.freightPercent ?? null,
     });
+    const { discountAmount, discountPercent } = this.resolveVendorDiscountFields(
+      {
+        discountAmount: input.discountAmount ?? null,
+        discountPercent: input.discountPercent ?? null,
+      },
+    );
     const otherChargesAmount = this.resolveOtherChargesAmount(
       input.otherChargesAmount,
     );
@@ -371,6 +387,8 @@ export class PurchaseOrdersService {
         notes: input.notes ?? null,
         freightAmount,
         freightPercent,
+        discountAmount,
+        discountPercent,
         otherChargesAmount,
         targetMarginPercent:
           input.targetMarginPercent != null &&
@@ -388,6 +406,8 @@ export class PurchaseOrdersService {
     if (
       freightAmount ||
       freightPercent ||
+      discountAmount ||
+      discountPercent ||
       Number(otherChargesAmount) > 0 ||
       (input.additionalCharges?.length ?? 0) > 0
     ) {
@@ -445,6 +465,7 @@ export class PurchaseOrdersService {
     }
 
     this.applyFreightUpdates(input, updates);
+    this.applyVendorDiscountUpdates(input, updates);
 
     if (input.otherChargesAmount !== undefined) {
       updates.otherChargesAmount = this.resolveOtherChargesAmount(
@@ -455,6 +476,8 @@ export class PurchaseOrdersService {
     const chargeFieldsChanged =
       input.freightAmount !== undefined ||
       input.freightPercent !== undefined ||
+      input.discountAmount !== undefined ||
+      input.discountPercent !== undefined ||
       input.otherChargesAmount !== undefined ||
       input.additionalCharges !== undefined;
 
@@ -1480,6 +1503,8 @@ export class PurchaseOrdersService {
       exchangeRateLockedAt: Date | null;
     },
   ) {
+    await this.syncLineDiscountsFromOrderHeader(orderId);
+
     const [orderRow] = await this.db
       .select({
         freightAmount: purchaseOrders.freightAmount,
@@ -1644,6 +1669,63 @@ export class PurchaseOrdersService {
       .where(eq(purchaseOrders.id, purchaseOrderId));
   }
 
+  private async syncLineDiscountsFromOrderHeader(orderId: string) {
+    const [orderRow] = await this.db
+      .select({
+        discountAmount: purchaseOrders.discountAmount,
+        discountPercent: purchaseOrders.discountPercent,
+      })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, orderId))
+      .limit(1);
+
+    const headerAmount = Number(orderRow?.discountAmount ?? 0);
+    const headerPercent = Number(orderRow?.discountPercent ?? 0);
+
+    const lines = await this.db
+      .select()
+      .from(purchaseOrderLines)
+      .where(eq(purchaseOrderLines.purchaseOrderId, orderId))
+      .orderBy(asc(purchaseOrderLines.lineNumber));
+
+    if (lines.length === 0) {
+      return;
+    }
+
+    const allocations = distributePurchaseOrderVendorDiscount(
+      lines.map((line) => ({
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+      })),
+      headerPercent > 0 ? headerPercent : null,
+      headerAmount > 0 ? headerAmount : null,
+    );
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const allocation = allocations[index];
+      const amounts = calculateLineAmounts({
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        discountPercent: allocation.discountPercent,
+        discountAmount: allocation.discountAmount,
+        taxRatePercent: Number(line.taxRatePercent),
+      });
+
+      await this.db
+        .update(purchaseOrderLines)
+        .set({
+          discountPercent: String(allocation.discountPercent),
+          discountAmount: String(allocation.discountAmount),
+          priceSubtotal: String(amounts.priceSubtotal),
+          priceTax: String(amounts.priceTax),
+          priceTotal: String(amounts.priceTotal),
+          updatedAt: new Date(),
+        })
+        .where(eq(purchaseOrderLines.id, line.id));
+    }
+  }
+
   private resolveFreightFields(input: {
     freightAmount?: number | null;
     freightPercent?: number | null;
@@ -1701,6 +1783,54 @@ export class PurchaseOrdersService {
 
     updates.freightAmount = freightAmount;
     updates.freightPercent = freightPercent;
+  }
+
+  private resolveVendorDiscountFields(input: {
+    discountAmount?: number | null;
+    discountPercent?: number | null;
+  }) {
+    const amount =
+      input.discountAmount != null ? Number(input.discountAmount) : 0;
+    const percent =
+      input.discountPercent != null ? Number(input.discountPercent) : 0;
+    const hasAmount = Number.isFinite(amount) && amount > 0;
+    const hasPercent = Number.isFinite(percent) && percent > 0;
+
+    if (hasAmount && hasPercent) {
+      throw new BadRequestException(
+        "Set either a vendor discount amount or percent, not both",
+      );
+    }
+
+    return {
+      discountAmount: hasAmount ? String(roundMoney(amount)) : null,
+      discountPercent: hasPercent ? String(percent) : null,
+    };
+  }
+
+  private applyVendorDiscountUpdates(
+    input: {
+      discountAmount?: number | null;
+      discountPercent?: number | null;
+    },
+    updates: Record<string, unknown>,
+  ) {
+    if (
+      input.discountAmount === undefined &&
+      input.discountPercent === undefined
+    ) {
+      return;
+    }
+
+    const { discountAmount, discountPercent } = this.resolveVendorDiscountFields(
+      {
+        discountAmount: input.discountAmount ?? null,
+        discountPercent: input.discountPercent ?? null,
+      },
+    );
+
+    updates.discountAmount = discountAmount;
+    updates.discountPercent = discountPercent;
   }
 
   private async getOrderExchangeRate(
