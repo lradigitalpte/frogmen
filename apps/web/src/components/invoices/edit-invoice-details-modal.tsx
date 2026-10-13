@@ -34,6 +34,7 @@ export function EditInvoiceDetailsModal({
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [syncSalesOrder, setSyncSalesOrder] = useState(true);
+  const [regenerateNumber, setRegenerateNumber] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +47,7 @@ export function EditInvoiceDetailsModal({
       setDueDate(invoice.dueDate ?? "");
       setNotes(invoice.notes ?? "");
       setSyncSalesOrder(Boolean(invoice.salesOrderId));
+      setRegenerateNumber(false);
       setReason("");
       setReasonError(null);
       setErrorMessage(null);
@@ -70,6 +72,7 @@ export function EditInvoiceDetailsModal({
         dueDate: dueDate.trim() || undefined,
         notes: notes || undefined,
         syncSalesOrder: invoice.salesOrderId ? syncSalesOrder : false,
+        regenerateNumber,
         reason: trimmedReason,
       };
 
@@ -116,6 +119,21 @@ export function EditInvoiceDetailsModal({
           </Banner>
 
           <FormLayout>
+            <TextField
+              label="Invoice number"
+              value={invoice.number}
+              readOnly
+              autoComplete="off"
+              helpText="This is the number already saved on the invoice."
+            />
+
+            <Checkbox
+              label="Regenerate invoice number"
+              checked={regenerateNumber}
+              onChange={setRegenerateNumber}
+              helpText="Assigns a new number from the current document numbering sequence. The previous number stays in the activity log."
+            />
+
             <TextField
               label="Customer PO / Reference"
               value={customerReference}

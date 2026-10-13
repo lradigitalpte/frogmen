@@ -1068,8 +1068,13 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
         open={editDetailsOpen}
         onClose={() => setEditDetailsOpen(false)}
         onSuccess={(updated) => {
+          const numberChanged = updated.number !== invoice.number;
           setInvoice(updated);
-          setSuccessBanner(`Invoice ${updated.number} details updated successfully.`);
+          setSuccessBanner(
+            numberChanged
+              ? `Invoice number changed from ${invoice.number} to ${updated.number}.`
+              : `Invoice ${updated.number} details updated successfully.`,
+          );
         }}
       />
     </AppPage>

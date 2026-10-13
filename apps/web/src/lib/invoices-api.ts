@@ -227,6 +227,7 @@ export interface UpdateInvoiceDetailsInput {
   dueDate?: string | null;
   notes?: string | null;
   syncSalesOrder?: boolean;
+  regenerateNumber?: boolean;
   reason: string;
 }
 

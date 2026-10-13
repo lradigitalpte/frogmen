@@ -26,10 +26,13 @@ import {
   customerRefunds,
   customers,
   bankAccounts,
+  accountMoveLines,
+  accountMoves,
   invoiceLines,
   invoicePayments,
   invoiceNotifications,
   invoices,
+  productCostEvents,
   organizations,
   paymentTerms,
   productUnits,
@@ -110,6 +113,7 @@ export interface UpdateInvoiceDetailsInput {
   dueDate?: string | null;
   notes?: string | null;
   syncSalesOrder?: boolean;
+  regenerateNumber?: boolean;
   reason: string;
 }
 
@@ -426,9 +430,25 @@ export class InvoicesService {
       changes.push("Notes / terms updated");
     }
 
+    let regeneratedNumber: string | null = null;
+    if (input.regenerateNumber) {
+      regeneratedNumber = await nextDocumentNumber(
+        this.db,
+        organizationId,
+        "invoice",
+        "INV-",
+      );
+      changes.push(
+        `Invoice number regenerated from "${invoice.number}" to "${regeneratedNumber}"`,
+      );
+    }
+
     const updateSet: Record<string, unknown> = {
       updatedAt: new Date(),
     };
+    if (regeneratedNumber) {
+      updateSet.number = regeneratedNumber;
+    }
     if (input.customerReference !== undefined) {
       updateSet.customerReference = input.customerReference?.trim() || null;
     }
@@ -446,6 +466,15 @@ export class InvoicesService {
       .update(invoices)
       .set(updateSet)
       .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, organizationId)));
+
+    if (regeneratedNumber) {
+      await this.replaceInvoiceNumberReferences(
+        organizationId,
+        invoiceId,
+        invoice.number,
+        regeneratedNumber,
+      );
+    }
 
     if (
       input.syncSalesOrder !== false &&
@@ -1686,6 +1715,86 @@ export class InvoicesService {
       org.baseCurrencyId,
       asOfDate,
     );
+  }
+
+  private async replaceInvoiceNumberReferences(
+    organizationId: string,
+    invoiceId: string,
+    oldNumber: string,
+    newNumber: string,
+  ) {
+    if (!oldNumber || oldNumber === newNumber) {
+      return;
+    }
+
+    const invoiceMoves = await this.db
+      .select({ id: accountMoves.id })
+      .from(accountMoves)
+      .where(
+        and(
+          eq(accountMoves.organizationId, organizationId),
+          eq(accountMoves.invoiceId, invoiceId),
+        ),
+      );
+
+    const payments = await this.db
+      .select({ id: invoicePayments.id })
+      .from(invoicePayments)
+      .where(
+        and(
+          eq(invoicePayments.organizationId, organizationId),
+          eq(invoicePayments.invoiceId, invoiceId),
+        ),
+      );
+
+    const paymentMoves =
+      payments.length === 0
+        ? []
+        : await this.db
+            .select({ id: accountMoves.id })
+            .from(accountMoves)
+            .where(
+              and(
+                eq(accountMoves.organizationId, organizationId),
+                inArray(
+                  accountMoves.paymentId,
+                  payments.map((payment) => payment.id),
+                ),
+              ),
+            );
+
+    const moveIds = [...invoiceMoves, ...paymentMoves].map((move) => move.id);
+    if (moveIds.length > 0) {
+      await this.db
+        .update(accountMoves)
+        .set({
+          name: sql`replace(${accountMoves.name}, ${oldNumber}, ${newNumber})`,
+          reference: sql`CASE WHEN ${accountMoves.reference} IS NULL THEN NULL ELSE replace(${accountMoves.reference}, ${oldNumber}, ${newNumber}) END`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(accountMoves.id, moveIds));
+
+      await this.db
+        .update(accountMoveLines)
+        .set({
+          label: sql`replace(${accountMoveLines.label}, ${oldNumber}, ${newNumber})`,
+        })
+        .where(inArray(accountMoveLines.moveId, moveIds));
+    }
+
+    await this.db
+      .update(productCostEvents)
+      .set({
+        referenceLabel: sql`CASE WHEN ${productCostEvents.referenceLabel} IS NULL THEN NULL ELSE replace(${productCostEvents.referenceLabel}, ${oldNumber}, ${newNumber}) END`,
+        message: sql`CASE WHEN ${productCostEvents.message} IS NULL THEN NULL ELSE replace(${productCostEvents.message}, ${oldNumber}, ${newNumber}) END`,
+      })
+      .where(
+        and(
+          eq(productCostEvents.organizationId, organizationId),
+          eq(productCostEvents.referenceType, "invoice"),
+          eq(productCostEvents.referenceId, invoiceId),
+        ),
+      );
   }
 
   private async getEditableInvoice(organizationId: string, invoiceId: string) {
