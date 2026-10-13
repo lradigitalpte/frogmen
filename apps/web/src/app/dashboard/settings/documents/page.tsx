@@ -46,6 +46,7 @@ const documentNumberingOptions = [
   { label: "Random Numeric (e.g. MAIN-Q-83921)", value: "numeric_random" },
   { label: "Year + Random (e.g. MAIN-Q-26-84920)", value: "date_random" },
   { label: "Sequential (e.g. MAIN-Q-00013)", value: "sequential" },
+  { label: "8-digit random (e.g. 84920371)", value: "numeric_8" },
 ];
 
 const lineItemDetailsLayouts = [

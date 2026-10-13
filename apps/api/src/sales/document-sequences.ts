@@ -125,6 +125,22 @@ export async function nextDocumentNumber(
   const templates = resolveDocumentTemplates(parseOrgDocumentTemplates(org?.metadata ?? null));
   const format = templates.documentNumberingFormat;
 
+  if (format === "numeric_8") {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = generateNumericSuffix(8);
+      const taken = await isDocumentNumberExists(
+        db,
+        organizationId,
+        documentType,
+        candidate,
+      );
+      if (!taken) {
+        return candidate;
+      }
+    }
+    return generateNumericSuffix(8);
+  }
+
   if (format === "sequential") {
     const [sequence] = await db
       .insert(documentSequences)

@@ -15,7 +15,13 @@ export const documentTemplateSettingsSchema = z.object({
     .enum(["official_blue", "modern_navy", "clean_minimal"])
     .optional(),
   documentNumberingFormat: z
-    .enum(["alphanumeric_random", "numeric_random", "date_random", "sequential"])
+    .enum([
+      "alphanumeric_random",
+      "numeric_random",
+      "date_random",
+      "sequential",
+      "numeric_8",
+    ])
     .optional(),
   lineItemDetailsLayout: z.enum(["bullets", "comma"]).optional(),
   quotationTitle: optionalText(120),
