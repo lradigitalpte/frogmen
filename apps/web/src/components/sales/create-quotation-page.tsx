@@ -109,6 +109,7 @@ function emptyHeader(): QuotationHeaderValues {
     paymentReference: "",
     notes: "",
     internalNotes: "",
+    billingDocumentType: "tax_invoice",
   };
 }
 
@@ -713,6 +714,7 @@ export function CreateQuotationPage() {
         notes: values.notes || undefined,
         internalNotes: values.internalNotes || undefined,
         isDropship,
+        billingDocumentType: values.billingDocumentType,
         ...buildDeliveryFeePayload(deliveryFeeMode, deliveryFeeValue),
       });
 

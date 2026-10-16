@@ -19,6 +19,7 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
+import { billingDocumentTypeLabel } from "@frog1/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
@@ -343,6 +344,9 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
     invoice.deliveryFeeAmount,
     invoice.deliveryFeePercent,
   );
+  const invoiceBillingLabel = billingDocumentTypeLabel(
+    invoice.billingDocumentType ?? "tax_invoice",
+  );
 
   return (
     <AppPage
@@ -362,8 +366,8 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
               }
             : undefined
       }
-      subtitle={`Tax Invoice #${invoice.number} • Customer: ${invoice.customerName}`}
-      title={`Customer Invoice ${invoice.number}`}
+      subtitle={`${invoiceBillingLabel} #${invoice.number} • Customer: ${invoice.customerName}`}
+      title={`${invoiceBillingLabel} ${invoice.number}`}
     >
       <BlockStack gap="500">
         {successBanner ? (
@@ -498,7 +502,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
               <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
                 <BlockStack gap="050">
                   <Text as="span" tone="subdued" variant="bodySm">
-                    Customer Invoice
+                    {invoiceBillingLabel}
                   </Text>
                   <Text as="span" fontWeight="bold" variant="headingSm">
                     {invoice.number}

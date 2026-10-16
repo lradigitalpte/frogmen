@@ -18,7 +18,10 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { useRouter, useSearchParams } from "next/navigation";
-import { groupSerializedLines } from "@frog1/shared";
+import {
+  billingQuotationTypeLabel,
+  groupSerializedLines,
+} from "@frog1/shared";
 import { useEffect, useMemo, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
@@ -500,9 +503,16 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
                   {quotation.internalReference || quotation.customerReference || "Quotation"}
                 </Text>
               </BlockStack>
-              <Badge tone={isConfirmed ? "success" : isSent ? "info" : isCancelled ? "critical" : undefined}>
-                {stateBadgeLabel(quotation.state)}
-              </Badge>
+              <InlineStack gap="200" blockAlign="center">
+                <Badge>
+                  {billingQuotationTypeLabel(
+                    quotation.billingDocumentType ?? "tax_invoice",
+                  )}
+                </Badge>
+                <Badge tone={isConfirmed ? "success" : isSent ? "info" : isCancelled ? "critical" : undefined}>
+                  {stateBadgeLabel(quotation.state)}
+                </Badge>
+              </InlineStack>
             </InlineStack>
 
             <Divider />

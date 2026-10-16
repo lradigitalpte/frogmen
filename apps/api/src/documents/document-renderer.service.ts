@@ -120,6 +120,7 @@ export class DocumentRendererService {
     );
 
     return {
+      billingDocumentType: header.order.billingDocumentType,
       number: header.order.number,
       quoteDate: header.order.quoteDate,
       validityDate: header.order.validityDate,
@@ -255,6 +256,7 @@ export class DocumentRendererService {
 
     return {
       documentType: "invoice",
+      billingDocumentType: header.invoice.billingDocumentType,
       number: header.invoice.number,
       quoteDate: header.invoice.invoiceDate,
       validityDate: header.invoice.dueDate,

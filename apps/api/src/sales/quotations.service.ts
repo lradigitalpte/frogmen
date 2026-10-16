@@ -83,6 +83,7 @@ export interface CreateQuotationInput {
   deliveryFeePercent?: number | null;
   /** Supplier fulfills stock; warehouse serial/qty checks are skipped. */
   isDropship?: boolean;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
 }
 
 export interface UpdateQuotationInput {
@@ -98,6 +99,7 @@ export interface UpdateQuotationInput {
   internalNotes?: string | null;
   deliveryFeeAmount?: number | null;
   deliveryFeePercent?: number | null;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
 }
 
 export interface UpdateQuotationLineInput {
@@ -496,6 +498,7 @@ export class QuotationsService {
         internalNotes: input.internalNotes ?? null,
         accessToken: randomUUID(),
         isDropship: input.isDropship ?? false,
+        billingDocumentType: input.billingDocumentType ?? "tax_invoice",
         ...this.resolveDeliveryFeeFields(input),
         createdByUserId: userId ?? null,
       })
@@ -658,6 +661,9 @@ export class QuotationsService {
     if (input.notes !== undefined) updates.notes = input.notes;
     if (input.internalNotes !== undefined) {
       updates.internalNotes = input.internalNotes;
+    }
+    if (input.billingDocumentType !== undefined) {
+      updates.billingDocumentType = input.billingDocumentType;
     }
 
     this.applyDeliveryFeeUpdates(input, updates);

@@ -95,6 +95,7 @@ export interface CreateInvoiceInput {
   customerReference?: string;
   internalReference?: string;
   notes?: string;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
   lines?: AddInvoiceLineInput[];
 }
 
@@ -366,6 +367,7 @@ export class InvoicesService {
         customerReference: input.customerReference ?? null,
         internalReference: input.internalReference ?? null,
         notes: input.notes ?? null,
+        billingDocumentType: input.billingDocumentType ?? "tax_invoice",
         state: "draft",
         paymentState: "unpaid",
       })
@@ -1296,6 +1298,10 @@ export class InvoicesService {
         notes: input.notes ?? order.notes ?? null,
         deliveryFeeAmount: deliveryFeeFields.deliveryFeeAmount,
         deliveryFeePercent: deliveryFeeFields.deliveryFeePercent,
+        billingDocumentType:
+          input.billingDocumentType ??
+          order.billingDocumentType ??
+          "tax_invoice",
         state: "draft",
         paymentState: "unpaid",
       })
@@ -1858,6 +1864,7 @@ export class InvoicesService {
       id: row.id,
       branchId: row.branchId,
       number: row.number,
+      billingDocumentType: row.billingDocumentType,
       salesOrderId: row.salesOrderId ?? undefined,
       customerId: row.customerId,
       customerName: row.customerName,

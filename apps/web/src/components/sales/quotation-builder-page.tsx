@@ -154,6 +154,8 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         paymentReference: quotationResult.paymentReference ?? "",
         notes: quotationResult.notes ?? "",
         internalNotes: quotationResult.internalNotes ?? "",
+        billingDocumentType:
+          quotationResult.billingDocumentType ?? "tax_invoice",
       });
       setCurrencies(currencyRows);
       setHeaderDirty(false);
@@ -240,6 +242,7 @@ export function QuotationBuilderPage({ quotationId }: QuotationBuilderPageProps)
         paymentReference: header.paymentReference || null,
         notes: header.notes || null,
         deliveryFeeAmount: deliveryFeeNum,
+        billingDocumentType: header.billingDocumentType,
       });
 
       const parsedDiscount = Math.max(0, parseFloat(discountValue) || 0);

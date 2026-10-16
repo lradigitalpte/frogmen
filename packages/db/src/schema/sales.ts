@@ -50,6 +50,11 @@ export const invoicePaymentStateEnum = pgEnum("invoice_payment_state", [
   "paid",
 ]);
 
+export const billingDocumentTypeEnum = pgEnum("billing_document_type", [
+  "tax_invoice",
+  "commercial_invoice",
+]);
+
 export const salesActivityTypeEnum = pgEnum("sales_activity_type", [
   "created",
   "updated",
@@ -177,6 +182,9 @@ export const salesOrders = pgTable(
     signedEmail: varchar("signed_email", { length: 320 }),
     customerPoDocumentUrl: text("customer_po_document_url"),
     isDropship: boolean("is_dropship").notNull().default(false),
+    billingDocumentType: billingDocumentTypeEnum("billing_document_type")
+      .notNull()
+      .default("tax_invoice"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -249,6 +257,9 @@ export const invoices = pgTable(
       .references(() => branches.id),
     salesOrderId: uuid("sales_order_id").references(() => salesOrders.id),
     number: varchar("number", { length: 50 }).notNull(),
+    billingDocumentType: billingDocumentTypeEnum("billing_document_type")
+      .notNull()
+      .default("tax_invoice"),
     state: invoiceStateEnum("state").notNull().default("draft"),
     paymentState: invoicePaymentStateEnum("payment_state")
       .notNull()

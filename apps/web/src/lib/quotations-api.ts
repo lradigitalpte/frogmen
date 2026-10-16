@@ -68,6 +68,7 @@ export interface Quotation {
   amountTotalBase: string;
   invoiceStatus: "none" | "to_invoice" | "partial" | "invoiced";
   isDropship?: boolean;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
   dealId?: string | null;
   dealSiblings?: Array<{
     id: string;
@@ -122,6 +123,7 @@ export interface CreateQuotationInput {
   deliveryFeeAmount?: number | null;
   deliveryFeePercent?: number | null;
   isDropship?: boolean;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
 }
 
 export interface UpdateQuotationInput {
@@ -139,6 +141,7 @@ export interface UpdateQuotationInput {
   deliveryFeePercent?: number | null;
   convertCurrency?: boolean;
   convertFromCurrencyId?: string;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
 }
 
 export interface AddQuotationLineInput {

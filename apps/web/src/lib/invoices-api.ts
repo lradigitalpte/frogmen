@@ -30,6 +30,7 @@ export interface Invoice {
   id: string;
   branchId: string;
   number: string;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
   salesOrderId?: string;
   customerId: string;
   customerName: string;
@@ -106,6 +107,7 @@ export interface CreateInvoiceInput {
   customerReference?: string;
   internalReference?: string;
   notes?: string;
+  billingDocumentType?: "tax_invoice" | "commercial_invoice";
   lines?: Array<{
     productId?: string;
     productUnitId?: string;

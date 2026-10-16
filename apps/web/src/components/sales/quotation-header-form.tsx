@@ -1,7 +1,21 @@
 "use client";
 
-import { BlockStack, Button, FormLayout, InlineStack, Layout, Modal, Text, TextField } from "@shopify/polaris";
-import { useState } from "react";
+import {
+  BlockStack,
+  Button,
+  FormLayout,
+  InlineStack,
+  Layout,
+  Modal,
+  Select,
+  Text,
+  TextField,
+} from "@shopify/polaris";
+import {
+  defaultBillingDocumentTypeForCustomer,
+  type BillingDocumentType,
+} from "@frog1/shared";
+import { useRef, useState } from "react";
 import type { Customer } from "@/types/customer";
 import type { Currency } from "@/lib/currencies-api";
 import { CustomerPicker } from "./customer-picker";
@@ -25,7 +39,19 @@ export interface QuotationHeaderValues {
   paymentReference: string;
   notes: string;
   internalNotes: string;
+  billingDocumentType: BillingDocumentType;
 }
+
+const billingDocumentTypeOptions = [
+  {
+    label: "Tax Invoice / Quotation (local, VAT document)",
+    value: "tax_invoice",
+  },
+  {
+    label: "Commercial Invoice / Quotation (export, international)",
+    value: "commercial_invoice",
+  },
+];
 
 interface QuotationHeaderFormProps {
   values: QuotationHeaderValues;
@@ -48,6 +74,7 @@ export function QuotationHeaderForm({
 }: QuotationHeaderFormProps) {
   const [internalNotesOpen, setInternalNotesOpen] = useState(false);
   const [tempInternalNotes, setTempInternalNotes] = useState(values.internalNotes || "");
+  const billingTypeManualRef = useRef(false);
 
   function patch(partial: Partial<QuotationHeaderValues>) {
     const next = { ...values, ...partial };
@@ -76,8 +103,28 @@ export function QuotationHeaderForm({
           <CustomerPicker
             disabled={disabled}
             error={errors?.customer}
-            onChange={(customer) => patch({ customer })}
+            onChange={(customer) => {
+              const partial: Partial<QuotationHeaderValues> = { customer };
+              if (customer && !billingTypeManualRef.current) {
+                partial.billingDocumentType =
+                  defaultBillingDocumentTypeForCustomer(customer.isLocal);
+              }
+              patch(partial);
+            }}
             value={values.customer}
+          />
+          <Select
+            disabled={disabled}
+            label="Billing document type"
+            options={billingDocumentTypeOptions}
+            value={values.billingDocumentType}
+            onChange={(billingDocumentType) => {
+              billingTypeManualRef.current = true;
+              patch({
+                billingDocumentType: billingDocumentType as BillingDocumentType,
+              });
+            }}
+            helpText="Local customers usually use Tax Invoice. Export or international buyers often use Commercial Invoice. Set global VAT to 0% on commercial quotes when no tax applies."
           />
         </QuotationFormSection>
       </Layout.Section>

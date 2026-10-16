@@ -20,9 +20,14 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { pricingAdjustmentHelpText, pricingAdjustmentLabel } from "@frog1/shared";
+import {
+  defaultBillingDocumentTypeForCustomer,
+  pricingAdjustmentHelpText,
+  pricingAdjustmentLabel,
+  type BillingDocumentType,
+} from "@frog1/shared";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
@@ -121,6 +126,20 @@ export function CreateInvoicePage() {
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
   const [deliveryFeeAmount, setDeliveryFeeAmount] = useState<number | null>(null);
   const [deliveryFeePercent, setDeliveryFeePercent] = useState<number | null>(null);
+  const [billingDocumentType, setBillingDocumentType] =
+    useState<BillingDocumentType>("tax_invoice");
+  const billingTypeManualRef = useRef(false);
+
+  const billingDocumentTypeOptions = [
+    {
+      label: "Tax Invoice (local, VAT document)",
+      value: "tax_invoice",
+    },
+    {
+      label: "Commercial Invoice (export, international)",
+      value: "commercial_invoice",
+    },
+  ];
 
   const {
     documentCurrencyCode,
@@ -175,6 +194,9 @@ export function CreateInvoicePage() {
     if (cust.taxId) setCustomerTaxId(cust.taxId);
     setPoReference("");
     setPriceAdjustmentEnabled(true);
+    if (!billingTypeManualRef.current) {
+      setBillingDocumentType(defaultBillingDocumentTypeForCustomer(cust.isLocal));
+    }
   }
 
   const customerIsLocal = selectedCustomer?.isLocal ?? false;
@@ -276,6 +298,7 @@ export function CreateInvoicePage() {
         );
         if (q.customerReference) setPoReference(q.customerReference);
         if (q.notes) setNotes(q.notes);
+        setBillingDocumentType(q.billingDocumentType ?? "tax_invoice");
         setInvoiceDate(todayIsoDate());
         if (q.lines && q.lines.length > 0) {
           setLines(
@@ -516,6 +539,7 @@ export function CreateInvoicePage() {
               salesOrderId: quotationId!,
               invoiceDate,
               dueDate,
+              billingDocumentType,
             }
           : {
               customerId: selectedCustomerId,
@@ -524,6 +548,7 @@ export function CreateInvoicePage() {
               dueDate,
               customerReference: poReference || undefined,
               notes: notes || undefined,
+              billingDocumentType,
               lines: lines.map((l) => ({
                 productId: l.productId,
                 productUnitId: l.productUnitId,
@@ -656,6 +681,18 @@ export function CreateInvoicePage() {
                   </BlockStack>
 
                   <Grid>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                      <Select
+                        label="Billing document type"
+                        options={billingDocumentTypeOptions}
+                        value={billingDocumentType}
+                        onChange={(value) => {
+                          billingTypeManualRef.current = true;
+                          setBillingDocumentType(value as BillingDocumentType);
+                        }}
+                        helpText="Confirm Tax vs Commercial before posting. VAT on lines stays as quoted on the sales order."
+                      />
+                    </Grid.Cell>
                     <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
                       <TextField
                         autoComplete="off"
@@ -902,6 +939,18 @@ export function CreateInvoicePage() {
                     </Text>
 
                     <Grid>
+                      <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
+                        <Select
+                          label="Billing document type"
+                          options={billingDocumentTypeOptions}
+                          value={billingDocumentType}
+                          onChange={(value) => {
+                            billingTypeManualRef.current = true;
+                            setBillingDocumentType(value as BillingDocumentType);
+                          }}
+                          helpText="Local customers usually use Tax Invoice. Export buyers often use Commercial Invoice."
+                        />
+                      </Grid.Cell>
                       <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
                         <TextField
                           autoComplete="off"

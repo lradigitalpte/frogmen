@@ -2,6 +2,10 @@ import type { CompanyProfileSettings } from "../schemas/company-settings";
 import { resolveCompanyProfile } from "../schemas/company-settings";
 import type { DocumentTemplateSettings } from "../schemas/document-templates";
 import { resolveDocumentTemplates } from "../schemas/document-templates";
+import {
+  resolveBillingDocumentTitle,
+  type BillingDocumentType,
+} from "../schemas/billing-document-type";
 import { formatAppDate } from "../format-date";
 import { formatQuantity } from "../format-quantity";
 import { formatCountryLabel } from "../locations";
@@ -34,6 +38,7 @@ export interface QuotationDocumentChargeLine {
 
 export interface QuotationDocumentData {
   documentType?: "quotation" | "invoice" | "purchase_order" | "credit_note";
+  billingDocumentType?: "tax_invoice" | "commercial_invoice" | null;
   number: string;
   quoteDate: string;
   validityDate: string | null;
@@ -149,7 +154,39 @@ export function renderQuotationDocumentHtml(
   const isInvoice = quotation.documentType === "invoice";
   const isPurchaseOrder = quotation.documentType === "purchase_order";
   const isCreditNote = quotation.documentType === "credit_note";
-  const title = isCreditNote ? "Credit Note" : isInvoice ? templates.invoiceTitle : isPurchaseOrder ? "Purchase Order" : templates.quotationTitle;
+  const billingType: BillingDocumentType =
+    quotation.billingDocumentType ?? "tax_invoice";
+  const isCommercial = billingType === "commercial_invoice";
+  const title = isCreditNote
+    ? "Credit Note"
+    : isPurchaseOrder
+      ? "Purchase Order"
+      : isInvoice
+        ? resolveBillingDocumentTitle({
+            documentKind: "invoice",
+            billingDocumentType: billingType,
+            quotationTitle: templates.quotationTitle,
+            invoiceTitle: templates.invoiceTitle,
+          })
+        : resolveBillingDocumentTitle({
+            documentKind: "quotation",
+            billingDocumentType: billingType,
+            quotationTitle: templates.quotationTitle,
+            invoiceTitle: templates.invoiceTitle,
+          });
+  const invoiceNumberLabel = isInvoice
+    ? isCommercial
+      ? "Invoice No."
+      : "Tax Inv No."
+    : null;
+  const invoiceRecipientLabel = isInvoice
+    ? isCommercial
+      ? "Invoice To:"
+      : "Tax Invoice To:"
+    : null;
+  const quotationRecipientLabel = isCommercial
+    ? "Commercial Quotation To:"
+    : "Quotation To:";
   const showPaymentDetails = isInvoice;
   const showPaidStamp = isInvoice && quotation.isPaid === true;
   const paidStampHtml = showPaidStamp
@@ -364,14 +401,14 @@ ${paidStampCss}
 </style></head><body>
 <div class="top"><div>${officialLogo}</div>
 <div><h1 class="doc-title">${escapeHtml(title)}</h1><div class="meta">
-<span>${isCreditNote ? "Credit Note No." : isInvoice ? "Tax Inv No." : isPurchaseOrder ? "PO No." : "Quotation No."}</span><b>${escapeHtml(quotation.number)}</b>
+<span>${isCreditNote ? "Credit Note No." : isInvoice ? invoiceNumberLabel : isPurchaseOrder ? "PO No." : "Quotation No."}</span><b>${escapeHtml(quotation.number)}</b>
 <span>Date</span><b>${escapeHtml(quoteDateLabel)}</b>
 <span>Amount</span><b>${money(quotation.amountTotal)}</b>
 <span>${isInvoice ? "Due date" : isPurchaseOrder ? "Expected" : "Valid until"}</span><b>${escapeHtml(validityDateLabel)}</b>
 ${officialPoMetaRow}
 </div></div></div>
 <div class="company"><strong>${escapeHtml(branding.name)}</strong>${companyLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
-<div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? "Tax Invoice To:" : isPurchaseOrder ? "Purchase Order To:" : "Quotation To:"}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
+<div class="addresses"><div><p class="address-title">${isCreditNote ? "Credit To:" : isInvoice ? invoiceRecipientLabel : isPurchaseOrder ? "Purchase Order To:" : quotationRecipientLabel}</p><div class="address-box"><p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}${quotation.customerTaxId ? `<p>Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}</div></div>
 <div><p class="address-title">${isPurchaseOrder ? "Bill to (buyer):" : "Billing Address:"}</p><div class="address-box">${isPurchaseOrder ? `<p><strong>${escapeHtml(branding.name)}</strong></p>${buyerBillingLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}` : `<p><strong>${escapeHtml(quotation.customerName)}</strong></p>${customerLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}`}</div></div></div>
 <table><colgroup><col class="col-sn" /><col /><col class="col-qty" /><col class="col-price" /><col class="col-total" /></colgroup>
 <thead><tr><th style="text-align:center;width:44px;">S/N</th><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total Price</th></tr></thead>
@@ -510,7 +547,7 @@ ${templates.footerText ? `<p class="footer">${escapeHtml(templates.footerText)}<
 
   <div class="grid">
     <div>
-      <p class="section-label">${isPurchaseOrder ? "Vendor" : title.toLowerCase().includes("invoice") ? "Tax invoice to" : "Quotation to"}</p>
+      <p class="section-label">${isPurchaseOrder ? "Vendor" : isInvoice ? (isCommercial ? "Invoice to" : "Tax invoice to") : isCommercial ? "Commercial quotation to" : "Quotation to"}</p>
       <p><strong>${escapeHtml(quotation.customerName)}</strong></p>
       ${quotation.customerEmail ? `<p class="muted">${escapeHtml(quotation.customerEmail)}</p>` : ""}
       ${quotation.customerTaxId ? `<p class="muted">Tax ID: ${escapeHtml(quotation.customerTaxId)}</p>` : ""}
