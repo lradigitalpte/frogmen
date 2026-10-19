@@ -22,6 +22,7 @@ import {
   renderDeliveryNoteDocumentHtml,
   resolveDeliveryFee,
   roundMoney,
+  sumDocumentAmounts,
   type DeliveryNoteDocumentData,
   type QuotationDocumentData,
 } from "@frog1/shared";
@@ -109,15 +110,42 @@ export class DocumentRendererService {
       .where(eq(salesOrderLines.salesOrderId, quotationId))
       .orderBy(asc(salesOrderLines.lineNumber));
 
-    const lineNetSubtotal = lines.reduce(
-      (sum, row) => sum + Number(row.line.priceSubtotal),
-      0,
-    );
-    const deliveryFee = resolveDeliveryFee(
-      lineNetSubtotal,
+    const documentLines = lines.map((row) => ({
+      priceSubtotal: Number(row.line.priceSubtotal),
+      priceTax: Number(row.line.priceTax),
+      priceTotal: Number(row.line.priceTotal),
+    }));
+    const exchangeRate = Number(header.order.exchangeRate ?? 1);
+    const totals = sumDocumentAmounts(
+      documentLines,
+      exchangeRate,
       header.order.deliveryFeeAmount,
       header.order.deliveryFeePercent,
     );
+
+    if (
+      roundMoney(Number(header.order.amountTax)) !== totals.amountTax ||
+      roundMoney(Number(header.order.amountTotal)) !== totals.amountTotal ||
+      roundMoney(Number(header.order.amountUntaxed)) !== totals.amountUntaxed
+    ) {
+      await this.db
+        .update(salesOrders)
+        .set({
+          amountUntaxed: String(totals.amountUntaxed),
+          amountTax: String(totals.amountTax),
+          amountTotal: String(totals.amountTotal),
+          amountUntaxedBase: String(totals.amountUntaxedBase),
+          amountTaxBase: String(totals.amountTaxBase),
+          amountTotalBase: String(totals.amountTotalBase),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(salesOrders.id, quotationId),
+            eq(salesOrders.organizationId, organizationId),
+          ),
+        );
+    }
 
     return {
       billingDocumentType: header.order.billingDocumentType,
@@ -139,12 +167,12 @@ export class DocumentRendererService {
         countryCode: header.customerCountry,
       }),
       notes: header.order.notes,
-      lineNetSubtotal: String(lineNetSubtotal),
-      deliveryFee: deliveryFee > 0 ? String(deliveryFee) : null,
+      lineNetSubtotal: String(totals.lineNet),
+      deliveryFee: totals.deliveryFee > 0 ? String(totals.deliveryFee) : null,
       deliveryFeePercent: header.order.deliveryFeePercent,
-      amountUntaxed: header.order.amountUntaxed,
-      amountTax: header.order.amountTax,
-      amountTotal: header.order.amountTotal,
+      amountUntaxed: String(totals.amountUntaxed),
+      amountTax: String(totals.amountTax),
+      amountTotal: String(totals.amountTotal),
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,
@@ -244,15 +272,42 @@ export class DocumentRendererService {
       .leftJoin(productUnits, eq(productUnits.id, invoiceLines.productUnitId))
       .where(eq(invoiceLines.invoiceId, invoiceId));
 
-    const lineNetSubtotal = lines.reduce(
-      (sum, row) => sum + Number(row.line.priceSubtotal),
-      0,
-    );
-    const deliveryFee = resolveDeliveryFee(
-      lineNetSubtotal,
+    const documentLines = lines.map((row) => ({
+      priceSubtotal: Number(row.line.priceSubtotal),
+      priceTax: Number(row.line.priceTax),
+      priceTotal: Number(row.line.priceTotal),
+    }));
+    const exchangeRate = Number(header.invoice.exchangeRate ?? 1);
+    const totals = sumDocumentAmounts(
+      documentLines,
+      exchangeRate,
       header.invoice.deliveryFeeAmount,
       header.invoice.deliveryFeePercent,
     );
+
+    if (
+      roundMoney(Number(header.invoice.amountTax)) !== totals.amountTax ||
+      roundMoney(Number(header.invoice.amountTotal)) !== totals.amountTotal ||
+      roundMoney(Number(header.invoice.amountUntaxed)) !== totals.amountUntaxed
+    ) {
+      await this.db
+        .update(invoices)
+        .set({
+          amountUntaxed: String(totals.amountUntaxed),
+          amountTax: String(totals.amountTax),
+          amountTotal: String(totals.amountTotal),
+          amountUntaxedBase: String(totals.amountUntaxedBase),
+          amountTaxBase: String(totals.amountTaxBase),
+          amountTotalBase: String(totals.amountTotalBase),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invoices.id, invoiceId),
+            eq(invoices.organizationId, organizationId),
+          ),
+        );
+    }
 
     return {
       documentType: "invoice",
@@ -275,12 +330,12 @@ export class DocumentRendererService {
         countryCode: header.customerCountry,
       }),
       notes: header.invoice.notes,
-      lineNetSubtotal: String(lineNetSubtotal),
-      deliveryFee: deliveryFee > 0 ? String(deliveryFee) : null,
+      lineNetSubtotal: String(totals.lineNet),
+      deliveryFee: totals.deliveryFee > 0 ? String(totals.deliveryFee) : null,
       deliveryFeePercent: header.invoice.deliveryFeePercent,
-      amountUntaxed: header.invoice.amountUntaxed,
-      amountTax: header.invoice.amountTax,
-      amountTotal: header.invoice.amountTotal,
+      amountUntaxed: String(totals.amountUntaxed),
+      amountTax: String(totals.amountTax),
+      amountTotal: String(totals.amountTotal),
       currencyCode: header.currencyCode,
       currencySymbol: header.currencySymbol,
       decimalPlaces: header.decimalPlaces,

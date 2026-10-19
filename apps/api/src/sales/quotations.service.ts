@@ -445,9 +445,25 @@ export class QuotationsService {
       }));
     }
 
+    await this.recomputeOrderTotals(organizationId, id, header.order);
+
+    const [amounts] = await this.db
+      .select({
+        amountUntaxed: salesOrders.amountUntaxed,
+        amountTax: salesOrders.amountTax,
+        amountTotal: salesOrders.amountTotal,
+        amountUntaxedBase: salesOrders.amountUntaxedBase,
+        amountTaxBase: salesOrders.amountTaxBase,
+        amountTotalBase: salesOrders.amountTotalBase,
+      })
+      .from(salesOrders)
+      .where(eq(salesOrders.id, id))
+      .limit(1);
+
     return {
       ...header.order,
-      amountTotalBase: String(header.order.amountTotalBase ?? "0"),
+      ...(amounts ?? {}),
+      amountTotalBase: String(amounts?.amountTotalBase ?? header.order.amountTotalBase ?? "0"),
       customerName: header.customerName,
       currencyCode: header.currencyCode?.trim() ?? null,
       dealId: header.order.dealId ?? null,

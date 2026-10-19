@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   billingQuotationTypeLabel,
   groupSerializedLines,
+  sumDocumentAmounts,
 } from "@frog1/shared";
 import { useEffect, useMemo, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
@@ -188,10 +189,6 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   const currencyCode = currency?.code ?? "USD";
   const decimalPlaces = currency?.decimalPlaces ?? 2;
 
-  const amountUntaxed = quotation?.amountUntaxed ?? "0";
-  const amountTax = quotation?.amountTax ?? "0";
-  const amountTotal = quotation?.amountTotal ?? "0";
-
   const lineNetSubtotal = useMemo(
     () =>
       lines.reduce((sum, line) => sum + Number(line.priceSubtotal ?? 0), 0),
@@ -217,6 +214,30 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
         quotation?.deliveryFeePercent,
       ),
     [lineNetSubtotal, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent],
+  );
+
+  const documentTotals = useMemo(() => {
+    if (lines.length === 0) {
+      return null;
+    }
+    return sumDocumentAmounts(
+      lines.map((line) => ({
+        priceSubtotal: Number(line.priceSubtotal ?? 0),
+        priceTax: Number(line.priceTax ?? 0),
+        priceTotal: Number(line.priceTotal ?? 0),
+      })),
+      1,
+      quotation?.deliveryFeeAmount,
+      quotation?.deliveryFeePercent,
+    );
+  }, [lines, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent]);
+
+  const amountUntaxed = String(
+    documentTotals?.amountUntaxed ?? quotation?.amountUntaxed ?? 0,
+  );
+  const amountTax = String(documentTotals?.amountTax ?? quotation?.amountTax ?? 0);
+  const amountTotal = String(
+    documentTotals?.amountTotal ?? quotation?.amountTotal ?? 0,
   );
 
   async function handleMarkSent() {
