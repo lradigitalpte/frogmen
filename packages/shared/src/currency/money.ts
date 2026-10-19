@@ -161,10 +161,15 @@ export function sumDocumentAmounts(
     deliveryFeeAmount,
     deliveryFeePercent,
   );
-  const amountUntaxed = roundMoney(lineNet + deliveryFee);
-  const amountTax = roundMoney(
+  const lineTax = roundMoney(
     lines.reduce((sum, line) => sum + line.priceTax, 0),
   );
+  const amountUntaxed = roundMoney(lineNet + deliveryFee);
+  const deliveryTax =
+    deliveryFee > 0 && lineNet > 0
+      ? roundMoney(deliveryFee * (lineTax / lineNet))
+      : 0;
+  const amountTax = roundMoney(lineTax + deliveryTax);
   const amountTotal = roundMoney(amountUntaxed + amountTax);
 
   return {

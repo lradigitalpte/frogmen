@@ -346,7 +346,7 @@ export function computeLineFinancialSummary<
 
   const netSubtotal = lineSubtotal - totalDiscount;
 
-  const totalVat = lines.reduce((sum, item) => {
+  const lineVat = lines.reduce((sum, item) => {
     const itemNet = computeLineNetRevenue(item);
     return sum + itemNet * (item.taxRatePercent / 100);
   }, 0);
@@ -357,6 +357,11 @@ export function computeLineFinancialSummary<
     options?.deliveryFeeAmount,
     options?.deliveryFeePercent,
   );
+  const deliveryVat =
+    deliveryFee > 0 && netSubtotal > 0
+      ? deliveryFee * (lineVat / netSubtotal)
+      : 0;
+  const totalVat = lineVat + deliveryVat;
   const grossProfit = netSubtotal - totalCost;
   const profitMarginPercent =
     netSubtotal > 0 ? (grossProfit / netSubtotal) * 100 : null;
