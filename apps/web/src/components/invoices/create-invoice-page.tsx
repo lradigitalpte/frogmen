@@ -31,6 +31,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
+import { InvoiceDocumentBankModal } from "@/components/invoices/invoice-document-bank-modal";
+import { listBankAccounts } from "@/lib/bank-accounts-api";
+import type { BankAccount } from "@/lib/bank-accounts-api";
+import {
+  getInvoicePaymentBankStatus,
+  resolveInvoiceDocumentBankIdForCreate,
+} from "@/lib/invoice-document-bank";
 import { DocumentNotesField } from "@/components/documents/document-notes-field";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { LineItemDescription } from "@/components/sales/line-item-description";
@@ -123,6 +130,12 @@ export function CreateInvoicePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [documentBankAccountId, setDocumentBankAccountId] = useState<
+    string | null
+  >(null);
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [pendingPostAfterBank, setPendingPostAfterBank] = useState(false);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
   const [deliveryFeeAmount, setDeliveryFeeAmount] = useState<number | null>(null);
   const [deliveryFeePercent, setDeliveryFeePercent] = useState<number | null>(null);
@@ -173,6 +186,12 @@ export function CreateInvoicePage() {
       .catch(() => {
         setCustomerAccounts([]);
       });
+  }, []);
+
+  useEffect(() => {
+    void listBankAccounts({ activeOnly: true })
+      .then(setBankAccounts)
+      .catch(() => setBankAccounts([]));
   }, []);
 
   const filteredCustomerAccounts = useMemo(() => {
@@ -519,16 +538,29 @@ export function CreateInvoicePage() {
     setLines((prev) => prev.filter((l) => l.id !== lineId));
   }
 
-  async function handleConfirmPost() {
+  async function postInvoiceWithBank(bankAccountId: string | null) {
     setSaving(true);
     setError(null);
-    if (!selectedCustomerId) {
+    if (!selectedCustomerId && !fromSalesOrder) {
       setError("Select a customer before posting the invoice.");
       setSaving(false);
       return;
     }
     if (!documentCurrencyId) {
       setError("Invoice currency is required.");
+      setSaving(false);
+      return;
+    }
+    const currencyCode = documentCurrencyCode ?? "AED";
+    const resolvedBankId = resolveInvoiceDocumentBankIdForCreate(
+      bankAccounts,
+      currencyCode,
+      bankAccountId,
+    );
+    if (!resolvedBankId) {
+      setError(
+        `Choose a ${currencyCode} bank account to show payment details on the invoice PDF.`,
+      );
       setSaving(false);
       return;
     }
@@ -540,6 +572,7 @@ export function CreateInvoicePage() {
               invoiceDate,
               dueDate,
               billingDocumentType,
+              documentBankAccountId: resolvedBankId,
             }
           : {
               customerId: selectedCustomerId,
@@ -549,6 +582,7 @@ export function CreateInvoicePage() {
               customerReference: poReference || undefined,
               notes: notes || undefined,
               billingDocumentType,
+              documentBankAccountId: resolvedBankId,
               lines: lines.map((l) => ({
                 productId: l.productId,
                 productUnitId: l.productUnitId,
@@ -568,6 +602,30 @@ export function CreateInvoicePage() {
       setError(message);
       showError(message);
       setSaving(false);
+    }
+  }
+
+  function handleConfirmPost() {
+    const currencyCode = documentCurrencyCode ?? "AED";
+    const status = getInvoicePaymentBankStatus(
+      bankAccounts,
+      currencyCode,
+      documentBankAccountId,
+    );
+    if (status === "ready") {
+      void postInvoiceWithBank(documentBankAccountId);
+      return;
+    }
+    setPendingPostAfterBank(true);
+    setBankModalOpen(true);
+  }
+
+  async function handleConfirmDocumentBank(bankAccountId: string) {
+    setDocumentBankAccountId(bankAccountId);
+    setBankModalOpen(false);
+    if (pendingPostAfterBank) {
+      setPendingPostAfterBank(false);
+      await postInvoiceWithBank(bankAccountId);
     }
   }
 
@@ -1553,6 +1611,27 @@ export function CreateInvoicePage() {
           </Layout>
         ) : null}
       </BlockStack>
+
+      <InvoiceDocumentBankModal
+        open={bankModalOpen}
+        onClose={() => {
+          setBankModalOpen(false);
+          setPendingPostAfterBank(false);
+        }}
+        currencyCode={documentCurrencyCode ?? "AED"}
+        bankAccounts={bankAccounts}
+        status={getInvoicePaymentBankStatus(
+          bankAccounts,
+          documentCurrencyCode ?? "AED",
+          documentBankAccountId,
+        )}
+        initialBankAccountId={documentBankAccountId}
+        saving={saving}
+        onConfirm={handleConfirmDocumentBank}
+        onBankAccountCreated={(account) =>
+          setBankAccounts((prev) => [...prev, account])
+        }
+      />
 
       {quotationId && quotationNumber ? (
         <DocumentPreviewModal

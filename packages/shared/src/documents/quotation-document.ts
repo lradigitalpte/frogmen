@@ -11,6 +11,7 @@ import { formatQuantity } from "../format-quantity";
 import { formatCountryLabel } from "../locations";
 import {
   type DocumentBankAccount,
+  resolveDocumentBankAccountsForPayment,
   renderDocumentPaymentDetailsHtml,
 } from "./document-payment-details";
 import { renderLineItemDescriptionHtml } from "./line-item-details";
@@ -39,6 +40,7 @@ export interface QuotationDocumentChargeLine {
 export interface QuotationDocumentData {
   documentType?: "quotation" | "invoice" | "purchase_order" | "credit_note";
   billingDocumentType?: "tax_invoice" | "commercial_invoice" | null;
+  documentBankAccountId?: string | null;
   number: string;
   quoteDate: string;
   validityDate: string | null;
@@ -226,11 +228,19 @@ export function renderQuotationDocumentHtml(
     profile.email ? `Email: ${profile.email}` : null,
   ].filter((line): line is string => Boolean(line));
 
+  const paymentBankAccounts = showPaymentDetails
+    ? resolveDocumentBankAccountsForPayment({
+        accounts: branding.documentBankAccounts ?? [],
+        currencyCode: quotation.currencyCode,
+        selectedBankAccountId: quotation.documentBankAccountId,
+      })
+    : [];
+
   const paymentDetailsHtml = showPaymentDetails
     ? renderDocumentPaymentDetailsHtml({
         companyName: branding.name,
         documentTemplates: templates,
-        documentBankAccounts: branding.documentBankAccounts,
+        documentBankAccounts: paymentBankAccounts,
         className: "terms",
       })
     : "";

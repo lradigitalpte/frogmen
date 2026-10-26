@@ -312,6 +312,7 @@ export class DocumentRendererService {
     return {
       documentType: "invoice",
       billingDocumentType: header.invoice.billingDocumentType,
+      documentBankAccountId: header.invoice.documentBankAccountId,
       number: header.invoice.number,
       quoteDate: header.invoice.invoiceDate,
       validityDate: header.invoice.dueDate,

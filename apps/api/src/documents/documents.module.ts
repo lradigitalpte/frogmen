@@ -8,6 +8,6 @@ import { PdfService } from "./pdf.service";
 @Module({
   imports: [DatabaseModule, SettingsModule],
   providers: [DocumentBankAccountsService, DocumentRendererService, PdfService],
-  exports: [DocumentRendererService, PdfService],
+  exports: [DocumentRendererService, PdfService, DocumentBankAccountsService],
 })
 export class DocumentsModule {}

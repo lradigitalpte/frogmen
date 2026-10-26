@@ -69,12 +69,14 @@ export class DocumentBankAccountsService {
         return left.account.name.localeCompare(right.account.name);
       })
       .map((row) => ({
+        id: row.account.id,
         name: row.account.name,
         bankName: row.account.bankName,
         accountNumber: row.account.accountNumber,
         iban: row.account.iban,
         swiftCode: row.account.swiftCode,
         currencyCode: row.currencyCode,
+        isDefault: row.account.isDefault,
       }));
   }
 }

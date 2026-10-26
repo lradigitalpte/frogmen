@@ -44,7 +44,12 @@ import {
   warrantyRegistrations,
   type Database,
 } from "@frog1/db";
-import { convertPaymentToInvoiceAmount, applyTemplatePlaceholders } from "@frog1/shared";
+import {
+  applyTemplatePlaceholders,
+  convertPaymentToInvoiceAmount,
+  resolveDocumentBankAccountsForPayment,
+} from "@frog1/shared";
+import { DocumentBankAccountsService } from "../documents/document-bank-accounts.service";
 import { DATABASE } from "../database/database.constants";
 import { AccountingService } from "../accounting/accounting.service";
 import { BankAccountsService } from "../bank-accounts/bank-accounts.service";
@@ -96,6 +101,7 @@ export interface CreateInvoiceInput {
   internalReference?: string;
   notes?: string;
   billingDocumentType?: "tax_invoice" | "commercial_invoice";
+  documentBankAccountId?: string | null;
   lines?: AddInvoiceLineInput[];
 }
 
@@ -115,6 +121,7 @@ export interface UpdateInvoiceDetailsInput {
   notes?: string | null;
   syncSalesOrder?: boolean;
   regenerateNumber?: boolean;
+  documentBankAccountId?: string | null;
   reason: string;
 }
 
@@ -130,6 +137,7 @@ export class InvoicesService {
     private readonly warrantiesService: WarrantiesService,
     private readonly mailService: MailService,
     private readonly documentRenderer: DocumentRendererService,
+    private readonly documentBankAccountsService: DocumentBankAccountsService,
   ) {}
 
   async list(organizationId: string, query: ListInvoicesQuery = {}) {
@@ -352,6 +360,13 @@ export class InvoicesService {
       "INV-",
     );
 
+    const documentBankAccountId = await this.resolveDocumentBankAccountId(
+      organizationId,
+      input.currencyId,
+      undefined,
+      input.documentBankAccountId,
+    );
+
     const [invoice] = await this.db
       .insert(invoices)
       .values({
@@ -359,6 +374,7 @@ export class InvoicesService {
         number,
         customerId: input.customerId,
         currencyId: input.currencyId,
+        documentBankAccountId,
         exchangeRate: String(exchangeRate),
         paymentTermId: input.paymentTermId ?? null,
         invoiceDate:
@@ -462,6 +478,22 @@ export class InvoicesService {
     }
     if (input.notes !== undefined) {
       updateSet.notes = input.notes || null;
+    }
+    if (input.documentBankAccountId !== undefined) {
+      if (input.documentBankAccountId) {
+        await this.assertDocumentBankAccountForInvoice(
+          organizationId,
+          input.documentBankAccountId,
+          invoice.currencyId,
+          invoice.branchId,
+        );
+      }
+      const prevBank = invoice.documentBankAccountId ?? "none";
+      const newBank = input.documentBankAccountId ?? "none";
+      if (prevBank !== newBank) {
+        changes.push("Payment bank account for PDF updated");
+      }
+      updateSet.documentBankAccountId = input.documentBankAccountId;
     }
 
     await this.db
@@ -1278,6 +1310,13 @@ export class InvoicesService {
       order.deliveryFeePercent,
     );
 
+    const documentBankAccountId = await this.resolveDocumentBankAccountId(
+      organizationId,
+      order.currencyId,
+      order.branchId,
+      input.documentBankAccountId,
+    );
+
     const [invoice] = await this.db
       .insert(invoices)
       .values({
@@ -1286,6 +1325,7 @@ export class InvoicesService {
         number,
         customerId: order.customerId,
         currencyId: order.currencyId,
+        documentBankAccountId,
         exchangeRate: String(exchangeRate),
         paymentTermId: order.paymentTermId,
         invoiceDate:
@@ -1803,6 +1843,73 @@ export class InvoicesService {
       );
   }
 
+  private async assertDocumentBankAccountForInvoice(
+    organizationId: string,
+    bankAccountId: string,
+    currencyId: string,
+    branchId?: string | null,
+  ) {
+    const accounts = await this.documentBankAccountsService.listForDocuments(
+      organizationId,
+      { branchId },
+    );
+    const match = accounts.find((account) => account.id === bankAccountId);
+    if (!match) {
+      throw new BadRequestException(
+        "Selected bank account is not available for documents on this branch.",
+      );
+    }
+
+    const [currency] = await this.db
+      .select({ code: currencies.code })
+      .from(currencies)
+      .where(eq(currencies.id, currencyId))
+      .limit(1);
+
+    if (
+      currency?.code &&
+      match.currencyCode.trim().toUpperCase() !==
+        currency.code.trim().toUpperCase()
+    ) {
+      throw new BadRequestException(
+        "Selected bank account currency must match the invoice currency.",
+      );
+    }
+  }
+
+  private async resolveDocumentBankAccountId(
+    organizationId: string,
+    currencyId: string,
+    branchId: string | null | undefined,
+    explicitId?: string | null,
+  ): Promise<string | null> {
+    if (explicitId) {
+      await this.assertDocumentBankAccountForInvoice(
+        organizationId,
+        explicitId,
+        currencyId,
+        branchId,
+      );
+      return explicitId;
+    }
+
+    const [currency] = await this.db
+      .select({ code: currencies.code })
+      .from(currencies)
+      .where(eq(currencies.id, currencyId))
+      .limit(1);
+
+    const accounts = await this.documentBankAccountsService.listForDocuments(
+      organizationId,
+      { branchId },
+    );
+    const resolved = resolveDocumentBankAccountsForPayment({
+      accounts,
+      currencyCode: currency?.code,
+    });
+    return resolved[0]?.id ?? null;
+  }
+
   private async getEditableInvoice(organizationId: string, invoiceId: string) {
     const invoice = await this.getById(organizationId, invoiceId);
 
@@ -1865,6 +1972,7 @@ export class InvoicesService {
       branchId: row.branchId,
       number: row.number,
       billingDocumentType: row.billingDocumentType,
+      documentBankAccountId: row.documentBankAccountId ?? undefined,
       salesOrderId: row.salesOrderId ?? undefined,
       customerId: row.customerId,
       customerName: row.customerName,

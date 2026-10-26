@@ -2,12 +2,14 @@ import type { DocumentTemplateSettings } from "../schemas/document-templates";
 import { resolveDocumentTemplates } from "../schemas/document-templates";
 
 export interface DocumentBankAccount {
+  id?: string;
   name: string;
   bankName: string | null;
   accountNumber: string | null;
   iban: string | null;
   swiftCode: string | null;
   currencyCode: string;
+  isDefault?: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -69,6 +71,51 @@ function formatLegacyBankLines(
   }
 
   return lines;
+}
+
+export function filterDocumentBankAccountsForCurrency(
+  accounts: DocumentBankAccount[],
+  currencyCode: string | null | undefined,
+): DocumentBankAccount[] {
+  if (!currencyCode?.trim()) {
+    return accounts;
+  }
+
+  const normalized = currencyCode.trim().toUpperCase();
+  return accounts.filter(
+    (account) => account.currencyCode.trim().toUpperCase() === normalized,
+  );
+}
+
+export function resolveDocumentBankAccountsForPayment(options: {
+  accounts: DocumentBankAccount[];
+  currencyCode?: string | null;
+  selectedBankAccountId?: string | null;
+}): DocumentBankAccount[] {
+  const { accounts, currencyCode, selectedBankAccountId } = options;
+
+  if (selectedBankAccountId) {
+    const selected = accounts.find(
+      (account) => account.id === selectedBankAccountId,
+    );
+    return selected ? [selected] : [];
+  }
+
+  const currencyMatches = filterDocumentBankAccountsForCurrency(
+    accounts,
+    currencyCode,
+  );
+
+  if (currencyMatches.length === 1) {
+    return currencyMatches;
+  }
+
+  if (currencyMatches.length > 1) {
+    const defaultAccount = currencyMatches.find((account) => account.isDefault);
+    return defaultAccount ? [defaultAccount] : [];
+  }
+
+  return [];
 }
 
 export function buildDocumentPaymentDetailsText(

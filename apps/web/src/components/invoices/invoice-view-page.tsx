@@ -31,6 +31,13 @@ import { todayIsoDate } from "@/components/sales/format-money";
 import { AppPage } from "@/components/layout/page";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
+import { InvoiceDocumentBankModal } from "@/components/invoices/invoice-document-bank-modal";
+import { listBankAccounts } from "@/lib/bank-accounts-api";
+import type { BankAccount } from "@/lib/bank-accounts-api";
+import {
+  getInvoiceDocumentBankCandidates,
+  getInvoicePaymentBankStatus,
+} from "@/lib/invoice-document-bank";
 import { RegisterPaymentModal } from "@/components/invoices/register-payment-modal";
 import { DeliveryNoteReviewModal } from "@/components/invoices/delivery-note-review-modal";
 import { EditInvoiceDetailsModal } from "@/components/invoices/edit-invoice-details-modal";
@@ -45,6 +52,7 @@ import {
   resetInvoiceToDraft,
   sendInvoiceEmail,
   sendInvoiceCancellationEmail,
+  updateInvoiceDetails,
   type Invoice,
 } from "@/lib/invoices-api";
 import { getInvoiceJournal } from "@/lib/accounting-api";
@@ -92,6 +100,9 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
 
   // PDF Preview Modal State
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [savingDocumentBank, setSavingDocumentBank] = useState(false);
   const [deliveryNoteOpen, setDeliveryNoteOpen] = useState(false);
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
   const [journalLines, setJournalLines] = useState<
@@ -110,8 +121,12 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getInvoice(invoiceId);
+      const [data, banks] = await Promise.all([
+        getInvoice(invoiceId),
+        listBankAccounts({ activeOnly: true }),
+      ]);
       setInvoice(data);
+      setBankAccounts(banks);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load invoice");
     } finally {
@@ -145,6 +160,51 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
     (amount: number) => formatCurrencyAmount(amount, documentCurrency),
     [documentCurrency],
   );
+
+  const invoiceBankCandidates = useMemo(
+    () =>
+      invoice
+        ? getInvoiceDocumentBankCandidates(
+            bankAccounts,
+            invoice.currencyCode ?? "AED",
+          )
+        : [],
+    [bankAccounts, invoice],
+  );
+
+  function openInvoicePreview() {
+    if (!invoice) return;
+    const status = getInvoicePaymentBankStatus(
+      bankAccounts,
+      invoice.currencyCode ?? "AED",
+      invoice.documentBankAccountId,
+    );
+    if (status === "ready") {
+      setPdfModalOpen(true);
+      return;
+    }
+    setBankModalOpen(true);
+  }
+
+  async function handleSaveDocumentBank(bankAccountId: string) {
+    if (!invoice) return;
+    setSavingDocumentBank(true);
+    try {
+      const updated = await updateInvoiceDetails(invoice.id, {
+        documentBankAccountId: bankAccountId,
+        reason: "Selected payment bank account for invoice PDF",
+      });
+      setInvoice(updated);
+      setBankModalOpen(false);
+      setPdfModalOpen(true);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save payment bank",
+      );
+    } finally {
+      setSavingDocumentBank(false);
+    }
+  }
 
   async function handleConfirmInvoice() {
     if (!invoice) return;
@@ -414,7 +474,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                   Confirm & Post
                 </Button>
               ) : null}
-              <Button size="slim" onClick={() => setPdfModalOpen(true)}>
+              <Button size="slim" onClick={openInvoicePreview}>
                 Preview
               </Button>
               {invoice.status === "posted" || invoice.status === "paid" ? (
@@ -811,6 +871,57 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
                   </Grid.Cell>
                 </Grid>
 
+                <Divider />
+                <BlockStack gap="300">
+                  <Text as="h3" variant="headingSm">
+                    Payment bank on PDF
+                  </Text>
+                  {!isCancelled ? (
+                    <>
+                      <Select
+                        label="Bank account shown to customer"
+                        options={[
+                          ...(invoiceBankCandidates.length > 1 &&
+                          !invoice.documentBankAccountId
+                            ? [
+                                {
+                                  label: "Select bank account…",
+                                  value: "",
+                                  disabled: true,
+                                },
+                              ]
+                            : []),
+                          ...invoiceBankCandidates.map((account) => ({
+                            label: `${account.name} (${account.currencyCode})`,
+                            value: account.id,
+                          })),
+                        ]}
+                        value={invoice.documentBankAccountId ?? ""}
+                        onChange={(value) => {
+                          if (value) void handleSaveDocumentBank(value);
+                        }}
+                        disabled={
+                          savingDocumentBank || invoiceBankCandidates.length === 0
+                        }
+                        helpText="Must match invoice currency. Shown in the PDF payment details section."
+                      />
+                      {invoiceBankCandidates.length === 0 ? (
+                        <Banner tone="warning">
+                          No {invoice.currencyCode ?? "invoice currency"} bank
+                          account is set to show on documents.{" "}
+                          <Link url="/dashboard/settings/bank-accounts">
+                            Add a bank account
+                          </Link>
+                        </Banner>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text as="p" tone="subdued">
+                      Payment bank selection is locked on cancelled invoices.
+                    </Text>
+                  )}
+                </BlockStack>
+
                 {invoice.activities && invoice.activities.length > 0 ? (
                   <>
                     <Divider />
@@ -1050,6 +1161,24 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
           </BlockStack>
         </Modal.Section>
       </Modal>
+
+      <InvoiceDocumentBankModal
+        open={bankModalOpen}
+        onClose={() => setBankModalOpen(false)}
+        currencyCode={invoice.currencyCode ?? "AED"}
+        bankAccounts={bankAccounts}
+        status={getInvoicePaymentBankStatus(
+          bankAccounts,
+          invoice.currencyCode ?? "AED",
+          invoice.documentBankAccountId,
+        )}
+        initialBankAccountId={invoice.documentBankAccountId}
+        saving={savingDocumentBank}
+        onConfirm={handleSaveDocumentBank}
+        onBankAccountCreated={(account) =>
+          setBankAccounts((prev) => [...prev, account])
+        }
+      />
 
       <DocumentPreviewModal
         documentType="invoice"

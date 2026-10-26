@@ -31,6 +31,7 @@ export interface Invoice {
   branchId: string;
   number: string;
   billingDocumentType?: "tax_invoice" | "commercial_invoice";
+  documentBankAccountId?: string | null;
   salesOrderId?: string;
   customerId: string;
   customerName: string;
@@ -108,6 +109,7 @@ export interface CreateInvoiceInput {
   internalReference?: string;
   notes?: string;
   billingDocumentType?: "tax_invoice" | "commercial_invoice";
+  documentBankAccountId?: string | null;
   lines?: Array<{
     productId?: string;
     productUnitId?: string;
@@ -230,6 +232,7 @@ export interface UpdateInvoiceDetailsInput {
   notes?: string | null;
   syncSalesOrder?: boolean;
   regenerateNumber?: boolean;
+  documentBankAccountId?: string | null;
   reason: string;
 }
 

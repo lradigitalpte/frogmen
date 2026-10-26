@@ -22,6 +22,7 @@ import { products } from "./products";
 import { productUnits } from "./product-units";
 import { warehouses } from "./warehouses";
 import { branches } from "./security";
+import { bankAccounts } from "./bank-accounts";
 
 export const salesOrderStateEnum = pgEnum("sales_order_state", [
   "draft",
@@ -270,6 +271,10 @@ export const invoices = pgTable(
     currencyId: uuid("currency_id")
       .notNull()
       .references(() => currencies.id),
+    documentBankAccountId: uuid("document_bank_account_id").references(
+      () => bankAccounts.id,
+      { onDelete: "set null" },
+    ),
     exchangeRate: numeric("exchange_rate", { precision: 18, scale: 8 }),
     exchangeRateLockedAt: timestamp("exchange_rate_locked_at", {
       withTimezone: true,
