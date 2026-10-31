@@ -32,6 +32,7 @@ import { PlatformModule } from "./platform/platform.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { LeadsModule } from "./leads/leads.module";
 import { EmailMarketingModule } from "./email-marketing/email-marketing.module";
+import { CalendarModule } from "./calendar/calendar.module";
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { EmailMarketingModule } from "./email-marketing/email-marketing.module";
     CustomersModule,
     LeadsModule,
     EmailMarketingModule,
+    CalendarModule,
     CurrenciesModule,
     SalesModule,
     InvoicesModule,

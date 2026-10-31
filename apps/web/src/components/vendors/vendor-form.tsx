@@ -311,6 +311,29 @@ export function VendorForm({
           <BlockStack gap="400">
             <Card>
               <BlockStack gap="300">
+                <BlockStack gap="100">
+                  <Text as="h2" variant="headingMd">
+                    Membership
+                  </Text>
+                  <Text as="p" tone="subdued">
+                    Anniversaries appear on the calendar every year from this date.
+                  </Text>
+                </BlockStack>
+                <TextField
+                  autoComplete="off"
+                  disabled={disabled}
+                  error={errors.memberSince}
+                  helpText="Defaults to the date the vendor was created."
+                  label="Vendor since"
+                  type="date"
+                  value={values.memberSince}
+                  onChange={(value) => update("memberSince", value)}
+                />
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">
                   Vendor summary
                 </Text>

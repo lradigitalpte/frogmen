@@ -159,7 +159,7 @@ export function ViewCustomerPage({ id, customerId }: ViewCustomerPageProps) {
                   </InlineStack>
                   <Text as="p" tone="subdued">
                     {customer.reference ? `${customer.reference} • ` : ""}
-                    Registered {formatAppDate(customer.createdAt)}
+                    Member since {formatAppDate(customer.memberSince ?? customer.createdAt)}
                   </Text>
                 </BlockStack>
               </InlineStack>

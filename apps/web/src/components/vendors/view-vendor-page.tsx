@@ -58,6 +58,7 @@ function vendorToForm(vendor: Vendor): VendorFormValues {
     zip: vendor.zip ?? "",
     countryCode: vendor.countryCode ?? "",
     stateCode: vendor.stateCode ?? "",
+    memberSince: vendor.memberSince ?? vendor.createdAt.slice(0, 10),
   };
 }
 
@@ -237,7 +238,7 @@ export function ViewVendorPage({ vendorId }: { vendorId: string }) {
           onAction: () => router.push("/dashboard/purchasing/orders/new"),
         },
       ]}
-      subtitle={`Supplier #${vendor.id.slice(0, 8)} • Added ${formatAppDate(vendor.createdAt)}`}
+      subtitle={`Supplier #${vendor.id.slice(0, 8)} • Vendor since ${formatAppDate(vendor.memberSince ?? vendor.createdAt)}`}
       title={vendor.name}
     >
       <BlockStack gap="500">

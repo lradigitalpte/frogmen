@@ -41,6 +41,7 @@ export function customerToFormValues(customer: Customer): CustomerFormValues {
     zip: customer.zip ?? "",
     countryCode: customer.countryCode ?? "",
     stateCode: customer.stateCode ?? "",
+    memberSince: customer.memberSince ?? customer.createdAt.slice(0, 10),
     isLocal: customer.isLocal ?? false,
   };
 }
@@ -400,6 +401,29 @@ export function CustomerForm({
                 pendingFile={pendingAvatar}
                 onAvatarUploaded={onAvatarUploaded}
                 onPendingFileChange={onPendingAvatarChange}
+              />
+            </BlockStack>
+          </Card>
+
+          <Card>
+            <BlockStack gap="300">
+              <BlockStack gap="100">
+                <Text as="h2" variant="headingMd">
+                  Membership
+                </Text>
+                <Text as="p" tone="subdued">
+                  Anniversaries appear on the calendar every year from this date.
+                </Text>
+              </BlockStack>
+              <TextField
+                autoComplete="off"
+                disabled={disabled}
+                error={errors.memberSince}
+                helpText="Defaults to the date the contact was created."
+                label="Member since"
+                type="date"
+                value={values.memberSince}
+                onChange={(value) => update("memberSince", value)}
               />
             </BlockStack>
           </Card>

@@ -53,6 +53,14 @@ const optionalStateCodeSchema = z
   .or(z.literal(""))
   .transform((value) => value || undefined);
 
+const optionalMemberSinceSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date")
+  .optional()
+  .or(z.literal(""))
+  .transform((value) => value || undefined);
+
 function validateCountryState(
   data: { countryCode?: string; stateCode?: string },
   ctx: z.RefinementCtx,
@@ -110,6 +118,7 @@ export const createVendorSchema = z
     ...vendorCoreFields,
     defaultCurrencyId: z.string().uuid().optional(),
     isActive: z.boolean().optional(),
+    memberSince: optionalMemberSinceSchema,
   })
   .superRefine(validateCountryState);
 
@@ -132,6 +141,7 @@ export const updateVendorSchema = z
     stateCode: optionalStateCodeSchema,
     defaultCurrencyId: z.string().uuid().optional(),
     isActive: z.boolean().optional(),
+    memberSince: optionalMemberSinceSchema,
   })
   .superRefine(validateCountryState);
 
@@ -171,6 +181,12 @@ export const vendorFormSchema = z
     zip: z.string().trim().max(30),
     countryCode: z.string().trim(),
     stateCode: z.string().trim().max(10),
+    memberSince: z
+      .string()
+      .trim()
+      .refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), {
+        message: "Use a valid date",
+      }),
   })
   .superRefine((data, ctx) => {
     if (!data.countryCode) {
@@ -222,6 +238,7 @@ export function emptyVendorForm(
     zip: "",
     countryCode: "",
     stateCode: "",
+    memberSince: "",
   };
 }
 
@@ -243,5 +260,6 @@ export function vendorFormValuesToInput(
     street2: values.street2 || undefined,
     city: values.city || undefined,
     zip: values.zip || undefined,
+    memberSince: values.memberSince || undefined,
   });
 }

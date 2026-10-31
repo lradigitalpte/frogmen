@@ -270,6 +270,7 @@ export class CustomersService {
         creditApproved: dto.creditApproved ?? false,
         isLocal: dto.isLocal ?? false,
         isActive: dto.isActive ?? true,
+        ...(dto.memberSince ? { memberSince: dto.memberSince } : {}),
       })
       .returning();
 
@@ -323,6 +324,9 @@ export class CustomersService {
           : {}),
         ...(dto.isLocal !== undefined ? { isLocal: dto.isLocal } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.memberSince !== undefined
+          ? { memberSince: dto.memberSince }
+          : {}),
         updatedAt: new Date(),
       })
       .where(

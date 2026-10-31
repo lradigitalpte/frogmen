@@ -1,6 +1,7 @@
 import {
   boolean,
   char,
+  date,
   pgEnum,
   pgTable,
   text,
@@ -40,6 +41,7 @@ export const vendors = pgTable("vendors", {
   stateCode: varchar("state_code", { length: 10 }),
   defaultCurrencyId: uuid("default_currency_id").references(() => currencies.id),
   isActive: boolean("is_active").notNull().default(true),
+  memberSince: date("member_since").defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

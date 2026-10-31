@@ -19,4 +19,5 @@ export { applyQuotationSignatureFieldsIfNeeded } from "./apply-quotation-signatu
 export { applyEmailMarketingIfNeeded } from "./apply-email-marketing";
 export { applyCompanyVaultIfNeeded } from "./apply-company-vault";
 export { applyWarrantyDeliveryIfNeeded } from "./apply-warranty-delivery";
+export { applyCalendarIfNeeded } from "./apply-calendar";
 export * from "./schema";

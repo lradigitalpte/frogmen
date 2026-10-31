@@ -21,6 +21,7 @@ export * from "./rov-inspection";
 export * from "./leads";
 export * from "./email-marketing";
 export * from "./company-vault";
+export * from "./calendar";
 
 import * as auth from "./auth";
 import * as security from "./security";
@@ -45,6 +46,7 @@ import * as rovInspection from "./rov-inspection";
 import * as leads from "./leads";
 import * as emailMarketing from "./email-marketing";
 import * as companyVault from "./company-vault";
+import * as calendar from "./calendar";
 
 export const schema = {
   ...auth,
@@ -70,4 +72,5 @@ export const schema = {
   ...leads,
   ...emailMarketing,
   ...companyVault,
+  ...calendar,
 };

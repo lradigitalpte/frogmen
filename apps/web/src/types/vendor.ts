@@ -34,6 +34,7 @@ export interface Vendor {
   stateCode: string | null;
   defaultCurrencyId: string | null;
   isActive: boolean;
+  memberSince: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

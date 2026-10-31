@@ -24,3 +24,4 @@ export * from "./severity";
 export * from "./schemas/email-marketing";
 export * from "./email/marketing-templates";
 export * from "./schemas/company-vault";
+export * from "./schemas/calendar";

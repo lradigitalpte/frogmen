@@ -51,6 +51,10 @@ export const mainNavItems: NavItem[] = [
         url: "/dashboard/leads",
       },
       {
+        label: "Calendar",
+        url: "/dashboard/calendar",
+      },
+      {
         label: "Email Campaigns",
         url: "/dashboard/marketing/campaigns",
       },

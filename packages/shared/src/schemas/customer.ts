@@ -53,6 +53,14 @@ const optionalStateCodeSchema = z
   .or(z.literal(""))
   .transform((value) => value || undefined);
 
+const optionalMemberSinceSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date")
+  .optional()
+  .or(z.literal(""))
+  .transform((value) => value || undefined);
+
 function validateCountryState(
   data: { countryCode?: string; stateCode?: string },
   ctx: z.RefinementCtx,
@@ -114,6 +122,7 @@ export const createCustomerSchema = z
     creditApproved: z.boolean().optional(),
     isLocal: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    memberSince: optionalMemberSinceSchema,
   })
   .superRefine(validateCountryState);
 
@@ -140,6 +149,7 @@ export const updateCustomerSchema = z
     creditApproved: z.boolean().optional(),
     isLocal: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    memberSince: optionalMemberSinceSchema,
   })
   .superRefine(validateCountryState);
 
@@ -179,6 +189,12 @@ export const customerFormSchema = z
     zip: z.string().trim().max(30),
     countryCode: z.string().trim(),
     stateCode: z.string().trim().max(10),
+    memberSince: z
+      .string()
+      .trim()
+      .refine((value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), {
+        message: "Use a valid date",
+      }),
     isLocal: z.boolean(),
   })
   .superRefine((data, ctx) => {
@@ -231,6 +247,7 @@ export function emptyCustomerForm(
     zip: "",
     countryCode: "",
     stateCode: "",
+    memberSince: "",
     isLocal: false,
   };
 }
@@ -253,6 +270,7 @@ export function formValuesToInput(
     street2: values.street2 || undefined,
     city: values.city || undefined,
     zip: values.zip || undefined,
+    memberSince: values.memberSince || undefined,
   });
 }
 

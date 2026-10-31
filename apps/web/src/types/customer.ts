@@ -39,6 +39,7 @@ export interface Customer {
   isLocal: boolean;
   avatarPath: string | null;
   isActive: boolean;
+  memberSince: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

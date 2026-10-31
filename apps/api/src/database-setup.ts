@@ -1,6 +1,7 @@
 import {
   applyAccountingIfNeeded,
   applyBankAccountsIfNeeded,
+  applyCalendarIfNeeded,
   applyCompanyVaultIfNeeded,
   applyCreditNotesIfNeeded,
   applyCustomerCreditIfNeeded,
@@ -41,5 +42,6 @@ export async function runDatabaseSetup(databaseUrl: string) {
   await applyCompanyVaultIfNeeded(databaseUrl);
   await applyQuotationSignatureFieldsIfNeeded(databaseUrl);
   await applyWarrantyDeliveryIfNeeded(databaseUrl);
+  await applyCalendarIfNeeded(databaseUrl);
   await ensureCurrencies(databaseUrl);
 }

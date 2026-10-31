@@ -129,6 +129,7 @@ export class VendorsService {
         stateCode: dto.stateCode ?? null,
         defaultCurrencyId: dto.defaultCurrencyId ?? null,
         isActive: dto.isActive ?? true,
+        ...(dto.memberSince ? { memberSince: dto.memberSince } : {}),
       })
       .returning();
 
@@ -168,6 +169,9 @@ export class VendorsService {
           ? { defaultCurrencyId: dto.defaultCurrencyId ?? null }
           : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.memberSince !== undefined
+          ? { memberSince: dto.memberSince }
+          : {}),
         updatedAt: new Date(),
       })
       .where(

@@ -1,6 +1,7 @@
 import {
   boolean,
   char,
+  date,
   numeric,
   pgEnum,
   pgTable,
@@ -48,6 +49,7 @@ export const customers = pgTable("customers", {
   isLocal: boolean("is_local").notNull().default(false),
   avatarPath: text("avatar_path"),
   isActive: boolean("is_active").notNull().default(true),
+  memberSince: date("member_since").defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
