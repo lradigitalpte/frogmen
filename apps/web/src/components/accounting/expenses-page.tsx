@@ -5,7 +5,7 @@ import {
   Banner,
   BlockStack,
   Button,
-  Card,
+  ButtonGroup,
   IndexTable,
   InlineStack,
   Link,
@@ -16,7 +16,8 @@ import { Banknote, Calendar, FileText, Receipt } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ExpenseDetailModal } from "@/components/accounting/expense-detail-modal";
 import { ExpenseFormModal } from "@/components/accounting/expense-form-modal";
-import { AppPage } from "@/components/layout/page";
+import { AppPage, IndexSurface } from "@/components/layout/page";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
@@ -30,6 +31,31 @@ import {
   type ExpensesListResponse,
 } from "@/lib/expenses-api";
 import { formatAppDate } from "@/lib/format-date";
+import { getPaginationRange } from "@/lib/index-table-pagination";
+
+const EXPENSE_PAGE_SIZES = [10, 25, 50];
+const EXPENSE_RESOURCE = { singular: "expense", plural: "expenses" };
+
+function paymentMethodLabel(method: string) {
+  switch (method) {
+    case "cash":
+      return "Cash";
+    case "cheque":
+      return "Cheque";
+    case "bank_transfer":
+      return "Bank transfer";
+    case "wire_transfer":
+      return "Wire transfer";
+    default:
+      return method.replaceAll("_", " ");
+  }
+}
+
+function paidFromDetail(expense: ExpenseRecord) {
+  if (expense.paymentMethod === "cash") return "Petty cash · 101501";
+  if (expense.paymentMethod === "cheque") return "Cheque";
+  return expense.bankAccountName ?? "Bank account";
+}
 
 function paymentSourceLabel(expense: ExpenseRecord) {
   const source = expense.paymentSource ?? "bank";
@@ -56,6 +82,8 @@ export function ExpensesPage() {
   );
   const [deleting, setDeleting] = useState(false);
   const [viewingExpenseId, setViewingExpenseId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(EXPENSE_PAGE_SIZES[0]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,52 +146,78 @@ export function ExpensesPage() {
     }
   }
 
-  const expenseRows = data?.expenses.map((expense, index) => (
+  const expenses = data?.expenses ?? [];
+  const total = expenses.length;
+  const { page: safePage, totalPages } = getPaginationRange(
+    page,
+    perPage,
+    total,
+  );
+  const pageExpenses = expenses.slice(
+    (safePage - 1) * perPage,
+    safePage * perPage,
+  );
+
+  const expenseRows = pageExpenses.map((expense, index) => (
     <IndexTable.Row id={expense.id} key={expense.id} position={index}>
       <IndexTable.Cell>
-        <Button
-          variant="plain"
-          onClick={() => setViewingExpenseId(expense.id)}
-        >
-          {expense.number}
-        </Button>
+        <div className="expenses-ledger-table__number">
+          <Button
+            variant="plain"
+            onClick={() => setViewingExpenseId(expense.id)}
+          >
+            {expense.number}
+          </Button>
+        </div>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {formatAppDate(expense.expenseDate)}
+        <span className="expenses-ledger-table__nowrap">
+          {formatAppDate(expense.expenseDate)}
+        </span>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text as="span" tone="subdued">
+        <Text as="span" tone="subdued" truncate>
           {expense.categoryName ?? "—"}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <InlineStack gap="200" blockAlign="center" wrap={false}>
-          <Text as="span" truncate>
+        <div className="expenses-ledger-table__stack" title={expense.description}>
+          <Text as="span" fontWeight="medium" truncate>
             {expense.description}
           </Text>
           {expense.source === "reimbursement" ? (
-            <Badge tone="info">Staff claim</Badge>
+            <span>
+              <Badge tone="info">Staff claim</Badge>
+            </span>
           ) : null}
-        </InlineStack>
+        </div>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text as="span" tone="subdued" variant="bodySm">
-          {expense.reference || " "}
+        <Text as="span" tone="subdued" truncate>
+          {expense.reference || "—"}
         </Text>
       </IndexTable.Cell>
-      <IndexTable.Cell>{paymentSourceLabel(expense)}</IndexTable.Cell>
       <IndexTable.Cell>
-        <Text as="span" alignment="end" numeric>
+        <div
+          className="expenses-ledger-table__stack expenses-ledger-table__paid"
+          title={paymentSourceLabel(expense)}
+        >
+          <Text as="span" truncate>
+            {paymentMethodLabel(expense.paymentMethod)}
+          </Text>
+          <Text as="span" tone="subdued" variant="bodySm" truncate>
+            {paidFromDetail(expense)}
+          </Text>
+        </div>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
+        <Text as="span" alignment="end" fontWeight="semibold" numeric>
           {formatBaseMoney(expense.amount)}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
         {expense.hasReceipt ? (
-          <Button
-            size="slim"
-            url={getExpenseReceiptUrl(expense.id)}
-            external
-          >
+          <Button size="slim" url={getExpenseReceiptUrl(expense.id)} external>
             View
           </Button>
         ) : (
@@ -173,12 +227,19 @@ export function ExpensesPage() {
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <InlineStack gap="150" wrap={false}>
-          <Button size="slim" onClick={() => setViewingExpenseId(expense.id)}>
-            View
-          </Button>
-          {expense.source !== "reimbursement" ? (
-            <>
+        <div className="expenses-ledger-table__actions">
+          {expense.source === "reimbursement" ? (
+            <Button size="slim" onClick={() => setViewingExpenseId(expense.id)}>
+              View
+            </Button>
+          ) : (
+            <ButtonGroup>
+              <Button
+                size="slim"
+                onClick={() => setViewingExpenseId(expense.id)}
+              >
+                View
+              </Button>
               <Button
                 size="slim"
                 onClick={() => {
@@ -195,9 +256,9 @@ export function ExpensesPage() {
               >
                 Delete
               </Button>
-            </>
-          ) : null}
-        </InlineStack>
+            </ButtonGroup>
+          )}
+        </div>
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
@@ -280,9 +341,9 @@ export function ExpensesPage() {
           </div>
         ) : null}
 
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between" blockAlign="center">
+        <IndexSurface>
+          <div className="expenses-ledger-header">
+            <InlineStack align="space-between" blockAlign="center" gap="400">
               <BlockStack gap="100">
                 <Text as="h2" variant="headingMd">
                   Recent expenses
@@ -291,16 +352,20 @@ export function ExpensesPage() {
                   Posted journal entries debiting account 600000
                 </Text>
               </BlockStack>
-              <Button disabled={!data?.expenses.length} onClick={handleExport}>
+              <Button disabled={!expenses.length} onClick={handleExport}>
                 Export CSV
               </Button>
             </InlineStack>
+          </div>
 
-            {loading ? (
+          {!data && loading ? (
+            <div className="expenses-ledger-empty">
               <Text as="p" tone="subdued">
                 Loading expenses...
               </Text>
-            ) : !data?.expenses.length ? (
+            </div>
+          ) : !expenses.length ? (
+            <div className="expenses-ledger-empty">
               <div className="accounting-chart-empty">
                 <FileText className="mx-auto mb-2 size-8 opacity-40" />
                 <Text as="p" variant="headingSm">
@@ -311,11 +376,29 @@ export function ExpensesPage() {
                   expense.
                 </Text>
               </div>
-            ) : (
-              <div className="accounting-report-table">
+            </div>
+          ) : (
+            <>
+              <IndexTablePaginationBar
+                page={safePage}
+                perPage={perPage}
+                total={total}
+                resourceName={EXPENSE_RESOURCE}
+                loading={loading}
+                onPageChange={setPage}
+                perPageOptions={EXPENSE_PAGE_SIZES}
+                onPerPageChange={(next) => {
+                  setPerPage(next);
+                  setPage(1);
+                }}
+                placement="header"
+              />
+              <div className="accounting-report-table expenses-ledger-table">
                 <IndexTable
                   selectable={false}
-                  itemCount={data.expenses.length}
+                  loading={loading}
+                  itemCount={pageExpenses.length}
+                  resourceName={EXPENSE_RESOURCE}
                   headings={[
                     { title: "Number" },
                     { title: "Date" },
@@ -325,15 +408,26 @@ export function ExpensesPage() {
                     { title: "Paid from" },
                     { title: "Amount", alignment: "end" },
                     { title: "Receipt" },
-                    { title: "Actions" },
+                    { title: "Actions", alignment: "end" },
                   ]}
                 >
                   {expenseRows}
                 </IndexTable>
               </div>
-            )}
-          </BlockStack>
-        </Card>
+              {totalPages > 1 ? (
+                <IndexTablePaginationBar
+                  page={safePage}
+                  perPage={perPage}
+                  total={total}
+                  resourceName={EXPENSE_RESOURCE}
+                  loading={loading}
+                  onPageChange={setPage}
+                  placement="footer"
+                />
+              ) : null}
+            </>
+          )}
+        </IndexSurface>
       </BlockStack>
 
       <ExpenseDetailModal

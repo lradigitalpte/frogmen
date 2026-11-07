@@ -5397,6 +5397,90 @@ textarea.Polaris-TextField__Input:focus {
   vertical-align: middle;
 }
 
+.expenses-ledger-header {
+  padding: 1rem 1rem 0.85rem;
+}
+
+.expenses-ledger-empty {
+  padding: 0 1rem 1rem;
+}
+
+.expenses-ledger-table {
+  overflow-x: auto;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__Table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1080px;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading,
+.expenses-ledger-table .Polaris-IndexTable__TableCell {
+  vertical-align: middle;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(1),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(1) {
+  width: 8.5rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(2),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(2) {
+  width: 7rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(3),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(3) {
+  width: 7.5rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(5),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(5) {
+  width: 6.5rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(6),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(6) {
+  width: 13rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(7),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(7) {
+  width: 8rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(8),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(8) {
+  width: 6rem;
+}
+
+.expenses-ledger-table .Polaris-IndexTable__TableHeading:nth-child(9),
+.expenses-ledger-table .Polaris-IndexTable__TableCell:nth-child(9) {
+  width: 13.5rem;
+}
+
+.expenses-ledger-table__number,
+.expenses-ledger-table__nowrap {
+  white-space: nowrap;
+}
+
+.expenses-ledger-table__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.expenses-ledger-table__paid {
+  max-width: 12.5rem;
+}
+
+.expenses-ledger-table__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .accounting-report-total {
   border-top: 2px solid #e1e3e5;
   padding-top: 1rem;
