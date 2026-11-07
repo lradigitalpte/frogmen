@@ -541,13 +541,14 @@ export class QuotationsService {
     const dropship = order.isDropship;
 
     if (product.trackSerial) {
-      if (input.quantity !== 1) {
-        throw new BadRequestException(
-          "Serial-tracked products must have quantity 1 per line",
-        );
-      }
-
+      // Dropship orders don't reserve warehouse units, so any quantity is fine.
       if (!dropship) {
+        if (input.quantity !== 1) {
+          throw new BadRequestException(
+            "Serial-tracked products must have quantity 1 per line",
+          );
+        }
+
         if (!input.productUnitId) {
           throw new BadRequestException(
             "Serial number is required for this product",
