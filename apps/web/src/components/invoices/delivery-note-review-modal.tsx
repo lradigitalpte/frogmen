@@ -28,6 +28,14 @@ import {
   type DeliveryNoteLine,
 } from "@/lib/delivery-notes-api";
 
+interface KitSerialRow {
+  key: string;
+  name: string;
+  serial: string;
+  /** Typed-in item (editable name) rather than one parsed from the description. */
+  custom: boolean;
+}
+
 interface DeliveryNoteReviewModalProps {
   open: boolean;
   invoiceId: string;
@@ -52,8 +60,11 @@ export function DeliveryNoteReviewModal({
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [serialLine, setSerialLine] = useState<DeliveryNoteLine | null>(null);
   const [serialDraft, setSerialDraft] = useState("");
-  /** Per-slot serials when the line is a kit whose components carry their own serials. */
-  const [kitSerials, setKitSerials] = useState<Record<string, string> | null>(null);
+  /**
+   * Row editor: main unit first, then components (from the description or typed in).
+   * `custom` rows have an editable name.
+   */
+  const [kitRows, setKitRows] = useState<KitSerialRow[] | null>(null);
   const [serialError, setSerialError] = useState<string | null>(null);
   const [savingSerials, setSavingSerials] = useState(false);
 
@@ -133,24 +144,45 @@ export function DeliveryNoteReviewModal({
     return components.length > 0 ? [line.description, ...components] : [];
   }
 
+  /** Rows editor is used for kits and for every stock line (main serial + parts). */
+  function usesRowEditor(line: DeliveryNoteLine) {
+    return Boolean(line.productUnitId) || kitSlots(line).length > 0;
+  }
+
   function openSerialEditor(line: DeliveryNoteLine) {
-    const slots = kitSlots(line);
-    if (slots.length > 0) {
-      const values: Record<string, string> = Object.fromEntries(
-        slots.map((slot) => [slot, ""]),
-      );
+    if (usesRowEditor(line)) {
+      const slots = kitSlots(line);
+      const names = slots.length > 0 ? slots : [line.description];
+      const rows: KitSerialRow[] = names.map((name, index) => ({
+        key: `slot-${index}`,
+        name,
+        serial: "",
+        custom: false,
+      }));
       for (const entry of line.serialEntries ?? []) {
-        if (entry.productName in values && !values[entry.productName]) {
-          values[entry.productName] = entry.serialNumber;
+        const slot = rows.find((row) => row.name === entry.productName && !row.serial);
+        if (slot) {
+          slot.serial = entry.serialNumber;
+        } else if (!rows.some((row) => row.serial === entry.serialNumber)) {
+          // Previously added extra items (or linked component units) — keep them editable.
+          rows.push({
+            key: `extra-${rows.length}`,
+            name: entry.productName,
+            serial: entry.serialNumber,
+            custom: true,
+          });
         }
       }
-      setKitSerials(values);
+      if (rows.length === 1) {
+        rows.push({ key: "extra-new-1", name: "", serial: "", custom: true });
+      }
+      setKitRows(rows);
       setSerialError(null);
       setSerialLine(line);
       return;
     }
 
-    setKitSerials(null);
+    setKitRows(null);
     const existing = line.serialEntries?.length
       ? line.serialEntries.map((entry) => entry.serialNumber)
       : (line.serialNumber ?? "")
@@ -162,19 +194,47 @@ export function DeliveryNoteReviewModal({
     setSerialLine(line);
   }
 
+  function updateKitRow(key: string, patch: Partial<KitSerialRow>) {
+    setKitRows((rows) =>
+      rows ? rows.map((row) => (row.key === key ? { ...row, ...patch } : row)) : rows,
+    );
+  }
+
+  function addKitRow() {
+    setKitRows((rows) =>
+      rows
+        ? [
+            ...rows,
+            { key: `extra-new-${Date.now()}`, name: "", serial: "", custom: true },
+          ]
+        : rows,
+    );
+  }
+
+  function removeKitRow(key: string) {
+    setKitRows((rows) => (rows ? rows.filter((row) => row.key !== key) : rows));
+  }
+
   async function handleSaveSerials() {
     if (!serialLine?.invoiceLineId) return;
-    const serials = kitSerials
-      ? Object.entries(kitSerials)
+    if (kitRows?.some((row) => row.custom && row.serial.trim() && !row.name.trim())) {
+      setSerialError("Give each added item a name.");
+      return;
+    }
+    const serials = kitRows
+      ? kitRows
           // Stock lines: the main serial is owned by inventory, send components only.
           .filter(
-            ([slot, value]) =>
-              value.trim() &&
-              !(serialLine.productUnitId && slot === serialLine.description),
+            (row, index) =>
+              row.serial.trim() &&
+              row.name.trim() &&
+              !(serialLine.productUnitId && index === 0),
           )
-          .map(([slot, value]) => `${slot} · ${value.trim()}`)
+          .map(
+            (row) => `${row.name.trim().replace(/ · /g, " - ")} · ${row.serial.trim()}`,
+          )
       : parseSerialDraft(serialDraft);
-    if (!kitSerials && serials.length > Math.ceil(serialLine.quantity)) {
+    if (!kitRows && serials.length > Math.ceil(serialLine.quantity)) {
       setSerialError(
         `This line has quantity ${formatQuantity(serialLine.quantity)}; you entered ${serials.length} serial numbers.`,
       );
@@ -202,11 +262,7 @@ export function DeliveryNoteReviewModal({
     const hasSerials =
       Boolean(line.serialEntries?.length) || Boolean(line.serialNumber?.trim());
     const isStockLine = Boolean(line.productUnitId);
-    // Stock lines already have their main serial; only kits need component serials.
-    const canEdit =
-      line.canEditSerials &&
-      Boolean(line.invoiceLineId) &&
-      (!isStockLine || kitSlots(line).length > 0);
+    const canEdit = Boolean(line.canEditSerials && line.invoiceLineId);
     const hasComponentSerials = (line.serialEntries ?? []).some((entry) => !entry.isKit);
 
     return (
@@ -645,28 +701,48 @@ export function DeliveryNoteReviewModal({
           <Text as="p" fontWeight="semibold">
             {serialLine.description}
           </Text>
-          {kitSerials ? (
+          {kitRows ? (
             <FormLayout>
-              {Object.keys(kitSerials).map((slot, index) => (
-                <TextField
-                  key={slot}
-                  autoComplete="off"
-                  label={index === 0 ? "Main unit serial" : slot}
-                  disabled={index === 0 && Boolean(serialLine.productUnitId)}
-                  helpText={
-                    index === 0 && serialLine.productUnitId
-                      ? "From inventory — change it on the stock unit."
-                      : undefined
-                  }
-                  placeholder={index === 0 ? undefined : "Leave blank if it has no serial"}
-                  value={kitSerials[slot]}
-                  onChange={(value) =>
-                    setKitSerials((current) =>
-                      current ? { ...current, [slot]: value } : current,
-                    )
-                  }
-                />
-              ))}
+              {kitRows.map((row, index) =>
+                row.custom ? (
+                  <FormLayout.Group key={row.key} condensed>
+                    <TextField
+                      autoComplete="off"
+                      label="Item"
+                      placeholder="e.g. Topside box"
+                      value={row.name}
+                      onChange={(value) => updateKitRow(row.key, { name: value })}
+                    />
+                    <TextField
+                      autoComplete="off"
+                      label="Serial number"
+                      value={row.serial}
+                      onChange={(value) => updateKitRow(row.key, { serial: value })}
+                      connectedRight={
+                        <Button onClick={() => removeKitRow(row.key)}>Remove</Button>
+                      }
+                    />
+                  </FormLayout.Group>
+                ) : (
+                  <TextField
+                    key={row.key}
+                    autoComplete="off"
+                    label={index === 0 ? "Main unit serial" : row.name}
+                    disabled={index === 0 && Boolean(serialLine.productUnitId)}
+                    helpText={
+                      index === 0 && serialLine.productUnitId
+                        ? "From inventory — change it on the stock unit."
+                        : undefined
+                    }
+                    placeholder={index === 0 ? undefined : "Leave blank if it has no serial"}
+                    value={row.serial}
+                    onChange={(value) => updateKitRow(row.key, { serial: value })}
+                  />
+                ),
+              )}
+              <InlineStack>
+                <Button onClick={addKitRow}>Add item</Button>
+              </InlineStack>
             </FormLayout>
           ) : (
             <TextField
