@@ -78,13 +78,15 @@ export async function resolveDeliveryNoteSerialEntries(
       .map((l) => l.trim())
       .filter(Boolean);
 
-    for (const [index, line] of lines.entries()) {
+    for (const line of lines) {
       const splitIndex = line.indexOf(" · ");
       if (splitIndex !== -1) {
+        const productName = line.slice(0, splitIndex).trim();
         entries.push({
-          productName: line.slice(0, splitIndex).trim(),
+          productName,
           serialNumber: line.slice(splitIndex + 3).trim(),
-          isKit: index === 0 && lines.length > 1,
+          // Kit header is the line's own product; components follow it.
+          isKit: lines.length > 1 && productName === input.productName,
         });
       } else {
         entries.push({

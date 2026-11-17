@@ -260,14 +260,29 @@ export class DeliveryNotesService {
       ),
     );
 
-    if (serials.some((serial) => serial.length > 150)) {
-      throw new BadRequestException("Serial numbers must be 150 characters or fewer");
+    // Entries are either a bare serial (main unit) or "Component · Serial"
+    // for kit contents that carry their own serial numbers.
+    const parsed = serials.map((entry) => {
+      const splitIndex = entry.indexOf(" · ");
+      return splitIndex === -1
+        ? { name: null, serial: entry }
+        : {
+            name: entry.slice(0, splitIndex).trim(),
+            serial: entry.slice(splitIndex + 3).trim(),
+          };
+    });
+
+    if (parsed.some((entry) => !entry.serial || entry.serial.length > 150)) {
+      throw new BadRequestException("Serial numbers must be 1–150 characters");
     }
 
+    const mainSerials = parsed.filter(
+      (entry) => !entry.name || entry.name === row.line.description,
+    );
     const quantity = Number(row.line.quantity);
-    if (serials.length > Math.ceil(quantity)) {
+    if (mainSerials.length > Math.ceil(quantity)) {
       throw new BadRequestException(
-        `This line has quantity ${quantity}; you entered ${serials.length} serial numbers`,
+        `This line has quantity ${quantity}; you entered ${mainSerials.length} main serial numbers`,
       );
     }
 
@@ -309,7 +324,13 @@ export class DeliveryNotesService {
     await this.db
       .update(warrantyRegistrations)
       .set({
-        serialNumber: serials.length > 0 ? serials.join(", ").slice(0, 150) : null,
+        serialNumber:
+          parsed.length > 0
+            ? (mainSerials.length > 0 ? mainSerials : parsed)
+                .map((entry) => entry.serial)
+                .join(", ")
+                .slice(0, 150)
+            : null,
         updatedAt: new Date(),
       })
       .where(

@@ -4,6 +4,7 @@ import {
   Banner,
   BlockStack,
   Button,
+  FormLayout,
   InlineStack,
   Modal,
   Spinner,
@@ -11,6 +12,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { X } from "lucide-react";
+import { productDetailsLines } from "@frog1/shared";
 import { useCallback, useEffect, useState } from "react";
 import { LineItemDescription } from "@/components/sales/line-item-description";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
@@ -50,6 +52,8 @@ export function DeliveryNoteReviewModal({
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [serialLine, setSerialLine] = useState<DeliveryNoteLine | null>(null);
   const [serialDraft, setSerialDraft] = useState("");
+  /** Per-slot serials when the line is a kit whose components carry their own serials. */
+  const [kitSerials, setKitSerials] = useState<Record<string, string> | null>(null);
   const [serialError, setSerialError] = useState<string | null>(null);
   const [savingSerials, setSavingSerials] = useState(false);
 
@@ -106,7 +110,44 @@ export function DeliveryNoteReviewModal({
     );
   }
 
+  /**
+   * Serial slots for a single kit: the main unit, then each component listed in the
+   * product description ("1x Remote controller", "2x Battery" → "Battery #1", "Battery #2").
+   */
+  function kitSlots(line: DeliveryNoteLine): string[] {
+    if (Math.ceil(line.quantity) !== 1) return [];
+    const components = productDetailsLines(line.description, line.productDescription).flatMap(
+      (item) => {
+        const match = item.match(/^(\d+)\s*[x×]\s*(.+)$/i);
+        const count = match ? Math.min(Number(match[1]) || 1, 20) : 1;
+        const name = (match ? match[2] : item).replace(/ · /g, " - ").trim();
+        if (!name || name === line.description) return [];
+        return count > 1
+          ? Array.from({ length: count }, (_, i) => `${name} #${i + 1}`)
+          : [name];
+      },
+    );
+    return components.length > 0 ? [line.description, ...components] : [];
+  }
+
   function openSerialEditor(line: DeliveryNoteLine) {
+    const slots = kitSlots(line);
+    if (slots.length > 0) {
+      const values: Record<string, string> = Object.fromEntries(
+        slots.map((slot) => [slot, ""]),
+      );
+      for (const entry of line.serialEntries ?? []) {
+        if (entry.productName in values && !values[entry.productName]) {
+          values[entry.productName] = entry.serialNumber;
+        }
+      }
+      setKitSerials(values);
+      setSerialError(null);
+      setSerialLine(line);
+      return;
+    }
+
+    setKitSerials(null);
     const existing = line.serialEntries?.length
       ? line.serialEntries.map((entry) => entry.serialNumber)
       : (line.serialNumber ?? "")
@@ -120,8 +161,12 @@ export function DeliveryNoteReviewModal({
 
   async function handleSaveSerials() {
     if (!serialLine?.invoiceLineId) return;
-    const serials = parseSerialDraft(serialDraft);
-    if (serials.length > Math.ceil(serialLine.quantity)) {
+    const serials = kitSerials
+      ? Object.entries(kitSerials)
+          .filter(([, value]) => value.trim())
+          .map(([slot, value]) => `${slot} · ${value.trim()}`)
+      : parseSerialDraft(serialDraft);
+    if (!kitSerials && serials.length > Math.ceil(serialLine.quantity)) {
       setSerialError(
         `This line has quantity ${formatQuantity(serialLine.quantity)}; you entered ${serials.length} serial numbers.`,
       );
@@ -579,16 +624,35 @@ export function DeliveryNoteReviewModal({
           <Text as="p" fontWeight="semibold">
             {serialLine.description}
           </Text>
-          <TextField
-            autoComplete="off"
-            label="Serial numbers"
-            multiline={6}
-            helpText={`One per line. ${parseSerialDraft(serialDraft).length} of ${formatQuantity(
-              serialLine.quantity,
-            )} entered.`}
-            value={serialDraft}
-            onChange={setSerialDraft}
-          />
+          {kitSerials ? (
+            <FormLayout>
+              {Object.keys(kitSerials).map((slot, index) => (
+                <TextField
+                  key={slot}
+                  autoComplete="off"
+                  label={index === 0 ? "Main unit serial" : slot}
+                  placeholder={index === 0 ? undefined : "Leave blank if it has no serial"}
+                  value={kitSerials[slot]}
+                  onChange={(value) =>
+                    setKitSerials((current) =>
+                      current ? { ...current, [slot]: value } : current,
+                    )
+                  }
+                />
+              ))}
+            </FormLayout>
+          ) : (
+            <TextField
+              autoComplete="off"
+              label="Serial numbers"
+              multiline={6}
+              helpText={`One per line. ${parseSerialDraft(serialDraft).length} of ${formatQuantity(
+                serialLine.quantity,
+              )} entered.`}
+              value={serialDraft}
+              onChange={setSerialDraft}
+            />
+          )}
         </BlockStack>
       </Modal.Section>
     </Modal>

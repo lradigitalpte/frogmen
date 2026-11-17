@@ -859,7 +859,11 @@ export class WarrantiesService {
 function joinLineSerials(value: string | null | undefined): string | null {
   const serials = (value ?? "")
     .split("\n")
-    .map((entry) => entry.trim())
+    .map((entry) => {
+      // "Component · Serial" → keep just the serial (main unit is listed first).
+      const splitIndex = entry.indexOf(" · ");
+      return (splitIndex === -1 ? entry : entry.slice(splitIndex + 3)).trim();
+    })
     .filter(Boolean);
   return serials.length > 0 ? serials.join(", ").slice(0, 150) : null;
 }
