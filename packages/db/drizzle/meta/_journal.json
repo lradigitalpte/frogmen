@@ -302,6 +302,13 @@
       "when": 1788869300000,
       "tag": "0041_invoice_document_bank_account",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788869400000,
+      "tag": "0042_invoice_line_serial_numbers",
+      "breakpoints": true
     }
   ]
 }

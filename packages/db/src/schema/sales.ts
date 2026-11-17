@@ -366,6 +366,8 @@ export const invoiceLines = pgTable("invoice_lines", {
     .default("0"),
   costAmount: numeric("cost_amount", { precision: 18, scale: 2 }),
   costAmountBase: numeric("cost_amount_base", { precision: 18, scale: 2 }),
+  /** Newline-separated serials recorded after arrival (dropship / non-unit lines). */
+  serialNumbers: text("serial_numbers"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

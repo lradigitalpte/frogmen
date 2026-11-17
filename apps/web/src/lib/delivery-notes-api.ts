@@ -15,6 +15,8 @@ export interface DeliveryNoteLine {
   quantity: number;
   productId?: string | null;
   productUnitId?: string | null;
+  /** True for lines without a stock unit (e.g. dropship) — serials can be recorded after arrival. */
+  canEditSerials?: boolean;
 }
 
 export interface DeliveryNote {
@@ -63,6 +65,20 @@ export function approveDeliveryNote(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function updateDeliveryNoteLineSerials(
+  invoiceId: string,
+  invoiceLineId: string,
+  serialNumbers: string[],
+) {
+  return apiFetch<DeliveryNote>(
+    `/api/v1/invoices/${invoiceId}/delivery-notes/lines/${invoiceLineId}/serials`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ serialNumbers }),
+    },
+  );
 }
 
 export function getDeliveryNote(id: string) {

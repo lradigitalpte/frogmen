@@ -5,6 +5,7 @@ import {
   Header,
   Param,
   Post,
+  Put,
   Res,
 } from "@nestjs/common";
 import {
@@ -17,6 +18,7 @@ import { DocumentRendererService } from "../documents/document-renderer.service"
 import {
   DeliveryNotesService,
   type ApproveDeliveryNoteInput,
+  type UpdateLineSerialsInput,
 } from "./delivery-notes.service";
 
 @Controller("v1/delivery-notes")
@@ -148,6 +150,21 @@ export class InvoiceDeliveryNotesController {
       `inline; filename="delivery-note-preview-${invoiceId}.pdf"`,
     );
     res.send(pdf);
+  }
+
+  @Put("lines/:lineId/serials")
+  updateLineSerials(
+    @Session() session: UserSession,
+    @Param("invoiceId") invoiceId: string,
+    @Param("lineId") lineId: string,
+    @Body() body: UpdateLineSerialsInput,
+  ) {
+    return this.deliveryNotesService.updateLineSerials(
+      this.orgId(session),
+      invoiceId,
+      lineId,
+      body,
+    );
   }
 
   @Post()

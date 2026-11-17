@@ -457,7 +457,8 @@ export class WarrantiesService {
         soldAt,
         productId: line.line.productId,
         productUnitId: line.line.productUnitId,
-        serialNumber: line.unit?.serialNumber ?? null,
+        serialNumber:
+          line.unit?.serialNumber ?? joinLineSerials(line.line.serialNumbers),
         productName: line.product?.name ?? line.line.description,
         customerId: line.invoice.customerId,
         customerName: line.customer?.name ?? null,
@@ -524,6 +525,7 @@ export class WarrantiesService {
           ilike(customers.name, term),
           ilike(products.name, term),
           ilike(productUnits.serialNumber, term),
+          ilike(invoiceLines.serialNumbers, term),
           ilike(invoiceLines.description, term),
         )!,
       );
@@ -543,7 +545,8 @@ export class WarrantiesService {
         productId: products.id,
         productName: products.name,
         productUnitId: productUnits.id,
-        serialNumber: productUnits.serialNumber,
+        unitSerialNumber: productUnits.serialNumber,
+        lineSerialNumbers: invoiceLines.serialNumbers,
         quantity: invoiceLines.quantity,
         defaultWarrantyPolicyId: products.defaultWarrantyPolicyId,
         lineWarrantyPolicyId: salesOrderLines.warrantyPolicyId,
@@ -576,12 +579,15 @@ export class WarrantiesService {
       return true;
     });
 
-    const data = dedupedRows.slice(0, perPage).map((row) => ({
-      ...row,
-      soldAt: formatDateOnly(row.postedAt ?? row.invoiceDate),
-      resolvedPolicyId:
-        row.lineWarrantyPolicyId ?? row.defaultWarrantyPolicyId ?? null,
-    }));
+    const data = dedupedRows
+      .slice(0, perPage)
+      .map(({ unitSerialNumber, lineSerialNumbers, ...row }) => ({
+        ...row,
+        serialNumber: unitSerialNumber ?? joinLineSerials(lineSerialNumbers),
+        soldAt: formatDateOnly(row.postedAt ?? row.invoiceDate),
+        resolvedPolicyId:
+          row.lineWarrantyPolicyId ?? row.defaultWarrantyPolicyId ?? null,
+      }));
 
     return {
       data,
@@ -707,7 +713,10 @@ export class WarrantiesService {
         productId: row.line.productId,
         productUnitId: row.line.productUnitId,
         serialNumber:
-          row.unit?.serialNumber ?? row.salesLine?.supplyReference ?? null,
+          row.unit?.serialNumber ??
+          joinLineSerials(row.line.serialNumbers) ??
+          row.salesLine?.supplyReference ??
+          null,
         productName: row.product.name,
         customerId: invoice.customerId,
         customerName: row.customer?.name ?? null,
@@ -844,4 +853,13 @@ export class WarrantiesService {
       );
     }
   }
+}
+
+/** Invoice-line serials (recorded after dropship arrival) as one warranty serial value. */
+function joinLineSerials(value: string | null | undefined): string | null {
+  const serials = (value ?? "")
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return serials.length > 0 ? serials.join(", ").slice(0, 150) : null;
 }

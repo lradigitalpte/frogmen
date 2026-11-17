@@ -296,7 +296,7 @@ export class InvoicesService {
       paymentTermName: header.paymentTermName,
       lines: lines.map((row) => ({
         ...row.line,
-        serialNumber: row.serialNumber,
+        serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
         productDescription: row.productDescription,
       })),
     });

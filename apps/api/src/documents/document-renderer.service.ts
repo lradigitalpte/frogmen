@@ -656,14 +656,14 @@ export class DocumentRendererService {
           {
             productUnitId: row.line.productUnitId,
             productName: row.line.description,
-            serialNumber: row.serialNumber ?? null,
+            serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
           },
         );
 
         return {
           description: row.line.description,
           details: row.productDescription,
-          serialNumber: row.serialNumber,
+          serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
           serialEntries,
           quantity: row.line.quantity,
         };

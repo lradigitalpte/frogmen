@@ -5,8 +5,10 @@ import {
   BlockStack,
   Button,
   InlineStack,
+  Modal,
   Spinner,
   Text,
+  TextField,
 } from "@shopify/polaris";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -19,6 +21,7 @@ import {
   getDeliveryNotePreviewPdfUrl,
   previewDeliveryNote,
   sendDeliveryNoteEmail,
+  updateDeliveryNoteLineSerials,
   type DeliveryNote,
   type DeliveryNoteLine,
 } from "@/lib/delivery-notes-api";
@@ -45,6 +48,10 @@ export function DeliveryNoteReviewModal({
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [serialLine, setSerialLine] = useState<DeliveryNoteLine | null>(null);
+  const [serialDraft, setSerialDraft] = useState("");
+  const [serialError, setSerialError] = useState<string | null>(null);
+  const [savingSerials, setSavingSerials] = useState(false);
 
   const isApproved = note?.state === "approved" && Boolean(note.id);
 
@@ -86,6 +93,74 @@ export function DeliveryNoteReviewModal({
     } finally {
       setSaving(false);
     }
+  }
+
+  function parseSerialDraft(value: string) {
+    return Array.from(
+      new Set(
+        value
+          .split(/[\n,]/)
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  function openSerialEditor(line: DeliveryNoteLine) {
+    const existing = line.serialEntries?.length
+      ? line.serialEntries.map((entry) => entry.serialNumber)
+      : (line.serialNumber ?? "")
+          .split("\n")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+    setSerialDraft(existing.join("\n"));
+    setSerialError(null);
+    setSerialLine(line);
+  }
+
+  async function handleSaveSerials() {
+    if (!serialLine?.invoiceLineId) return;
+    const serials = parseSerialDraft(serialDraft);
+    if (serials.length > Math.ceil(serialLine.quantity)) {
+      setSerialError(
+        `This line has quantity ${formatQuantity(serialLine.quantity)}; you entered ${serials.length} serial numbers.`,
+      );
+      return;
+    }
+
+    setSavingSerials(true);
+    setSerialError(null);
+    try {
+      const updated = await updateDeliveryNoteLineSerials(
+        invoiceId,
+        serialLine.invoiceLineId,
+        serials,
+      );
+      setNote(updated);
+      setSerialLine(null);
+    } catch (err) {
+      setSerialError(err instanceof Error ? err.message : "Failed to save serial numbers");
+    } finally {
+      setSavingSerials(false);
+    }
+  }
+
+  function renderSerialCell(line: DeliveryNoteLine) {
+    const hasSerials =
+      Boolean(line.serialEntries?.length) || Boolean(line.serialNumber?.trim());
+
+    return (
+      <BlockStack gap="100">
+        {renderSerialEntries(line)}
+        {line.canEditSerials && line.invoiceLineId ? (
+          <InlineStack>
+            <Button size="slim" variant="plain" onClick={() => openSerialEditor(line)}>
+              {hasSerials ? "Edit serial numbers" : "Add serial numbers"}
+            </Button>
+          </InlineStack>
+        ) : null}
+      </BlockStack>
+    );
   }
 
   function handlePreviewPdf() {
@@ -207,7 +282,7 @@ export function DeliveryNoteReviewModal({
 
   return (
     <>
-      {!showEmailModal ? (
+      {!showEmailModal && !serialLine ? (
         <div className="document-preview-panel" role="dialog" aria-modal="true">
           <button
             className="document-preview-panel__overlay"
@@ -381,7 +456,7 @@ export function DeliveryNoteReviewModal({
                           <td style={{ textAlign: "right" }}>
                             {formatQuantity(line.quantity)}
                           </td>
-                          <td>{renderSerialEntries(line)}</td>
+                          <td>{renderSerialCell(line)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -478,6 +553,45 @@ export function DeliveryNoteReviewModal({
         </footer>
       </aside>
     </div>
+  ) : null}
+
+  {serialLine ? (
+    <Modal
+      open
+      title="Serial numbers"
+      onClose={() => setSerialLine(null)}
+      primaryAction={{
+        content: "Save serial numbers",
+        loading: savingSerials,
+        onAction: () => void handleSaveSerials(),
+      }}
+      secondaryActions={[
+        { content: "Cancel", onAction: () => setSerialLine(null) },
+      ]}
+    >
+      <Modal.Section>
+        <BlockStack gap="300">
+          {serialError ? <Banner tone="critical">{serialError}</Banner> : null}
+          <Text as="p" variant="bodySm" tone="subdued">
+            Record the serials of the goods that arrived for this line. They are printed on the
+            delivery note and saved on the warranty so you can look up future claims.
+          </Text>
+          <Text as="p" fontWeight="semibold">
+            {serialLine.description}
+          </Text>
+          <TextField
+            autoComplete="off"
+            label="Serial numbers"
+            multiline={6}
+            helpText={`One per line. ${parseSerialDraft(serialDraft).length} of ${formatQuantity(
+              serialLine.quantity,
+            )} entered.`}
+            value={serialDraft}
+            onChange={setSerialDraft}
+          />
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
   ) : null}
 
   {isApproved && note?.id ? (

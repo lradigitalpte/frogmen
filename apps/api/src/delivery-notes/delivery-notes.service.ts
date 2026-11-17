@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
   customers,
   deliveryNoteLines,
@@ -13,6 +13,7 @@ import {
   invoices,
   productUnits,
   products,
+  warrantyRegistrations,
   type Database,
 } from "@frog1/db";
 import { formatPostalAddressLines } from "@frog1/shared";
@@ -32,6 +33,10 @@ export type { DeliveryNoteSerialEntry };
 
 export interface ApproveDeliveryNoteInput {
   deliveryDate?: string;
+}
+
+export interface UpdateLineSerialsInput {
+  serialNumbers: string[];
 }
 
 @Injectable()
@@ -100,7 +105,7 @@ export class DeliveryNotesService {
             {
               productUnitId: row.line.productUnitId,
               productName: row.line.description,
-              serialNumber: row.serialNumber ?? null,
+              serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
             },
           );
 
@@ -110,11 +115,12 @@ export class DeliveryNotesService {
             invoiceLineId: row.line.id,
             description: row.line.description,
             productDescription: row.productDescription ?? null,
-            serialNumber: row.serialNumber ?? null,
+            serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
             serialEntries,
             quantity: Number(row.line.quantity),
             productId: row.line.productId,
             productUnitId: row.line.productUnitId,
+            canEditSerials: !row.line.productUnitId && Boolean(row.line.productId),
           };
         }),
       ),
@@ -179,7 +185,7 @@ export class DeliveryNotesService {
             {
               productUnitId: row.line.productUnitId,
               productName: row.line.description,
-              serialNumber: row.serialNumber ?? null,
+              serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
             },
           );
 
@@ -205,6 +211,115 @@ export class DeliveryNotesService {
     );
 
     return this.getById(organizationId, note.id);
+  }
+
+  /**
+   * Record serial numbers for an invoice line that has no stock unit
+   * (e.g. dropship goods that arrived after the invoice was created).
+   * Syncs the serials onto any existing delivery note and warranty records.
+   */
+  async updateLineSerials(
+    organizationId: string,
+    invoiceId: string,
+    invoiceLineId: string,
+    input: UpdateLineSerialsInput,
+  ) {
+    const [row] = await this.db
+      .select({ line: invoiceLines, invoiceState: invoices.state })
+      .from(invoiceLines)
+      .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+      .where(
+        and(
+          eq(invoiceLines.id, invoiceLineId),
+          eq(invoiceLines.invoiceId, invoiceId),
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundException("Invoice line not found");
+    }
+
+    if (row.invoiceState === "cancelled") {
+      throw new BadRequestException("Cannot add serials to a cancelled invoice");
+    }
+
+    if (row.line.productUnitId) {
+      throw new BadRequestException(
+        "This line is linked to a stock unit; its serial comes from inventory",
+      );
+    }
+
+    const serials = Array.from(
+      new Set(
+        (Array.isArray(input?.serialNumbers) ? input.serialNumbers : [])
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (serials.some((serial) => serial.length > 150)) {
+      throw new BadRequestException("Serial numbers must be 150 characters or fewer");
+    }
+
+    const quantity = Number(row.line.quantity);
+    if (serials.length > Math.ceil(quantity)) {
+      throw new BadRequestException(
+        `This line has quantity ${quantity}; you entered ${serials.length} serial numbers`,
+      );
+    }
+
+    const serialText = serials.length > 0 ? serials.join("\n") : null;
+
+    await this.db
+      .update(invoiceLines)
+      .set({ serialNumbers: serialText })
+      .where(eq(invoiceLines.id, invoiceLineId));
+
+    // Keep already-approved delivery notes in sync with the new serials.
+    const activeNotes = await this.db
+      .select({ id: deliveryNotes.id })
+      .from(deliveryNotes)
+      .where(
+        and(
+          eq(deliveryNotes.organizationId, organizationId),
+          eq(deliveryNotes.invoiceId, invoiceId),
+          isNull(deliveryNotes.deletedAt),
+        ),
+      );
+
+    if (activeNotes.length > 0) {
+      await this.db
+        .update(deliveryNoteLines)
+        .set({ serialNumber: serialText })
+        .where(
+          and(
+            eq(deliveryNoteLines.invoiceLineId, invoiceLineId),
+            inArray(
+              deliveryNoteLines.deliveryNoteId,
+              activeNotes.map((note) => note.id),
+            ),
+          ),
+        );
+    }
+
+    // Warranty claims look up by serial, so store it on the registration too.
+    await this.db
+      .update(warrantyRegistrations)
+      .set({
+        serialNumber: serials.length > 0 ? serials.join(", ").slice(0, 150) : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(warrantyRegistrations.organizationId, organizationId),
+          eq(warrantyRegistrations.invoiceLineId, invoiceLineId),
+        ),
+      );
+
+    return this.preview(organizationId, invoiceId);
   }
 
   async listByInvoice(organizationId: string, invoiceId: string) {
@@ -299,20 +414,15 @@ export class DeliveryNotesService {
       ].filter((line): line is string => Boolean(line)),
       lines: await Promise.all(
         lines.map(async (row) => {
-          const serialEntries = row.line.productUnitId
-            ? await resolveDeliveryNoteSerialEntries(this.db, organizationId, {
-                productUnitId: row.line.productUnitId,
-                productName: row.line.description,
-                serialNumber: row.line.serialNumber,
-              })
-            : row.line.serialNumber
-              ? [
-                  {
-                    productName: row.line.description,
-                    serialNumber: row.line.serialNumber,
-                  },
-                ]
-              : [];
+          const serialEntries = await resolveDeliveryNoteSerialEntries(
+            this.db,
+            organizationId,
+            {
+              productUnitId: row.line.productUnitId,
+              productName: row.line.description,
+              serialNumber: row.line.serialNumber,
+            },
+          );
 
           return {
             id: row.line.id,
@@ -325,6 +435,10 @@ export class DeliveryNotesService {
             quantity: Number(row.line.quantity),
             productId: row.line.productId,
             productUnitId: row.line.productUnitId,
+            canEditSerials:
+              !row.line.productUnitId &&
+              Boolean(row.line.productId) &&
+              Boolean(row.line.invoiceLineId),
           };
         }),
       ),
