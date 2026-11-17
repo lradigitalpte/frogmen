@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { productUnits, products, type Database } from "@frog1/db";
+import { invoiceLines, productUnits, products, type Database } from "@frog1/db";
 
 export interface DeliveryNoteSerialEntry {
   productName: string;
@@ -14,6 +14,8 @@ export async function resolveDeliveryNoteSerialEntries(
     productUnitId: string | null;
     productName: string;
     serialNumber: string | null;
+    /** Invoice line to read extra component serials from (stock-unit lines). */
+    invoiceLineId?: string | null;
   },
 ): Promise<DeliveryNoteSerialEntry[]> {
   const entries: DeliveryNoteSerialEntry[] = [];
@@ -67,6 +69,29 @@ export async function resolveDeliveryNoteSerialEntries(
         productName: child.productName,
         serialNumber: child.serialNumber,
       });
+    }
+
+    // Component serials typed on the invoice line (accessories not tracked as units).
+    if (input.invoiceLineId) {
+      const [line] = await db
+        .select({ serialNumbers: invoiceLines.serialNumbers })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.id, input.invoiceLineId))
+        .limit(1);
+
+      const known = new Set(entries.map((entry) => entry.serialNumber));
+      for (const raw of (line?.serialNumbers ?? "").split("\n")) {
+        const text = raw.trim();
+        const splitIndex = text.indexOf(" · ");
+        if (splitIndex === -1) continue;
+        const productName = text.slice(0, splitIndex).trim();
+        const serialNumber = text.slice(splitIndex + 3).trim();
+        if (!serialNumber || productName === input.productName || known.has(serialNumber)) {
+          continue;
+        }
+        known.add(serialNumber);
+        entries.push({ productName, serialNumber });
+      }
     }
 
     return entries;

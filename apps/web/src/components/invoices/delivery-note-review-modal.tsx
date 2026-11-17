@@ -116,17 +116,20 @@ export function DeliveryNoteReviewModal({
    */
   function kitSlots(line: DeliveryNoteLine): string[] {
     if (Math.ceil(line.quantity) !== 1) return [];
-    const components = productDetailsLines(line.description, line.productDescription).flatMap(
-      (item) => {
-        const match = item.match(/^(\d+)\s*[x×]\s*(.+)$/i);
-        const count = match ? Math.min(Number(match[1]) || 1, 20) : 1;
-        const name = (match ? match[2] : item).replace(/ · /g, " - ").trim();
+    const components = productDetailsLines(line.description, line.productDescription)
+      // "2x Batteries 1x Remote" on one line → two items.
+      .flatMap((item) => item.split(/\s+(?=\d+\s*[x×]\s*\S)/i))
+      .flatMap((item) => {
+        // Only "Nx Name" lines are components; feature text is ignored.
+        const match = item.trim().match(/^(\d+)\s*[x×]\s*(.+)$/i);
+        if (!match) return [];
+        const count = Math.min(Number(match[1]) || 1, 20);
+        const name = match[2].replace(/ · /g, " - ").trim();
         if (!name || name === line.description) return [];
         return count > 1
           ? Array.from({ length: count }, (_, i) => `${name} #${i + 1}`)
           : [name];
-      },
-    );
+      });
     return components.length > 0 ? [line.description, ...components] : [];
   }
 
@@ -163,7 +166,12 @@ export function DeliveryNoteReviewModal({
     if (!serialLine?.invoiceLineId) return;
     const serials = kitSerials
       ? Object.entries(kitSerials)
-          .filter(([, value]) => value.trim())
+          // Stock lines: the main serial is owned by inventory, send components only.
+          .filter(
+            ([slot, value]) =>
+              value.trim() &&
+              !(serialLine.productUnitId && slot === serialLine.description),
+          )
           .map(([slot, value]) => `${slot} · ${value.trim()}`)
       : parseSerialDraft(serialDraft);
     if (!kitSerials && serials.length > Math.ceil(serialLine.quantity)) {
@@ -193,14 +201,27 @@ export function DeliveryNoteReviewModal({
   function renderSerialCell(line: DeliveryNoteLine) {
     const hasSerials =
       Boolean(line.serialEntries?.length) || Boolean(line.serialNumber?.trim());
+    const isStockLine = Boolean(line.productUnitId);
+    // Stock lines already have their main serial; only kits need component serials.
+    const canEdit =
+      line.canEditSerials &&
+      Boolean(line.invoiceLineId) &&
+      (!isStockLine || kitSlots(line).length > 0);
+    const hasComponentSerials = (line.serialEntries ?? []).some((entry) => !entry.isKit);
 
     return (
       <BlockStack gap="100">
         {renderSerialEntries(line)}
-        {line.canEditSerials && line.invoiceLineId ? (
+        {canEdit ? (
           <InlineStack>
             <Button size="slim" variant="plain" onClick={() => openSerialEditor(line)}>
-              {hasSerials ? "Edit serial numbers" : "Add serial numbers"}
+              {isStockLine
+                ? hasComponentSerials
+                  ? "Edit component serials"
+                  : "Add component serials"
+                : hasSerials
+                  ? "Edit serial numbers"
+                  : "Add serial numbers"}
             </Button>
           </InlineStack>
         ) : null}
@@ -631,6 +652,12 @@ export function DeliveryNoteReviewModal({
                   key={slot}
                   autoComplete="off"
                   label={index === 0 ? "Main unit serial" : slot}
+                  disabled={index === 0 && Boolean(serialLine.productUnitId)}
+                  helpText={
+                    index === 0 && serialLine.productUnitId
+                      ? "From inventory — change it on the stock unit."
+                      : undefined
+                  }
                   placeholder={index === 0 ? undefined : "Leave blank if it has no serial"}
                   value={kitSerials[slot]}
                   onChange={(value) =>

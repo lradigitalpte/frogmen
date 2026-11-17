@@ -567,6 +567,7 @@ export class DocumentRendererService {
           organizationId,
           {
             productUnitId: row.line.productUnitId,
+            invoiceLineId: row.line.invoiceLineId,
             productName: row.line.description,
             serialNumber: row.line.serialNumber,
           },
@@ -655,6 +656,7 @@ export class DocumentRendererService {
           organizationId,
           {
             productUnitId: row.line.productUnitId,
+            invoiceLineId: row.line.id,
             productName: row.line.description,
             serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
           },

@@ -104,6 +104,7 @@ export class DeliveryNotesService {
             organizationId,
             {
               productUnitId: row.line.productUnitId,
+              invoiceLineId: row.line.id,
               productName: row.line.description,
               serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
             },
@@ -120,7 +121,7 @@ export class DeliveryNotesService {
             quantity: Number(row.line.quantity),
             productId: row.line.productId,
             productUnitId: row.line.productUnitId,
-            canEditSerials: !row.line.productUnitId && Boolean(row.line.productId),
+            canEditSerials: Boolean(row.line.productId),
           };
         }),
       ),
@@ -184,6 +185,7 @@ export class DeliveryNotesService {
             organizationId,
             {
               productUnitId: row.line.productUnitId,
+              invoiceLineId: row.line.id,
               productName: row.line.description,
               serialNumber: row.serialNumber ?? row.line.serialNumbers ?? null,
             },
@@ -246,11 +248,7 @@ export class DeliveryNotesService {
       throw new BadRequestException("Cannot add serials to a cancelled invoice");
     }
 
-    if (row.line.productUnitId) {
-      throw new BadRequestException(
-        "This line is linked to a stock unit; its serial comes from inventory",
-      );
-    }
+    const isStockUnitLine = Boolean(row.line.productUnitId);
 
     const serials = Array.from(
       new Set(
@@ -279,6 +277,12 @@ export class DeliveryNotesService {
     const mainSerials = parsed.filter(
       (entry) => !entry.name || entry.name === row.line.description,
     );
+    if (isStockUnitLine && mainSerials.length > 0) {
+      throw new BadRequestException(
+        "The main serial of this line comes from inventory; only component serials can be added",
+      );
+    }
+
     const quantity = Number(row.line.quantity);
     if (mainSerials.length > Math.ceil(quantity)) {
       throw new BadRequestException(
@@ -304,6 +308,12 @@ export class DeliveryNotesService {
           isNull(deliveryNotes.deletedAt),
         ),
       );
+
+    // Stock-unit lines resolve component serials from the invoice line at read
+    // time, so only non-unit lines need their delivery note snapshot updated.
+    if (isStockUnitLine) {
+      return this.preview(organizationId, invoiceId);
+    }
 
     if (activeNotes.length > 0) {
       await this.db
@@ -440,6 +450,7 @@ export class DeliveryNotesService {
             organizationId,
             {
               productUnitId: row.line.productUnitId,
+              invoiceLineId: row.line.invoiceLineId,
               productName: row.line.description,
               serialNumber: row.line.serialNumber,
             },
@@ -457,9 +468,7 @@ export class DeliveryNotesService {
             productId: row.line.productId,
             productUnitId: row.line.productUnitId,
             canEditSerials:
-              !row.line.productUnitId &&
-              Boolean(row.line.productId) &&
-              Boolean(row.line.invoiceLineId),
+              Boolean(row.line.productId) && Boolean(row.line.invoiceLineId),
           };
         }),
       ),
