@@ -9,6 +9,7 @@ import {
   count,
   desc,
   eq,
+  asc,
   ilike,
   isNotNull,
   isNull,
@@ -102,9 +103,17 @@ export class WarrantiesService {
       filters.push(eq(warrantyRegistrations.productUnitId, query.productUnitId));
     }
 
-    if (query.status && query.status !== "expired") {
-      filters.push(eq(warrantyRegistrations.status, query.status));
-    }
+    // Status is derived from the stored status plus the end date (see
+    // resolveWarrantyStatus), so filter in SQL to keep totals and paging right.
+    const today = sql`(now() at time zone 'utc')::date`;
+    const reg = warrantyRegistrations;
+    const statusSql = {
+      voided: sql`${reg.status} = 'voided'`,
+      pending_delivery: sql`${reg.status} <> 'voided' and (${reg.status} = 'pending_delivery' or ${reg.endsAt} is null)`,
+      expired: sql`${reg.status} not in ('voided', 'pending_delivery') and ${reg.endsAt} < ${today}`,
+      active: sql`${reg.status} not in ('voided', 'pending_delivery') and ${reg.endsAt} >= ${today}`,
+      expiring: sql`${reg.status} not in ('voided', 'pending_delivery') and ${reg.endsAt} >= ${today} and ${reg.endsAt} <= ${today} + 30`,
+    };
 
     if (query.search?.trim()) {
       const term = `%${query.search.trim()}%`;
@@ -120,7 +129,22 @@ export class WarrantiesService {
       );
     }
 
+    // Counts per status ignore the status filter so the tabs stay stable.
+    const baseWhere = and(...filters);
+    if (query.status) {
+      filters.push(statusSql[query.status]);
+    }
+    if (query.expiringSoon) {
+      filters.push(statusSql.expiring);
+    }
     const whereClause = and(...filters);
+
+    const orderBy =
+      query.sort === "ending_soon"
+        ? [sql`${reg.endsAt} asc nulls last`, desc(reg.createdAt)]
+        : query.sort === "ending_late"
+          ? [sql`${reg.endsAt} desc nulls last`, desc(reg.createdAt)]
+          : [desc(reg.soldAt), desc(reg.createdAt)];
 
     const rows = await this.db
       .select({
@@ -145,11 +169,11 @@ export class WarrantiesService {
         eq(warrantyRegistrations.deliveryNoteId, deliveryNotes.id),
       )
       .where(whereClause)
-      .orderBy(desc(warrantyRegistrations.createdAt))
+      .orderBy(...orderBy)
       .limit(perPage)
       .offset(offset);
 
-    let data = rows.map((row) =>
+    const data = rows.map((row) =>
       this.enrichRegistration({
         ...row.registration,
         policyName: row.policyName,
@@ -161,22 +185,37 @@ export class WarrantiesService {
       }),
     );
 
-    if (query.status === "expired") {
-      data = data.filter((item) => item.status === "expired");
-    } else if (query.status === "active") {
-      data = data.filter((item) => item.status === "active");
-    }
-
-    if (query.expiringSoon) {
-      data = data.filter(
-        (item) => item.status === "active" && item.daysLeft >= 0 && item.daysLeft <= 30,
-      );
-    }
-
     const [totalResult] = await this.db
       .select({ total: count() })
       .from(warrantyRegistrations)
+      .leftJoin(warrantyPolicies, eq(reg.policyId, warrantyPolicies.id))
+      .leftJoin(customers, eq(reg.customerId, customers.id))
+      .leftJoin(products, eq(reg.productId, products.id))
       .where(whereClause);
+
+    const [summaryRow] = await this.db
+      .select({
+        all: count(),
+        active: sql<number>`count(*) filter (where ${statusSql.active})`,
+        expiring: sql<number>`count(*) filter (where ${statusSql.expiring})`,
+        pendingDelivery: sql<number>`count(*) filter (where ${statusSql.pending_delivery})`,
+        expired: sql<number>`count(*) filter (where ${statusSql.expired})`,
+        voided: sql<number>`count(*) filter (where ${statusSql.voided})`,
+      })
+      .from(warrantyRegistrations)
+      .leftJoin(warrantyPolicies, eq(reg.policyId, warrantyPolicies.id))
+      .leftJoin(customers, eq(reg.customerId, customers.id))
+      .leftJoin(products, eq(reg.productId, products.id))
+      .where(baseWhere);
+
+    const summary = {
+      all: Number(summaryRow?.all ?? 0),
+      active: Number(summaryRow?.active ?? 0),
+      expiringSoon: Number(summaryRow?.expiring ?? 0),
+      pendingDelivery: Number(summaryRow?.pendingDelivery ?? 0),
+      expired: Number(summaryRow?.expired ?? 0),
+      voided: Number(summaryRow?.voided ?? 0),
+    };
 
     return {
       data,
@@ -186,6 +225,7 @@ export class WarrantiesService {
         total: Number(totalResult?.total ?? 0),
         totalPages: Math.ceil(Number(totalResult?.total ?? 0) / perPage) || 1,
       },
+      summary,
     };
   }
 
@@ -264,6 +304,20 @@ export class WarrantiesService {
     const endsAt =
       dto.endsAt?.slice(0, 10) ??
       addMonthsToDate(soldAt, policy.durationMonths);
+
+    const isoDate = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+    if (!isoDate.test(soldAt) || Number.isNaN(Date.parse(soldAt))) {
+      throw new BadRequestException("Sold date must be a valid date (YYYY-MM-DD)");
+    }
+    if (soldAt > new Date().toISOString().slice(0, 10)) {
+      throw new BadRequestException("Sold date can't be in the future");
+    }
+    if (!isoDate.test(endsAt) || Number.isNaN(Date.parse(endsAt))) {
+      throw new BadRequestException("End date must be a valid date (YYYY-MM-DD)");
+    }
+    if (endsAt < soldAt) {
+      throw new BadRequestException("End date can't be before the sold date");
+    }
 
     if (dto.invoiceLineId) {
       return this.createFromInvoiceLine(
@@ -801,8 +855,21 @@ export class WarrantiesService {
       throw new NotFoundException("Warranty registration not found");
     }
 
+    if (row.reg.status === "voided") {
+      throw new BadRequestException("This warranty has been voided and can't be started");
+    }
+
     const deliveryDate =
       input.deliveryDate?.trim() || new Date().toISOString().slice(0, 10);
+
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(deliveryDate) || Number.isNaN(Date.parse(deliveryDate))) {
+      throw new BadRequestException("Delivery date must be a valid date (YYYY-MM-DD)");
+    }
+
+    if (deliveryDate < formatDateOnly(row.reg.soldAt)) {
+      throw new BadRequestException("Delivery date can't be before the sale date");
+    }
+
     const endsAt = addMonthsToDate(deliveryDate, row.durationMonths);
     const updatedNotes = input.notes?.trim()
       ? row.reg.notes

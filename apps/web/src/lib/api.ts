@@ -31,6 +31,17 @@ export async function apiFetch<T>(
           ? body.message.join(", ")
           : response.statusText;
 
+    // The Next proxy answers with a bare 500/502 when the API itself is down.
+    const unreachable =
+      response.status >= 500 &&
+      (!message || message === "Internal Server Error" || message === "Bad Gateway");
+    if (unreachable) {
+      throw new ApiError(
+        "The server isn't responding right now. Try again in a moment.",
+        response.status,
+      );
+    }
+
     throw new ApiError(message || "Request failed", response.status);
   }
 

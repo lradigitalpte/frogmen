@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { logLeadContact } from "@/lib/leads-api";
-import { listMembers, type OrganizationMember } from "@/lib/security-api";
+import { listMemberDirectory as listMembers, type OrganizationMember } from "@/lib/security-api";
 import type { Lead } from "@/types/lead";
 import {
   Building2,
@@ -59,12 +59,14 @@ export function LogContactModal({
   onContactLogged,
 }: LogContactModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [members, setMembers] = useState<Array<Pick<OrganizationMember, "id" | "name" | "email">>>([]);
   const [type, setType] = useState<"call" | "email" | "whatsapp" | "meeting" | "note">("call");
   const [summary, setSummary] = useState("");
   const [outcome, setOutcome] = useState("");
   const [nextFollowUp, setNextFollowUp] = useState("");
   const [authorName, setAuthorName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -92,22 +94,27 @@ export function LogContactModal({
 
   if (!open || !lead || !mounted) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!summary.trim()) return;
+    if (!summary.trim() || saving) return;
 
-    const updated = logLeadContact({
-      leadId: lead.id,
-      type,
-      summary: summary.trim(),
-      outcome: outcome.trim() || undefined,
-      nextFollowUp: nextFollowUp ? new Date(nextFollowUp).toISOString() : undefined,
-      authorName: authorName.trim() || "Sales Rep",
-    });
-
-    if (updated) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await logLeadContact({
+        leadId: lead.id,
+        type,
+        summary: summary.trim(),
+        outcome: outcome.trim() || undefined,
+        nextFollowUp: nextFollowUp ? new Date(nextFollowUp).toISOString() : undefined,
+        authorName: authorName.trim() || "Sales Rep",
+      });
       onContactLogged(updated);
       onOpenChange(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not log the contact");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -260,16 +267,20 @@ export function LogContactModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-muted/20 shrink-0">
+            {saveError ? (
+              <p className="mr-auto text-xs font-medium text-destructive">{saveError}</p>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               size="sm"
+              disabled={saving}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm">
-              <Send className="h-4 w-4 mr-1.5" /> Save Touchpoint Log
+            <Button type="submit" size="sm" disabled={saving || !summary.trim()}>
+              <Send className="h-4 w-4 mr-1.5" /> {saving ? "Saving…" : "Save contact"}
             </Button>
           </div>
         </form>

@@ -8,7 +8,9 @@ import { DashboardNav } from "./dashboard-nav";
 import { ProfileNav } from "./profile-nav";
 import { RovNav } from "./rov-nav";
 import { SettingsNav } from "./settings-nav";
+import { SideRail } from "./side-rail";
 import { DashboardTopBar } from "./dashboard-top-bar";
+import { AccessProvider, RouteAccessGuard } from "@/components/providers/access-provider";
 
 interface DashboardShellProps {
   children: ReactNode;
@@ -40,7 +42,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
     [],
   );
 
-  const navigation =
+  const panel =
     shellMode === "settings" ? (
       <SettingsNav />
     ) : shellMode === "rov" ? (
@@ -50,6 +52,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
     ) : (
       <DashboardNav />
     );
+
+  const navigation = (
+    <aside className="app-sidenav">
+      <SideRail />
+      {panel}
+    </aside>
+  );
 
   const mainClassName =
     shellMode === "settings"
@@ -61,6 +70,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           : "app-main";
 
   return (
+    <AccessProvider>
     <Frame
       logo={undefined}
       navigation={navigation}
@@ -74,8 +84,11 @@ export function DashboardShell({ children }: DashboardShellProps) {
       onNavigationDismiss={toggleMobileNavigation}
     >
       <Box background="bg-surface-secondary" minHeight="100%">
-        <div className={mainClassName}>{children}</div>
+        <div className={mainClassName}>
+          <RouteAccessGuard>{children}</RouteAccessGuard>
+        </div>
       </Box>
     </Frame>
+    </AccessProvider>
   );
 }

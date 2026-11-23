@@ -31,7 +31,26 @@ export interface RovProject {
   creatorName?: string | null;
   structureCount?: number;
   structures?: ProjectStructure[];
+  /** Detail-only totals. */
+  stats?: RovProjectStats;
+  /** List-only counts. */
+  findingCount?: number;
+  majorCount?: number;
+  mediaCount?: number;
+  reportStatus?: "draft" | "final" | "shared" | null;
 }
+
+export interface RovProjectsSummary {
+  all: number;
+  draft: number;
+  inProgress: number;
+  completed: number;
+  archived: number;
+  overdue: number;
+  startingSoon: number;
+}
+
+export type RovProjectSort = "updated" | "newest" | "name" | "start_date" | "end_date";
 
 export interface ProjectStructure {
   id: string;
@@ -43,6 +62,25 @@ export interface ProjectStructure {
   sort: number;
   createdAt: string;
   updatedAt: string;
+  /** Present when loaded with the project detail. */
+  findingCount?: number;
+  majorCount?: number;
+  moderateCount?: number;
+  minorCount?: number;
+  mediaCount?: number;
+  viewCount?: number;
+}
+
+export interface RovProjectStats {
+  structureCount: number;
+  withDiagram: number;
+  findingCount: number;
+  majorCount: number;
+  moderateCount: number;
+  minorCount: number;
+  mediaCount: number;
+  reportCount: number;
+  reportStatus: "draft" | "final" | "shared" | null;
 }
 
 export interface InspectionView {
@@ -76,6 +114,8 @@ export interface InspectionPoint {
   viewType?: InspectionViewType;
   structureId?: string;
   structureName?: string;
+  structureSort?: number;
+  mediaCount?: number;
 }
 
 export interface InspectionMedia {
@@ -116,6 +156,14 @@ export interface InspectionReport {
   createdAt: string;
   updatedAt: string;
   projectName?: string;
+  /** Hub list extras. */
+  projectStatus?: RovProjectStatus;
+  customerName?: string | null;
+  sharedByName?: string | null;
+  viewCount?: number;
+  lastViewedAt?: string | null;
+  findingCount?: number;
+  majorCount?: number;
 }
 
 export interface PaginatedRovProjects {
@@ -126,6 +174,7 @@ export interface PaginatedRovProjects {
     total: number;
     totalPages: number;
   };
+  summary?: RovProjectsSummary;
 }
 
 export interface CreateRovProjectInput {
@@ -211,4 +260,45 @@ export interface PublicReportPayload {
     }>;
   } | null;
   severityCounts: { major: number; moderate: number; minor: number };
+}
+
+export interface RovOverviewProject {
+  id: string;
+  name: string;
+  location: string | null;
+  status: RovProjectStatus;
+  startDate: string | null;
+  endDate: string | null;
+  planViewPath: string | null;
+  updatedAt: string;
+  customerName: string | null;
+  structureCount: number;
+  findingCount: number;
+  majorCount: number;
+  mediaCount: number;
+  reportStatus: "draft" | "final" | "shared" | null;
+}
+
+export interface RovOverviewFinding {
+  id: string;
+  observationId: string | null;
+  pointNumber: number | null;
+  label: string | null;
+  severity: InspectionSeverity | null;
+  findingType: string | null;
+  description: string | null;
+  createdAt: string;
+  structureName: string;
+  projectId: string;
+  projectName: string;
+}
+
+export interface RovOverview {
+  projects: { total: number; draft: number; inProgress: number; completed: number; archived: number };
+  structures: { total: number; withDiagram: number };
+  findings: { total: number; major: number; moderate: number; minor: number };
+  media: { total: number; video: number; image: number; document: number; unlinked: number };
+  reports: { total: number; draft: number; final: number; shared: number; liveLinks: number };
+  recentProjects: RovOverviewProject[];
+  recentFindings: RovOverviewFinding[];
 }

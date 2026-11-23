@@ -9,6 +9,13 @@ export interface WarrantyPolicy {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  usage?: WarrantyPolicyUsage;
+}
+
+export interface WarrantyPolicyUsage {
+  registrations: number;
+  activeRegistrations: number;
+  products: number;
 }
 
 export interface PaginatedWarrantyPolicies {
@@ -59,6 +66,17 @@ export interface WarrantyRegistration {
   productSku?: string | null;
 }
 
+export interface WarrantySummary {
+  all: number;
+  active: number;
+  expiringSoon: number;
+  pendingDelivery: number;
+  expired: number;
+  voided: number;
+}
+
+export type WarrantySort = "recent" | "ending_soon" | "ending_late";
+
 export interface PaginatedWarranties {
   data: WarrantyRegistration[];
   meta: {
@@ -67,6 +85,7 @@ export interface PaginatedWarranties {
     total: number;
     totalPages: number;
   };
+  summary?: WarrantySummary;
 }
 
 export interface SaleSearchResult {
@@ -167,6 +186,7 @@ export function listWarranties(
     productId?: string;
     productUnitId?: string;
     expiringSoon?: boolean;
+    sort?: WarrantySort;
     page?: number;
     perPage?: number;
   } = {},

@@ -1,125 +1,80 @@
 "use client";
 
-import {
-  HomeIcon,
-  InventoryIcon,
-  CalculatorIcon,
-  CartIcon,
-  OrderIcon,
-  PackageIcon,
-  PersonIcon,
-  SearchIcon,
-  SettingsIcon,
-  ShieldCheckMarkIcon,
-} from "@shopify/polaris-icons";
-import { Navigation } from "@shopify/polaris";
-import Link from "next/link";
+import { Button, Icon } from "@shopify/polaris";
+import { CameraIcon } from "@shopify/polaris-icons";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
-import { BRAND_LOGO_SRC } from "@/lib/brand";
-import {
-  mainNavItems,
-  profileNavLink,
-  rovNavLink,
-  settingsNavLink,
-  type NavIcon,
-} from "@/lib/navigation";
+import { mainNavItems, rovNavLink } from "@/lib/navigation";
+import { NavPanel, type NavPanelGroup } from "./nav-panel";
+import { getActiveSection, isNavUrlActive } from "./side-rail";
+import { routeRule, visibleNavItems } from "@/lib/access";
+import { useAccess } from "@/components/providers/access-provider";
 
-const iconMap: Record<NavIcon, typeof HomeIcon> = {
-  HomeIcon,
-  PersonIcon,
-  OrderIcon,
-  InventoryIcon,
-  CartIcon,
-  CalculatorIcon,
-  ShieldCheckMarkIcon,
-  PackageIcon,
-  SettingsIcon,
-  SearchIcon,
-};
+const quickActions = [
+  { label: "New quotation", href: "/dashboard/sales/quotations/new" },
+  { label: "Add customer", href: "/dashboard/customers/new" },
+  { label: "Register warranty", href: "/dashboard/warranty/new" },
+];
 
-function isSettingsActive(pathname: string) {
-  return pathname.startsWith("/dashboard/settings");
-}
-
-function isRovActive(pathname: string) {
-  return pathname.startsWith("/dashboard/rov");
-}
-
-function isProfileActive(pathname: string) {
-  return pathname.startsWith("/dashboard/profile");
-}
-
+/** Panel for the main app: lists the pages of the section picked in the rail. */
 export function DashboardNav() {
   const pathname = usePathname();
+  const { can } = useAccess();
+  const owning = getActiveSection(pathname) ?? mainNavItems[0];
+  // Same section, minus pages this role can't open.
+  const section = visibleNavItems([owning], can)[0] ?? { ...owning, children: [] };
 
-  const items = useMemo(() => {
-    return mainNavItems.map((item) => ({
-      label: item.label,
-      url: item.url,
-      icon: iconMap[item.icon],
-      disabled: item.disabled,
-      exactMatch: item.url === "/dashboard",
-      subNavigationItems: item.children?.map((child) => ({
-        label: child.label,
-        url: child.url,
-        disabled: child.disabled,
-      })),
-    }));
-  }, []);
+  // Highlight only the best (longest) matching child so parents like
+  // "/dashboard/inventory" don't stay lit on "/dashboard/inventory/products".
+  const children = section.children ?? [];
+  const activeChildUrl = children
+    .filter((child) => isNavUrlActive(pathname, child.url))
+    .sort((a, b) => b.url.length - a.url.length)[0]?.url;
 
-  const SettingsIconComponent = iconMap[settingsNavLink.icon];
-  const RovIconComponent = iconMap[rovNavLink.icon];
-  const ProfileIconComponent = iconMap[profileNavLink.icon];
-  const settingsActive = isSettingsActive(pathname);
-  const rovActive = isRovActive(pathname);
-  const profileActive = isProfileActive(pathname);
+  const groups: NavPanelGroup[] = children.length
+    ? [
+        {
+          items: children.map((child) => ({
+            label: child.label,
+            href: child.url,
+            disabled: child.disabled,
+            badge: child.badge,
+            active: child.url === activeChildUrl,
+          })),
+        },
+      ]
+    : [
+        {
+          items: [
+            {
+              label: section.url === "/dashboard" ? "Overview" : section.label,
+              href: section.url,
+              active: isNavUrlActive(pathname, section.url),
+            },
+          ],
+        },
+        ...(section.url === "/dashboard"
+          ? [{ title: "Quick actions", items: quickActions.filter((action) => can(routeRule(action.href))) }]
+          : []),
+      ];
 
   return (
-    <aside className="dashboard-nav">
-      <Link className="dashboard-nav-brand" href="/dashboard">
-        <img
-          alt="Frogmen Technologies"
-          className="dashboard-nav-brand__logo"
-          src={BRAND_LOGO_SRC}
-        />
-      </Link>
-
-      <div className="dashboard-nav-scroll">
-        <Navigation location={pathname}>
-          <Navigation.Section items={items} />
-        </Navigation>
-      </div>
-
-      <div className="dashboard-nav-footer">
-        <Link
-          className={`dashboard-nav-footer__link${profileActive ? " is-active" : ""}`}
-          href={profileNavLink.url}
-        >
-          <span className="dashboard-nav-footer__icon">
-            <ProfileIconComponent />
+    <NavPanel
+      title={section.label}
+      groups={groups}
+      footer={
+        <div className="dashboard-nav-promo">
+          <span className="dashboard-nav-promo__icon">
+            <Icon source={CameraIcon} />
           </span>
-          <span>{profileNavLink.label}</span>
-        </Link>
-        <Link
-          className={`dashboard-nav-footer__link${rovActive ? " is-active" : ""}`}
-          href={rovNavLink.url}
-        >
-          <span className="dashboard-nav-footer__icon">
-            <RovIconComponent />
-          </span>
-          <span>{rovNavLink.label}</span>
-        </Link>
-        <Link
-          className={`dashboard-nav-footer__link${settingsActive ? " is-active" : ""}`}
-          href={settingsNavLink.url}
-        >
-          <span className="dashboard-nav-footer__icon">
-            <SettingsIconComponent />
-          </span>
-          <span>{settingsNavLink.label}</span>
-        </Link>
-      </div>
-    </aside>
+          <p className="dashboard-nav-promo__title">ROV Inspection</p>
+          <p className="dashboard-nav-promo__text">
+            Plan dives, log observations and publish inspection reports.
+          </p>
+          <Button size="slim" url={rovNavLink.url}>
+            Open ROV
+          </Button>
+        </div>
+      }
+    />
   );
 }

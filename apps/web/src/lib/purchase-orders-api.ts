@@ -142,17 +142,56 @@ export interface GoodsReceipt {
   validatedAt: string | null;
   createdAt: string;
   lines?: GoodsReceiptLine[];
+  /** List-only fields. */
+  branchId?: string;
+  vendorId?: string;
+  purchaseOrderReceiptStatus?: PurchaseReceiptStatus;
+  lineCount?: number;
+  totalQuantity?: string;
+  serialCount?: number;
+  warehouseNames?: string[];
+  productNames?: string[];
+}
+
+export interface GoodsReceiptListSummary {
+  all: number;
+  draft: number;
+  done: number;
+  cancelled: number;
+  doneThisMonth: number;
+  unitsThisMonth: string;
+}
+
+export interface ListGoodsReceiptsParams {
+  page?: number;
+  perPage?: number;
+  state?: GoodsReceiptState;
+  search?: string;
+  sort?: "newest" | "receipt_date" | "number";
+  purchaseOrderId?: string;
 }
 
 export interface ListPurchaseOrdersParams {
   state?: PurchaseOrderState;
-  receiptStatus?: PurchaseReceiptStatus;
+  /** "outstanding" = confirmed and still waiting on goods (to_receive or partial). */
+  receiptStatus?: PurchaseReceiptStatus | "outstanding";
   vendorId?: string;
   search?: string;
   page?: number;
   perPage?: number;
   sortBy?: "number" | "orderDate" | "amountTotal" | "createdAt";
   sortDir?: "asc" | "desc";
+}
+
+export interface PurchaseOrderSummary {
+  all: number;
+  draft: number;
+  confirmed: number;
+  cancelled: number;
+  outstanding: number;
+  partial: number;
+  received: number;
+  overdue: number;
 }
 
 export interface PaginatedPurchaseOrders {
@@ -163,6 +202,7 @@ export interface PaginatedPurchaseOrders {
     total: number;
     totalPages: number;
   };
+  summary?: PurchaseOrderSummary;
 }
 
 function poQuery(params: ListPurchaseOrdersParams) {
@@ -349,12 +389,20 @@ export function createGoodsReceipt(purchaseOrderId: string) {
   );
 }
 
-export function listGoodsReceipts(params: { page?: number; perPage?: number } = {}) {
+export function listGoodsReceipts(params: ListGoodsReceiptsParams = {}) {
   const search = new URLSearchParams();
   if (params.page) search.set("page", String(params.page));
   if (params.perPage) search.set("perPage", String(params.perPage));
+  if (params.state) search.set("state", params.state);
+  if (params.search) search.set("search", params.search);
+  if (params.sort) search.set("sort", params.sort);
+  if (params.purchaseOrderId) search.set("purchaseOrderId", params.purchaseOrderId);
   const query = search.toString();
-  return apiFetch<{ data: GoodsReceipt[]; meta: PaginatedPurchaseOrders["meta"] }>(
+  return apiFetch<{
+    data: GoodsReceipt[];
+    meta: PaginatedPurchaseOrders["meta"];
+    summary?: GoodsReceiptListSummary;
+  }>(
     `/api/v1/goods-receipts${query ? `?${query}` : ""}`,
   );
 }

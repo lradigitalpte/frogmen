@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { alias } from "drizzle-orm/pg-core";
-import { and, asc, desc, eq, isNotNull, isNull, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import {
   accountMoveLines,
   accountMoves,
@@ -71,7 +71,7 @@ export class ExpensesService {
         ),
       )
       .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt))
-      .limit(200);
+      .limit(2000);
 
     let monthTotal = 0;
     let monthCount = 0;
@@ -81,8 +81,7 @@ export class ExpensesService {
     const expenseRows = rows.map((row) => {
       const amount = roundMoney(Number(row.expense.amount));
       const paymentSource =
-        row.expense.paymentMethod === "cash" ||
-        row.expense.paymentMethod === "cheque"
+        row.expense.paymentMethod === "cash"
           ? ("cash" as const)
           : ("bank" as const);
       const inMonth = row.expense.expenseDate >= monthStart;
@@ -191,8 +190,7 @@ export class ExpensesService {
     }
 
     const paymentSource =
-      row.expense.paymentMethod === "cash" ||
-      row.expense.paymentMethod === "cheque"
+      row.expense.paymentMethod === "cash"
         ? ("cash" as const)
         : ("bank" as const);
 
@@ -361,6 +359,24 @@ export class ExpensesService {
   }
 
   private async syncReimbursementLedgerEntries(organizationId: string) {
+    // Expenses created from claims by older code lost the claim category and receipt — fill them in.
+    await this.db.execute(sql`
+      update expenses e
+      set category_id = coalesce(e.category_id, c.category_id),
+          receipt_path = coalesce(e.receipt_path, c.receipt_path),
+          updated_at = now()
+      from expense_claims c
+      where e.organization_id = ${organizationId}
+        and c.organization_id = e.organization_id
+        and c.account_move_id = e.account_move_id
+        and c.status = 'reimbursed'
+        and e.deleted_at is null
+        and (
+          (e.category_id is null and c.category_id is not null)
+          or (e.receipt_path is null and c.receipt_path is not null)
+        )
+    `);
+
     const linkedExpenseMoves = await this.db
       .select({ accountMoveId: expenses.accountMoveId })
       .from(expenses)

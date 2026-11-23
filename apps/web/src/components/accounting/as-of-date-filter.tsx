@@ -17,6 +17,12 @@ export const AS_OF_PRESETS = [
 
 export type AsOfPreset = (typeof AS_OF_PRESETS)[number]["value"];
 
+/** Local calendar date as YYYY-MM-DD (toISOString() shifts to UTC and can land on the previous day). */
+function localIso(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function resolveAsOfDate(preset: AsOfPreset, customDate: string) {
   const now = new Date();
 
@@ -26,12 +32,12 @@ export function resolveAsOfDate(preset: AsOfPreset, customDate: string) {
 
   if (preset === "last_month_end") {
     const end = new Date(now.getFullYear(), now.getMonth(), 0);
-    return end.toISOString().slice(0, 10);
+    return localIso(end);
   }
 
   if (preset === "last_quarter_end") {
     const end = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 0);
-    return end.toISOString().slice(0, 10);
+    return localIso(end);
   }
 
   return todayIsoDate();

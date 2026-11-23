@@ -1,213 +1,178 @@
 "use client";
 
-import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
-
-import { StatusBadge } from "@/components/ui/status-badge";
 import {
-  contactStatusLabel,
-  contactStatusVariant,
-  deleteLead,
-  priorityBadgeVariant,
-  priorityLabel,
-  sourceBadgeVariant,
-  sourceLabel,
-  stageBadgeVariant,
-  stageLabel,
-  updateLeadStage,
-} from "@/lib/leads-api";
-import type { Lead, LeadStage } from "@/types/lead";
-import { Building2, Calendar, Clock, Eye, Mail, MessageSquare, MoreHorizontal, Phone, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+  ActionList,
+  Badge,
+  BlockStack,
+  Button,
+  Card,
+  EmptyState,
+  IndexTable,
+  Popover,
+  Text,
+} from "@shopify/polaris";
+import { MenuHorizontalIcon } from "@shopify/polaris-icons";
+import { useState } from "react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
+import { formatAppDate } from "@/lib/format-date";
+import { contactStatusLabel, isFollowUpDue, sourceLabel } from "@/lib/leads-api";
+import type { Lead, LeadStage } from "@/types/lead";
+import { LEAD_STAGES, NEXT_STAGE, priorityTone, stageMeta } from "./lead-ui";
 
 interface LeadTableProps {
   leads: Lead[];
+  loading: boolean;
+  filtered: boolean;
   onSelectLead: (lead: Lead) => void;
   onLogContact: (lead: Lead) => void;
-  onLeadUpdated: (lead: Lead) => void;
-  onLeadDeleted: (id: string, lead: Lead) => void;
+  onEditLead: (lead: Lead) => void;
+  onMoveLead: (lead: Lead, stage: LeadStage) => void;
+  onDeleteLead: (lead: Lead) => void;
+  onCreateLead: () => void;
 }
-
-const STAGES: LeadStage[] = ["new", "contacted", "qualified", "proposal", "won", "lost"];
 
 export function LeadTable({
   leads,
+  loading,
+  filtered,
   onSelectLead,
   onLogContact,
-  onLeadUpdated,
-  onLeadDeleted,
+  onEditLead,
+  onMoveLead,
+  onDeleteLead,
+  onCreateLead,
 }: LeadTableProps) {
   const { formatBaseMoney } = useOrgCurrency();
-  if (leads.length === 0) {
-    return (
-      <div className="text-center py-12 border rounded-xl bg-card">
-        <p className="text-muted-foreground text-sm font-medium">
-          No leads match your current search or filter criteria.
-        </p>
-      </div>
-    );
-  }
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   return (
-    <div className="border rounded-xl bg-card overflow-x-auto shadow-xs">
-      <table className="w-full text-left text-sm border-collapse">
-        <thead>
-          <tr className="border-b bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            <th className="py-3 px-4">Contact & Company</th>
-            <th className="py-3 px-4">Lead Origin Source</th>
-            <th className="py-3 px-4">Contacted Status</th>
-            <th className="py-3 px-4">Stage</th>
-            <th className="py-3 px-4">Priority</th>
-            <th className="py-3 px-4">Est. Value</th>
-            <th className="py-3 px-4">Follow-Up</th>
-            <th className="py-3 px-4 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {leads.map((lead) => {
-            const isFollowUpOverdue =
-              lead.nextFollowUp &&
-              lead.nextFollowUp <= new Date().toISOString() &&
-              lead.stage !== "won" &&
-              lead.stage !== "lost";
-
-            return (
-              <tr
-                key={lead.id}
-                className="hover:bg-muted/30 transition-colors group cursor-pointer"
-                onClick={() => onSelectLead(lead)}
-              >
-                {/* Contact & Company */}
-                <td className="py-3 px-4">
-                  <div className="font-bold text-foreground group-hover:text-primary transition-colors">
-                    {lead.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                    <Building2 className="h-3 w-3" />
-                    <span>{lead.company}</span>
-                    {lead.jobTitle && <span className="text-muted-foreground/70">• {lead.jobTitle}</span>}
-                  </div>
-                </td>
-
-                {/* Lead Origin Source */}
-                <td className="py-3 px-4">
-                  <div className="space-y-1">
-                    <StatusBadge variant={sourceBadgeVariant(lead.leadSource)}>
-                      {sourceLabel(lead.leadSource)}
-                    </StatusBadge>
-                    {lead.sourceDetails && (
-                      <p className="text-[11px] text-muted-foreground line-clamp-1 max-w-[200px]" title={lead.sourceDetails}>
-                        {lead.sourceDetails}
-                      </p>
-                    )}
-                  </div>
-                </td>
-
-                {/* Contacted Status & Touchpoint */}
-                <td className="py-3 px-4">
-                  <div className="space-y-1">
-                    <StatusBadge variant={contactStatusVariant(lead.contactStatus)}>
-                      {contactStatusLabel(lead.contactStatus)}
-                    </StatusBadge>
-                    <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {lead.lastContactedAt
-                        ? formatAppDateTime(lead.lastContactedAt)
-                        : lead.contacted
-                          ? "Recorded"
-                          : "Not Contacted"}
-                    </div>
-                  </div>
-                </td>
-
-                {/* Stage */}
-                <td className="py-3 px-4">
-                  <select
-                    className="text-xs font-semibold rounded border border-input bg-background px-2 py-1 focus:outline-none"
-                    value={lead.stage}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      const updated = updateLeadStage(lead.id, e.target.value as LeadStage);
-                      if (updated) onLeadUpdated(updated);
-                    }}
-                  >
-                    {STAGES.map((stg) => (
-                      <option key={stg} value={stg}>
-                        {stageLabel(stg)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-
-                {/* Priority */}
-                <td className="py-3 px-4">
-                  <StatusBadge variant={priorityBadgeVariant(lead.priority)}>
-                    {priorityLabel(lead.priority)}
-                  </StatusBadge>
-                </td>
-
-                {/* Est. Value */}
-                <td className="py-3 px-4 font-bold text-frogmen-emerald">
+    <Card padding="0">
+      <IndexTable
+        resourceName={{ singular: "lead", plural: "leads" }}
+        itemCount={leads.length}
+        selectable={false}
+        loading={loading}
+        emptyState={
+          <EmptyState
+            heading={filtered ? "No leads match these filters" : "No leads yet"}
+            image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
+            action={filtered ? undefined : { content: "Add lead", onAction: onCreateLead }}
+          >
+            <p>
+              {filtered
+                ? "Try a different search, or clear the filters."
+                : "Add the people and companies you are trying to win as customers."}
+            </p>
+          </EmptyState>
+        }
+        headings={[
+          { title: "Lead" },
+          { title: "Stage" },
+          { title: "Priority" },
+          { title: "Source" },
+          { title: "Last contact" },
+          { title: "Next follow-up" },
+          { title: "Value", alignment: "end" },
+          { title: "", hidden: true },
+        ]}
+      >
+        {leads.map((lead, index) => {
+          const due = isFollowUpDue(lead);
+          const next = NEXT_STAGE[lead.stage];
+          return (
+            <IndexTable.Row id={lead.id} key={lead.id} position={index} onClick={() => onSelectLead(lead)}>
+              <IndexTable.Cell>
+                <BlockStack gap="050">
+                  <Text as="span" fontWeight="semibold">{lead.name}</Text>
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    {lead.company}
+                    {lead.jobTitle ? ` · ${lead.jobTitle}` : ""}
+                  </Text>
+                </BlockStack>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <span className="lead-stage-pill" style={{ ["--stage-color" as string]: stageMeta[lead.stage].color }}>
+                  {stageMeta[lead.stage].label}
+                </span>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <Badge tone={priorityTone(lead.priority)}>
+                  {lead.priority.charAt(0).toUpperCase() + lead.priority.slice(1)}
+                </Badge>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <Text as="span" variant="bodySm">{sourceLabel(lead.leadSource)}</Text>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <BlockStack gap="050">
+                  <Text as="span" variant="bodySm">
+                    {lead.lastContactedAt ? formatAppDate(lead.lastContactedAt) : "—"}
+                  </Text>
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    {contactStatusLabel(lead.contactStatus)}
+                  </Text>
+                </BlockStack>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                {lead.nextFollowUp && lead.stage !== "won" && lead.stage !== "lost" ? (
+                  <Text as="span" variant="bodySm" tone={due ? "critical" : undefined} fontWeight={due ? "semibold" : undefined}>
+                    {formatAppDate(lead.nextFollowUp)}
+                    {due ? " · due" : ""}
+                  </Text>
+                ) : (
+                  <Text as="span" variant="bodySm" tone="subdued">—</Text>
+                )}
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <Text as="span" alignment="end" fontWeight="semibold" numeric>
                   {formatBaseMoney(lead.estimatedValue)}
-                </td>
-
-                {/* Follow-Up Date */}
-                <td className="py-3 px-4">
-                  {lead.nextFollowUp ? (
-                    <span
-                      className={`text-xs flex items-center gap-1 font-medium ${
-                        isFollowUpOverdue ? "text-destructive font-bold" : "text-muted-foreground"
-                      }`}
-                    >
-                      <Calendar className="h-3 w-3" />
-                      {formatAppDate(lead.nextFollowUp)}
-                      {isFollowUpOverdue && (
-                        <span className="bg-destructive/15 text-destructive text-[10px] px-1.5 py-0.2 rounded font-bold">
-                          DUE
-                        </span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/60">—</span>
-                  )}
-                </td>
-
-                {/* Actions */}
-                <td className="py-3 px-4 text-right">
-                  <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => onLogContact(lead)}
-                    >
-                      <MessageSquare className="h-3.5 w-3.5 mr-1" /> Touchpoint
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      title="View Details"
-                      onClick={() => onSelectLead(lead)}
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
-                      title="Delete Lead"
-                      onClick={() => onLeadDeleted(lead.id, lead)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                </Text>
+              </IndexTable.Cell>
+              <IndexTable.Cell>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Popover
+                    active={openMenu === lead.id}
+                    onClose={() => setOpenMenu(null)}
+                    preferredAlignment="right"
+                    activator={
+                      <Button
+                        accessibilityLabel={`Actions for ${lead.name}`}
+                        icon={MenuHorizontalIcon}
+                        variant="tertiary"
+                        onClick={() => setOpenMenu((cur) => (cur === lead.id ? null : lead.id))}
+                      />
+                    }
+                  >
+                    <ActionList
+                      actionRole="menuitem"
+                      onActionAnyItem={() => setOpenMenu(null)}
+                      sections={[
+                        {
+                          items: [
+                            { content: "Open", onAction: () => onSelectLead(lead) },
+                            { content: "Log contact", onAction: () => onLogContact(lead) },
+                            { content: "Edit details", onAction: () => onEditLead(lead) },
+                          ],
+                        },
+                        {
+                          title: "Move to",
+                          items: LEAD_STAGES.filter((s) => s !== lead.stage).map((s) => ({
+                            content: stageMeta[s].label + (s === next ? " (next)" : ""),
+                            onAction: () => onMoveLead(lead, s),
+                          })),
+                        },
+                        {
+                          items: [{ content: "Delete", destructive: true, onAction: () => onDeleteLead(lead) }],
+                        },
+                      ]}
+                    />
+                  </Popover>
+                </div>
+              </IndexTable.Cell>
+            </IndexTable.Row>
+          );
+        })}
+      </IndexTable>
+    </Card>
   );
 }

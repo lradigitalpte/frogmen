@@ -1,33 +1,26 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Badge,
   Banner,
-  BlockStack,
-  Box,
   Button,
-  Card,
-  Divider,
-  FormLayout,
-  IndexTable,
-  InlineStack,
-  Layout,
-  Link,
+  ButtonGroup,
+  Icon,
   Modal,
   RadioButton,
-  ResourceItem,
-  ResourceList,
-  Select,
+  SkeletonBodyText,
+  Spinner,
   Text,
   TextField,
 } from "@shopify/polaris";
-import { Boxes, Package, ScanBarcode } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, SearchIcon } from "@shopify/polaris-icons";
+import { Package, ScanBarcode } from "lucide-react";
+import NextLink from "next/link";
 import { AppPage } from "@/components/layout/page";
-import {
-  productUnitStatusLabel,
-  StatusBadge,
-} from "@/components/ui/status-badge";
+import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
+import { useToast } from "@/components/providers/toast-provider";
 import { formatQuantity } from "@/lib/format-quantity";
 import {
   adjustStock,
@@ -38,48 +31,50 @@ import {
   listProducts,
   removeProductUnit,
 } from "@/lib/products-api";
+import { cn } from "@/lib/utils";
 import { listWarehouses } from "@/lib/warehouses-api";
 import type { Product, ProductUnit } from "@/types/product";
 import type { Warehouse } from "@/types/warehouse";
 
-type AdjustMode = "absolute" | "delta";
+type AdjustMode = "add" | "remove" | "set";
+
+const QUICK_AMOUNTS = [1, 5, 10, 25, 50];
+const LOW_STOCK_MAX = 2;
 
 function UpdateStockPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const initialProductId = searchParams.get("productId") ?? "";
-  const initialWarehouseId = searchParams.get("warehouseId") ?? "";
+  const { showSuccess } = useToast();
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState(initialProductId);
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState(
-    initialWarehouseId,
-  );
+  const [productId, setProductId] = useState(searchParams.get("productId") ?? "");
+  const [warehouseId, setWarehouseId] = useState(searchParams.get("warehouseId") ?? "");
+
   const [product, setProduct] = useState<Product | null>(null);
-  const [currentQuantity, setCurrentQuantity] = useState("0");
+  const [levels, setLevels] = useState<Map<string, number>>(new Map());
   const [units, setUnits] = useState<ProductUnit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
-  const [adjustMode, setAdjustMode] = useState<AdjustMode>("delta");
-  const [adjustValue, setAdjustValue] = useState("");
-  const [adjustSaving, setAdjustSaving] = useState(false);
+  const [mode, setMode] = useState<AdjustMode>("add");
+  const [amount, setAmount] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const [newSerial, setNewSerial] = useState("");
+  const [serialInput, setSerialInput] = useState("");
   const [serialSaving, setSerialSaving] = useState(false);
+  const [serialFilter, setSerialFilter] = useState("");
   const [pendingRemove, setPendingRemove] = useState<ProductUnit | null>(null);
-  const [removeReason, setRemoveReason] = useState<"scrapped" | "sold">(
-    "scrapped",
-  );
+  const [removeReason, setRemoveReason] = useState<"scrapped" | "sold">("scrapped");
   const [removing, setRemoving] = useState(false);
+  const loadRef = useRef(0);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -89,172 +84,159 @@ function UpdateStockPageContent() {
       .catch(() => setWarehouses([]));
   }, []);
 
+  // Product list: storable goods, shown straight away and filtered by search.
   useEffect(() => {
-    if (!debouncedSearch.trim() && !selectedProductId) {
-      setProducts([]);
-      return;
-    }
-
     setProductsLoading(true);
     void listProducts({
       search: debouncedSearch || undefined,
-      perPage: 20,
+      perPage: 25,
       archived: false,
+      type: "goods",
+      storableOnly: true,
+      includeStock: true,
+      sortBy: "name",
+      sortDir: "asc",
     })
-      .then((result) => {
-        setProducts(
-          result.data.filter(
-            (item) => item.isStorable && item.type === "goods",
-          ),
-        );
-      })
+      .then((result) => setProducts(result.data.filter((item) => item.isStorable && item.type === "goods")))
       .catch(() => setProducts([]))
       .finally(() => setProductsLoading(false));
-  }, [debouncedSearch, selectedProductId]);
+  }, [debouncedSearch]);
+
+  // Default to the first warehouse — a product link with no warehouse used to load nothing.
+  useEffect(() => {
+    if (!warehouseId && warehouses.length) setWarehouseId(warehouses[0].id);
+  }, [warehouseId, warehouses]);
+
+  // Keep the URL in sync so the page can be shared or refreshed.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (productId) params.set("productId", productId);
+    if (warehouseId) params.set("warehouseId", warehouseId);
+    const next = params.toString();
+    if (next !== searchParams.toString()) router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  }, [pathname, productId, router, searchParams, warehouseId]);
 
   const loadWorkspace = useCallback(async () => {
-    if (!selectedProductId || !selectedWarehouseId) return;
-
+    if (!productId) {
+      setProduct(null);
+      return;
+    }
+    const request = ++loadRef.current;
     setLoading(true);
     setError(null);
-
     try {
-      const [productDetail, stock] = await Promise.all([
-        getProduct(selectedProductId),
-        getProductStock(selectedProductId),
-      ]);
-
-      setProduct(productDetail);
-
-      const level = stock.levels.find(
-        (item) => item.warehouseId === selectedWarehouseId,
-      );
-      setCurrentQuantity(level?.quantity ?? "0");
-
-      if (productDetail.trackSerial) {
-        const unitResult = await listProductUnits(selectedProductId, {
-          warehouseId: selectedWarehouseId,
-          status: "in_stock",
-          perPage: 100,
-        });
-        setUnits(unitResult.data);
+      const detail = await getProduct(productId);
+      const next = new Map<string, number>();
+      let unitRows: ProductUnit[] = [];
+      if (detail.trackSerial) {
+        const result = await listProductUnits(productId, { status: "in_stock", perPage: 500 });
+        unitRows = result.data;
+        for (const unit of unitRows) next.set(unit.warehouseId, (next.get(unit.warehouseId) ?? 0) + 1);
       } else {
-        setUnits([]);
+        const stock = await getProductStock(productId);
+        for (const level of stock.levels) next.set(level.warehouseId, Number(level.quantity) || 0);
       }
+      if (request !== loadRef.current) return;
+      setProduct(detail);
+      setLevels(next);
+      setUnits(unitRows);
     } catch (err) {
+      if (request !== loadRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load stock");
       setProduct(null);
     } finally {
-      setLoading(false);
+      if (request === loadRef.current) setLoading(false);
     }
-  }, [selectedProductId, selectedWarehouseId]);
+  }, [productId]);
 
   useEffect(() => {
-    if (selectedProductId && selectedWarehouseId) {
-      void loadWorkspace();
-    }
-  }, [loadWorkspace, selectedProductId, selectedWarehouseId]);
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
-  useEffect(() => {
-    if (initialProductId && !search) {
-      void getProduct(initialProductId)
-        .then((detail) => {
-          setProduct(detail);
-          setSearch(detail.name);
-        })
-        .catch(() => undefined);
-    }
-  }, [initialProductId, search]);
-
-  const selectedWarehouse = useMemo(
-    () => warehouses.find((item) => item.id === selectedWarehouseId),
-    [selectedWarehouseId, warehouses],
+  const warehouse = warehouses.find((w) => w.id === warehouseId) ?? null;
+  const current = levels.get(warehouseId) ?? 0;
+  const totalOnHand = [...levels.values()].reduce((sum, qty) => sum + qty, 0);
+  const warehouseUnits = units.filter((u) => u.warehouseId === warehouseId);
+  const visibleUnits = warehouseUnits.filter(
+    (u) => !serialFilter.trim() || u.serialNumber.toLowerCase().includes(serialFilter.trim().toLowerCase()),
   );
 
-  const projectedQuantity = useMemo(() => {
-    const current = Number(currentQuantity) || 0;
-    const value = Number(adjustValue) || 0;
-    return adjustMode === "absolute" ? value : current + value;
-  }, [adjustMode, adjustValue, currentQuantity]);
+  const parsedAmount = Number(amount);
+  const amountValid = amount.trim() !== "" && Number.isFinite(parsedAmount) && parsedAmount >= 0;
+  const projected = !amountValid
+    ? current
+    : mode === "set"
+      ? parsedAmount
+      : mode === "add"
+        ? current + parsedAmount
+        : current - parsedAmount;
+  const goesNegative = amountValid && projected < 0;
+  const noChange = amountValid && projected === current;
 
-  async function handleBulkAdjust() {
-    if (!product || !selectedWarehouseId) return;
+  const pendingSerials = useMemo(
+    () =>
+      [...new Set(serialInput.split(/[\n,;\t]+/).map((s) => s.trim()).filter(Boolean))],
+    [serialInput],
+  );
+  const existingSerials = new Set(units.map((u) => u.serialNumber.toLowerCase()));
+  const duplicateSerials = pendingSerials.filter((s) => existingSerials.has(s.toLowerCase()));
 
-    const parsed = Number(adjustValue);
-    if (!adjustValue || Number.isNaN(parsed)) {
-      setError("Enter a valid quantity.");
-      return;
-    }
-
-    setAdjustSaving(true);
+  function chooseProduct(id: string) {
+    setProductId(id);
+    setAmount("");
+    setMode("add");
+    setSerialInput("");
+    setSerialFilter("");
     setError(null);
-    setSuccess(null);
+  }
 
+  async function handleAdjust() {
+    if (!product || !warehouseId || !amountValid || goesNegative || noChange) return;
+    setSaving(true);
+    setError(null);
     try {
-      if (adjustMode === "absolute") {
-        await adjustStock({
-          productId: product.id,
-          warehouseId: selectedWarehouseId,
-          quantity: String(parsed),
-        });
-      } else {
-        await adjustStock({
-          productId: product.id,
-          warehouseId: selectedWarehouseId,
-          adjustment: String(parsed),
-        });
-      }
-
-      setAdjustValue("");
-      setSuccess("Stock quantity updated.");
+      await adjustStock({ productId: product.id, warehouseId, quantity: String(projected) });
+      showSuccess(`${product.name}: ${formatQuantity(String(current))} → ${formatQuantity(String(projected))} in ${warehouse?.name ?? "warehouse"}`);
+      setAmount("");
       await loadWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update stock");
     } finally {
-      setAdjustSaving(false);
+      setSaving(false);
     }
   }
 
-  async function handleAddSerial() {
-    if (!product || !selectedWarehouseId) return;
-
-    if (!newSerial.trim()) {
-      setError("Enter a serial number.");
-      return;
-    }
-
+  async function handleAddSerials() {
+    if (!product || !warehouseId || pendingSerials.length === 0) return;
     setSerialSaving(true);
     setError(null);
-    setSuccess(null);
-
-    try {
-      await createProductUnit(product.id, {
-        serialNumber: newSerial.trim(),
-        warehouseId: selectedWarehouseId,
-      });
-      setNewSerial("");
-      setSuccess(`Serial ${newSerial.trim()} added to stock.`);
-      await loadWorkspace();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add serial");
-    } finally {
-      setSerialSaving(false);
+    const added: string[] = [];
+    const failed: string[] = [];
+    for (const serial of pendingSerials) {
+      try {
+        await createProductUnit(product.id, { serialNumber: serial, warehouseId });
+        added.push(serial);
+      } catch (err) {
+        failed.push(`${serial} (${err instanceof Error ? err.message : "failed"})`);
+      }
     }
+    setSerialSaving(false);
+    setSerialInput(failed.length ? pendingSerials.filter((s) => !added.includes(s)).join("\n") : "");
+    if (added.length) showSuccess(added.length === 1 ? `Serial ${added[0]} added` : `${added.length} serials added`);
+    if (failed.length) setError(`Couldn't add: ${failed.join(", ")}`);
+    await loadWorkspace();
   }
 
   async function handleConfirmRemove() {
-    if (!product || !pendingRemove) return;
-
+    if (!pendingRemove) return;
     setRemoving(true);
     setError(null);
-    setSuccess(null);
-
     try {
       await removeProductUnit(pendingRemove.id, removeReason);
-      setSuccess(
+      showSuccess(
         removeReason === "sold"
-          ? `Serial ${pendingRemove.serialNumber} marked as sold. This serial stays reserved and cannot be reused.`
-          : `Serial ${pendingRemove.serialNumber} marked as scrapped. You can reuse this serial on a new unit.`,
+          ? `${pendingRemove.serialNumber} marked as sold`
+          : `${pendingRemove.serialNumber} marked as scrapped`,
       );
       setPendingRemove(null);
       setRemoveReason("scrapped");
@@ -266,501 +248,354 @@ function UpdateStockPageContent() {
     }
   }
 
-  function selectProduct(id: string) {
-    setSelectedProductId(id);
-    setSuccess(null);
-    setError(null);
-    if (!selectedWarehouseId && warehouses[0]) {
-      setSelectedWarehouseId(warehouses[0].id);
-    }
-  }
-
   return (
     <AppPage
       backAction={{ content: "Inventory", url: "/dashboard/inventory" }}
-      subtitle="Increase quantities for general products, or manage serial numbers for equipment like ROVs."
+      secondaryActions={[{ content: "Purchase orders", url: "/dashboard/purchasing/orders" }]}
+      subtitle="Count, add or remove stock — or register serial numbers for equipment."
       title="Update stock"
     >
-      <BlockStack gap="500">
-        <Banner tone="info">
-          <BlockStack gap="200">
-            <Text as="p" fontWeight="semibold">
-              Two ways to track stock
-            </Text>
-            <Text as="p">
-              <strong>Quantity</strong>   for general parts and consumables sold
-              by count (cables, bolts, spares). Just enter how many you have or
-              add/remove units (+50 / −5).
-            </Text>
-            <Text as="p">
-              <strong>Serialized</strong>   for equipment where each physical
-              unit has its own serial (ROVs, batteries). Each serial is added
-              individually or received on a purchase order.
-            </Text>
-          </BlockStack>
-        </Banner>
-        {error ? (
-          <Banner tone="critical" onDismiss={() => setError(null)}>
-            {error}
-          </Banner>
-        ) : null}
-        {success ? (
-          <Banner tone="success" onDismiss={() => setSuccess(null)}>
-            {success}
-          </Banner>
-        ) : null}
+      <div className="us">
+        {/* Product picker */}
+        <aside className="us-picker">
+          <div className="us-picker__head">
+            <h2>Product</h2>
+            <TextField
+              autoComplete="off"
+              clearButton
+              label="Search products"
+              labelHidden
+              placeholder="Search name or SKU"
+              prefix={<Icon source={SearchIcon} />}
+              suffix={productsLoading ? <Spinner size="small" /> : undefined}
+              value={search}
+              onChange={setSearch}
+              onClearButtonClick={() => setSearch("")}
+            />
+          </div>
+          <div className="us-picker__list" role="listbox" aria-label="Products">
+            {products.length === 0 && !productsLoading ? (
+              <p className="us-picker__empty">
+                {debouncedSearch ? `No stocked products match “${debouncedSearch}”.` : "No stocked products yet."}
+              </p>
+            ) : (
+              products.map((item) => {
+                const qty = item.availableQuantity ?? null;
+                return (
+                  <button
+                    aria-selected={item.id === productId}
+                    className={cn("us-pick", item.id === productId && "is-selected")}
+                    key={item.id}
+                    role="option"
+                    type="button"
+                    onClick={() => chooseProduct(item.id)}
+                  >
+                    <ProductListThumbnail alt={item.name} imagePath={item.images?.[0] ?? null} />
+                    <span className="us-pick__text">
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.sku || "No SKU"} · {item.trackSerial ? "Serialized" : "Quantity"}
+                      </small>
+                    </span>
+                    {qty !== null ? (
+                      <span className={cn("us-pick__qty", qty <= 0 && "is-out", qty > 0 && qty <= LOW_STOCK_MAX && "is-low")}>
+                        {formatQuantity(String(qty))}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
 
-        <Layout>
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="400">
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    1. Choose product
-                  </Text>
-                  <TextField
-                    autoComplete="off"
-                    label="Search products"
-                    placeholder="Name or SKU…"
-                    value={search}
-                    onChange={setSearch}
-                  />
-                  {productsLoading ? (
-                    <Text as="p" tone="subdued">
-                      Searching…
-                    </Text>
-                  ) : null}
-                  {products.length > 0 ? (
-                    <ResourceList
-                      items={products}
-                      renderItem={(item) => {
-                        const selected = item.id === selectedProductId;
-                        return (
-                          <ResourceItem
-                            id={item.id}
-                            accessibilityLabel={`Select ${item.name}`}
-                            onClick={() => selectProduct(item.id)}
-                          >
-                            <InlineStack
-                              align="space-between"
-                              blockAlign="center"
-                            >
-                              <BlockStack gap="050">
-                                <Text
-                                  as="span"
-                                  fontWeight={selected ? "bold" : "semibold"}
-                                >
-                                  {item.name}
-                                </Text>
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  {item.sku || "No SKU"}
-                                </Text>
-                              </BlockStack>
-                              <StatusBadge
-                                variant={item.trackSerial ? "info" : "success"}
-                              >
-                                {item.trackSerial ? "Serialized" : "Quantity"}
-                              </StatusBadge>
-                            </InlineStack>
-                          </ResourceItem>
-                        );
-                      }}
-                    />
-                  ) : debouncedSearch ? (
-                    <Text as="p" tone="subdued">
-                      No storable products found.
-                    </Text>
-                  ) : (
-                    <Text as="p" tone="subdued">
-                      Search to pick a product, or open this page from Inventory
-                      with a product pre-selected.
-                    </Text>
-                  )}
-                </BlockStack>
-              </Card>
+        {/* Workspace */}
+        <section className="us-work">
+          {error ? (
+            <Banner tone="critical" onDismiss={() => setError(null)}>
+              {error}
+            </Banner>
+          ) : null}
 
-              <Card>
-                <BlockStack gap="300">
-                  <Text as="h2" variant="headingMd">
-                    2. Choose warehouse
-                  </Text>
-                  <Select
-                    disabled={!selectedProductId}
-                    label="Warehouse"
-                    options={warehouses.map((warehouse) => ({
-                      label: `${warehouse.code}   ${warehouse.name}`,
-                      value: warehouse.id,
-                    }))}
-                    placeholder="Select warehouse"
-                    value={selectedWarehouseId}
-                    onChange={setSelectedWarehouseId}
-                  />
-                </BlockStack>
-              </Card>
-            </BlockStack>
-          </Layout.Section>
-
-          <Layout.Section>
-            {!selectedProductId || !selectedWarehouseId ? (
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Stock workspace
-                  </Text>
-                  <Text as="p" tone="subdued">
-                    Select a product and warehouse to update quantity or manage
-                    serial numbers.
-                  </Text>
-                </BlockStack>
-              </Card>
-            ) : loading && !product ? (
-              <Card>
-                <Text as="p" tone="subdued">
-                  Loading stock…
-                </Text>
-              </Card>
-            ) : product ? (
-              <BlockStack gap="400">
-                <Card>
-                  <InlineStack align="space-between" blockAlign="start" wrap>
-                    <InlineStack gap="300" blockAlign="center">
-                      <Box
-                        background="bg-surface-secondary"
-                        borderRadius="full"
-                        padding="300"
-                      >
-                        {product.trackSerial ? (
-                          <ScanBarcode
-                            aria-hidden
-                            size={22}
-                            strokeWidth={1.75}
-                          />
-                        ) : (
-                          <Package aria-hidden size={22} strokeWidth={1.75} />
-                        )}
-                      </Box>
-                      <BlockStack gap="100">
-                        <InlineStack gap="200" blockAlign="center" wrap>
-                          <Text as="h2" variant="headingLg">
-                            {product.name}
-                          </Text>
-                          <StatusBadge
-                            variant={product.trackSerial ? "info" : "success"}
-                          >
-                            {product.trackSerial ? "Serialized" : "Quantity"}
-                          </StatusBadge>
-                        </InlineStack>
-                        <Text as="p" tone="subdued">
-                          {product.sku || "No SKU"} ·{" "}
-                          {selectedWarehouse?.name ?? "Warehouse"}
-                        </Text>
-                      </BlockStack>
-                    </InlineStack>
-                    <BlockStack gap="050">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        On hand
-                      </Text>
-                      <Text as="span" fontWeight="bold" variant="heading2xl">
-                        {product.trackSerial
-                          ? units.length
-                          : formatQuantity(currentQuantity)}
-                      </Text>
-                    </BlockStack>
-                  </InlineStack>
-                </Card>
-
-                {product.trackSerial ? (
-                  <Card>
-                    <BlockStack gap="400">
-                      <Banner tone="warning">
-                        <p>
-                          <strong>{product.name}</strong> tracks individual
-                          serial numbers. To update by quantity only,{" "}
-                          <Link url={`/dashboard/inventory/products/${product.id}/edit`}>
-                            edit the product
-                          </Link>
-                          , set role to <strong>General product</strong>, and
-                          turn off <strong>Track serial numbers</strong>.
-                        </p>
-                      </Banner>
-                      <BlockStack gap="100">
-                        <Text as="h2" variant="headingMd">
-                          Serialized stock
-                        </Text>
-                        <Text as="p" tone="subdued">
-                          Each unit needs its own serial number. Quantity equals
-                          the number of in-stock serials in this warehouse.
-                        </Text>
-                      </BlockStack>
-
-                      <FormLayout>
-                        <FormLayout.Group>
-                          <TextField
-                            autoComplete="off"
-                            label="Add serial number"
-                            placeholder="e.g. SN-65786"
-                            value={newSerial}
-                            onChange={setNewSerial}
-                          />
-                          <div style={{ paddingTop: "1.5rem" }}>
-                            <Button
-                              loading={serialSaving}
-                              variant="primary"
-                              onClick={() => void handleAddSerial()}
-                            >
-                              Add to stock
-                            </Button>
-                          </div>
-                        </FormLayout.Group>
-                      </FormLayout>
-
-                      <Divider />
-
-                      {units.length > 0 ? (
-                        <IndexTable
-                          headings={[
-                            { title: "Serial number" },
-                            { title: "Status" },
-                            { title: "" },
-                          ]}
-                          itemCount={units.length}
-                          selectable={false}
+          {!productId ? (
+            <div className="ex-surface">
+              <div className="ex-empty">
+                <span className="ex-empty__icon">
+                  <Package aria-hidden size={20} />
+                </span>
+                <strong>Pick a product to start</strong>
+                <p>
+                  <b>Quantity</b> products (cables, bolts, spares) are counted. <b>Serialized</b> products (ROVs,
+                  batteries) are added one serial at a time.
+                </p>
+              </div>
+            </div>
+          ) : !product ? (
+            <div className="ex-surface ex-pad">
+              <SkeletonBodyText lines={6} />
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <section className={cn("pl-hero us-hero", loading && "is-loading")}>
+                <div className="pl-hero__main">
+                  <span className="pl-hero__label">
+                    {product.trackSerial ? "Serials in stock" : "On hand"} · {warehouse?.name ?? "—"}
+                  </span>
+                  <strong className="pl-hero__value">{formatQuantity(String(current))}</strong>
+                  <span className="pl-hero__period">
+                    <NextLink className="us-hero__name" href={`/dashboard/inventory/products/${product.id}`}>
+                      {product.name}
+                    </NextLink>
+                    {product.sku ? ` · ${product.sku}` : ""} · {formatQuantity(String(totalOnHand))} across all warehouses
+                  </span>
+                </div>
+                <div className="us-warehouses">
+                  <span className="us-warehouses__label">Warehouse</span>
+                  <div className="us-warehouses__list">
+                    {warehouses.map((w) => {
+                      const qty = levels.get(w.id) ?? 0;
+                      return (
+                        <button
+                          className={cn("us-wh", w.id === warehouseId && "is-active")}
+                          key={w.id}
+                          type="button"
+                          onClick={() => {
+                            setWarehouseId(w.id);
+                            setAmount("");
+                          }}
                         >
-                          {units.map((unit, index) => (
-                            <IndexTable.Row
-                              id={unit.id}
-                              key={unit.id}
-                              position={index}
-                            >
-                              <IndexTable.Cell>
-                                <Link url={`/dashboard/inventory/units/${unit.id}`}>
-                                  {unit.serialNumber}
-                                </Link>
-                              </IndexTable.Cell>
-                              <IndexTable.Cell>
-                                <StatusBadge variant="success">
-                                  {productUnitStatusLabel(unit.status)}
-                                </StatusBadge>
-                              </IndexTable.Cell>
-                              <IndexTable.Cell>
-                                <Button
-                                  tone="critical"
-                                  variant="plain"
-                                  onClick={() => {
-                                    setPendingRemove(unit);
-                                    setRemoveReason("scrapped");
-                                  }}
-                                >
-                                  Remove
-                                </Button>
-                              </IndexTable.Cell>
-                            </IndexTable.Row>
-                          ))}
-                        </IndexTable>
-                      ) : (
-                        <Text as="p" tone="subdued">
-                          No serial numbers in this warehouse yet. Add one above
-                          or receive via a purchase order.
-                        </Text>
-                      )}
-                    </BlockStack>
-                  </Card>
-                ) : (
-                  <Card>
-                    <BlockStack gap="400">
-                      <BlockStack gap="100">
-                        <Text as="h2" variant="headingMd">
-                          Quantity on hand
-                        </Text>
-                        <Text as="p" tone="subdued">
-                          No serial numbers needed. Enter how many units you
-                          have in this warehouse   add stock when you receive
-                          more, or remove when you sell or use items.
-                        </Text>
-                      </BlockStack>
+                          <span>
+                            <strong>{w.name}</strong>
+                            <small>{w.code}</small>
+                          </span>
+                          <b>{formatQuantity(String(qty))}</b>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
 
-                      <div className="quotation-summary-panel__rows">
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            Current on hand
-                          </Text>
-                          <Text as="span" fontWeight="semibold">
-                            {formatQuantity(currentQuantity)}
-                          </Text>
-                        </div>
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            After update
-                          </Text>
-                          <Text as="span" fontWeight="semibold">
-                            {projectedQuantity}
-                          </Text>
-                        </div>
-                      </div>
+              {product.trackSerial ? (
+                <section className="ex-surface">
+                  <header className="pd-head">
+                    <div>
+                      <h2>
+                        <ScanBarcode aria-hidden size={17} /> Add serial numbers
+                      </h2>
+                      <p>One per line, or paste a list separated by commas. Each becomes a unit in {warehouse?.name}.</p>
+                    </div>
+                  </header>
+                  <div className="us-serial-add">
+                    <TextField
+                      autoComplete="off"
+                      label="Serial numbers"
+                      labelHidden
+                      multiline={3}
+                      placeholder="e.g. SN-0001, SN-0002 — or one per line"
+                      value={serialInput}
+                      onChange={setSerialInput}
+                      error={
+                        duplicateSerials.length
+                          ? `Already registered: ${duplicateSerials.join(", ")}`
+                          : undefined
+                      }
+                    />
+                    <div className="us-serial-add__foot">
+                      <span>
+                        {pendingSerials.length
+                          ? `${pendingSerials.length} serial${pendingSerials.length === 1 ? "" : "s"} ready`
+                          : "Nothing to add yet"}
+                      </span>
+                      <Button
+                        disabled={!pendingSerials.length || duplicateSerials.length > 0 || !warehouseId}
+                        loading={serialSaving}
+                        variant="primary"
+                        onClick={() => void handleAddSerials()}
+                      >
+                        {pendingSerials.length > 1 ? `Add ${pendingSerials.length} serials` : "Add serial"}
+                      </Button>
+                    </div>
+                  </div>
 
-                      <BlockStack gap="200">
-                        <Text as="p" fontWeight="semibold">
-                          Quick add
-                        </Text>
-                        <InlineStack gap="200" wrap>
-                          {[1, 5, 10, 25, 50, 100].map((amount) => (
-                            <Button
-                              key={amount}
-                              size="slim"
-                              onClick={() => {
-                                setAdjustMode("delta");
-                                setAdjustValue(String(amount));
-                              }}
-                            >
-                              {`+${amount}`}
-                            </Button>
-                          ))}
-                        </InlineStack>
-                      </BlockStack>
-
-                      <BlockStack gap="200">
-                        <Text as="p" fontWeight="semibold">
-                          Update method
-                        </Text>
-                        <RadioButton
-                          checked={adjustMode === "delta"}
-                          id="stock-delta"
-                          label="Add or remove (+5 / −2)"
-                          name="stock-mode"
-                          onChange={() => setAdjustMode("delta")}
-                        />
-                        <RadioButton
-                          checked={adjustMode === "absolute"}
-                          id="stock-absolute"
-                          label="Set exact quantity on hand"
-                          name="stock-mode"
-                          onChange={() => setAdjustMode("absolute")}
-                        />
-                      </BlockStack>
-
-                      <FormLayout>
+                  <div className="pd-toolbar">
+                    <strong className="us-subhead">
+                      In stock at {warehouse?.name} · {warehouseUnits.length}
+                    </strong>
+                    {warehouseUnits.length > 5 ? (
+                      <div className="pd-toolbar__search">
                         <TextField
                           autoComplete="off"
-                          helpText={
-                            adjustMode === "delta"
-                              ? "Use negative numbers to remove stock (e.g. −3 after a sale)."
-                              : "Replaces the current quantity (e.g. set to 120 after a stock count)."
-                          }
-                          label={
-                            adjustMode === "delta"
-                              ? "Change by (+/−)"
-                              : "New quantity on hand"
-                          }
-                          type="number"
-                          value={adjustValue}
-                          onChange={setAdjustValue}
+                          clearButton
+                          label="Filter serials"
+                          labelHidden
+                          placeholder="Filter serials"
+                          prefix={<Icon source={SearchIcon} />}
+                          value={serialFilter}
+                          onChange={setSerialFilter}
+                          onClearButtonClick={() => setSerialFilter("")}
                         />
-                      </FormLayout>
-
-                      <Button
-                        loading={adjustSaving}
-                        variant="primary"
-                        onClick={() => void handleBulkAdjust()}
-                      >
-                        Update quantity
+                      </div>
+                    ) : null}
+                  </div>
+                  {warehouseUnits.length === 0 ? (
+                    <p className="pd-none">No serials in this warehouse yet. Add some above, or receive them on a purchase order.</p>
+                  ) : (
+                    <ul className="ex-list us-serials">
+                      {visibleUnits.map((unit) => (
+                        <li key={unit.id}>
+                          <NextLink href={`/dashboard/inventory/units/${unit.id}`}>
+                            <strong>{unit.serialNumber}</strong>
+                          </NextLink>
+                          <Badge tone="success">In stock</Badge>
+                          <Button
+                            size="slim"
+                            tone="critical"
+                            variant="tertiary"
+                            onClick={() => {
+                              setPendingRemove(unit);
+                              setRemoveReason("scrapped");
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ) : (
+                <section className="ex-surface">
+                  <header className="pd-head">
+                    <div>
+                      <h2>
+                        <Package aria-hidden size={17} /> Change quantity
+                      </h2>
+                      <p>Add stock you received, remove what was used or lost, or set the exact count after a stocktake.</p>
+                    </div>
+                  </header>
+                  <div className="us-qty">
+                    <ButtonGroup variant="segmented" fullWidth>
+                      <Button pressed={mode === "add"} onClick={() => setMode("add")}>
+                        Add
                       </Button>
-                    </BlockStack>
-                  </Card>
-                )}
+                      <Button pressed={mode === "remove"} onClick={() => setMode("remove")}>
+                        Remove
+                      </Button>
+                      <Button pressed={mode === "set"} onClick={() => setMode("set")}>
+                        Set exact count
+                      </Button>
+                    </ButtonGroup>
 
-                <Card>
-                  <InlineStack align="space-between">
-                    <InlineStack gap="200" blockAlign="center">
-                      <Boxes aria-hidden size={18} />
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {product.trackSerial ? (
-                          <>
-                            Receiving from suppliers? Use{" "}
-                            <Link url="/dashboard/purchasing/orders">
-                              Purchase orders
-                            </Link>{" "}
-                              serial numbers are entered at receive time.
-                          </>
-                        ) : (
-                          <>
-                            Receiving from suppliers? Use{" "}
-                            <Link url="/dashboard/purchasing/orders">
-                              Purchase orders
-                            </Link>{" "}
-                              only quantity is needed, no serial numbers.
-                          </>
-                        )}
-                      </Text>
-                    </InlineStack>
-                    <Button
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/inventory/products/${product.id}`,
-                        )
-                      }
-                    >
-                      Product details
-                    </Button>
-                  </InlineStack>
-                </Card>
-              </BlockStack>
-            ) : null}
-          </Layout.Section>
-        </Layout>
-      </BlockStack>
+                    <div className="us-qty__row">
+                      <div className="us-qty__field">
+                        <TextField
+                          autoComplete="off"
+                          error={
+                            amount && !amountValid
+                              ? "Enter 0 or more."
+                              : goesNegative
+                                ? `Only ${formatQuantity(String(current))} on hand — can't remove more than that.`
+                                : undefined
+                          }
+                          label={mode === "add" ? "Units to add" : mode === "remove" ? "Units to remove" : "Units on hand"}
+                          min={0}
+                          type="number"
+                          value={amount}
+                          onChange={setAmount}
+                        />
+                      </div>
+                      {mode !== "set" ? (
+                        <div className="us-qty__quick">
+                          {QUICK_AMOUNTS.map((n) => (
+                            <Button key={n} size="slim" onClick={() => setAmount(String((Number(amount) || 0) + n))}>
+                              {`${mode === "add" ? "+" : "−"}${n}`}
+                            </Button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className={cn("us-preview", goesNegative && "is-error")}>
+                      <span>
+                        <small>Now</small>
+                        <strong>{formatQuantity(String(current))}</strong>
+                      </span>
+                      <Icon source={ArrowRightIcon} />
+                      <span>
+                        <small>After</small>
+                        <strong>{formatQuantity(String(projected))}</strong>
+                      </span>
+                      {amountValid && !goesNegative && !noChange ? (
+                        <em className={projected > current ? "is-up" : "is-down"}>
+                          {projected > current ? "+" : "−"}
+                          {formatQuantity(String(Math.abs(projected - current)))}
+                        </em>
+                      ) : null}
+                    </div>
+
+                    <div className="us-qty__actions">
+                      <Button
+                        disabled={!amountValid || goesNegative || noChange || !warehouseId}
+                        icon={CheckIcon}
+                        loading={saving}
+                        variant="primary"
+                        onClick={() => void handleAdjust()}
+                      >
+                        {mode === "add" ? "Add stock" : mode === "remove" ? "Remove stock" : "Save count"}
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <p className="pl-foot">
+                Receiving from a supplier? Use{" "}
+                <NextLink href="/dashboard/purchasing/orders">purchase orders</NextLink> —{" "}
+                {product.trackSerial ? "serials are entered when you receive." : "quantities update when you receive."}{" "}
+                Sales on invoices take stock out automatically.
+              </p>
+            </>
+          )}
+        </section>
+      </div>
 
       <Modal
         open={Boolean(pendingRemove)}
-        title="Remove serial from stock?"
+        title={`Remove ${pendingRemove?.serialNumber ?? "serial"} from stock?`}
         onClose={() => {
           if (removing) return;
           setPendingRemove(null);
-          setRemoveReason("scrapped");
         }}
         primaryAction={{
-          content:
-            removeReason === "sold" ? "Mark as sold" : "Mark as scrapped",
+          content: removeReason === "sold" ? "Mark as sold" : "Mark as scrapped",
           destructive: true,
           loading: removing,
           onAction: () => void handleConfirmRemove(),
         }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            disabled: removing,
-            onAction: () => {
-              setPendingRemove(null);
-              setRemoveReason("scrapped");
-            },
-          },
-        ]}
+        secondaryActions={[{ content: "Cancel", disabled: removing, onAction: () => setPendingRemove(null) }]}
       >
         <Modal.Section>
-          <BlockStack gap="300">
-            <Text as="p">
-              Serial{" "}
-              <Text as="span" fontWeight="semibold">
-                {pendingRemove?.serialNumber}
-              </Text>{" "}
-              will leave active stock. Choose why:
-            </Text>
+          <div className="us-reasons">
+            <Text as="p">Why is it leaving stock?</Text>
             <RadioButton
-              label="Scrapped"
-              helpText="Damaged, lost, or written off. Serial can be reused afterward."
               checked={removeReason === "scrapped"}
+              helpText="Damaged, lost or written off. The serial can be reused later."
               id="remove-reason-scrapped"
+              label="Scrapped"
               name="remove-reason"
               onChange={() => setRemoveReason("scrapped")}
             />
             <RadioButton
-              label="Sold"
-              helpText="Sold outside a FrogmenDash invoice. Serial stays reserved and cannot be reused. Prefer invoicing when you need warranty/COGS."
               checked={removeReason === "sold"}
+              helpText="Sold without an invoice here. The serial stays reserved. Invoice it instead if you need warranty and cost tracking."
               id="remove-reason-sold"
+              label="Sold"
               name="remove-reason"
               onChange={() => setRemoveReason("sold")}
             />
-          </BlockStack>
+          </div>
         </Modal.Section>
       </Modal>
     </AppPage>
@@ -772,9 +607,7 @@ export function UpdateStockPage() {
     <Suspense
       fallback={
         <AppPage title="Update stock">
-          <Text as="p" tone="subdued">
-            Loading…
-          </Text>
+          <SkeletonBodyText lines={6} />
         </AppPage>
       }
     >

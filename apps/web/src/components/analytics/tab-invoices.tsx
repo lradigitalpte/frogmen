@@ -1,183 +1,151 @@
 "use client";
 
-import { useOrgCurrency } from "@/hooks/use-org-currency";
-import { formatAlertMoney } from "@/lib/alerts-api";
-import {
-  monthLabel,
-  pctChange,
-  type AnalyticsSectionData,
-  type InvoiceStats,
-} from "@/lib/analytics-api";
-import { KpiCard } from "@/components/ui/kpi-card";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, CheckCircle2, DollarSign, Wallet } from "lucide-react";
+import { BlockStack, Card, InlineStack, ProgressBar, Text } from "@shopify/polaris";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { useOrgCurrency } from "@/hooks/use-org-currency";
+import { formatAlertMoney } from "@/lib/alerts-api";
+import { pctChange, type AnalyticsSectionData, type InvoiceStats } from "@/lib/analytics-api";
+import {
+  ChartCard,
+  ChartRow,
+  ChartTooltip,
+  MetricCard,
+  MetricGrid,
+  compactNumber,
+  shortMonth,
+  useChartTheme,
+} from "./analytics-ui";
 
-interface TabInvoicesProps {
-  data: AnalyticsSectionData<InvoiceStats>;
-}
-
-export function TabInvoices({ data }: TabInvoicesProps) {
+export function TabInvoices({ data }: { data: AnalyticsSectionData<InvoiceStats> }) {
+  const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
-  const formatMoney = (amt: number) => formatAlertMoney(amt, baseCurrencyCode);
-
+  const money = (amount: number) => formatAlertMoney(amount, baseCurrencyCode);
   const cur = data.current;
   const prev = data.compare;
 
-  const invoicedDiff = pctChange(cur.totalInvoiced, prev.totalInvoiced);
-  const paidDiff = pctChange(cur.totalPaid, prev.totalPaid);
-  const colRateDiff = pctChange(cur.collectionRate, prev.collectionRate);
-  const overdueDiff = pctChange(cur.overdueAmount, prev.overdueAmount);
-
-  const monthlyData = cur.byMonth.map((m) => ({
-    name: monthLabel(m.month),
+  const outstanding = Math.max(0, cur.totalInvoiced - cur.totalPaid);
+  const chartData = cur.byMonth.map((m) => ({
+    name: shortMonth(m.month),
     Billed: m.billed,
     Collected: m.paid,
   }));
+  const bestMonth = [...cur.byMonth].sort((a, b) => b.paid - a.paid)[0];
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          icon={<DollarSign className="size-5" />}
-          label="Total Invoiced"
-          value={formatMoney(cur.totalInvoiced)}
-          hint={
-            invoicedDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {invoicedDiff >= 0 ? (
-                  <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={invoicedDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {invoicedDiff >= 0 ? `+${invoicedDiff}%` : `${invoicedDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Billed in period"
-            )
-          }
-          tone="default"
+    <div className="an-stack">
+      <MetricGrid>
+        <MetricCard
+          highlight
+          label="Invoiced"
+          value={money(cur.totalInvoiced)}
+          delta={pctChange(cur.totalInvoiced, prev.totalInvoiced)}
+          hint="Billed in this period"
         />
-
-        <KpiCard
-          icon={<Wallet className="size-5" />}
-          label="Total Collected"
-          value={formatMoney(cur.totalPaid)}
-          hint={
-            paidDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {paidDiff >= 0 ? (
-                  <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={paidDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {paidDiff >= 0 ? `+${paidDiff}%` : `${paidDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Received payments"
-            )
-          }
-          tone="success"
+        <MetricCard
+          label="Collected"
+          value={money(cur.totalPaid)}
+          delta={pctChange(cur.totalPaid, prev.totalPaid)}
+          hint="Payments received"
         />
-
-        <KpiCard
-          icon={<CheckCircle2 className="size-5" />}
-          label="Collection Rate"
+        <MetricCard
+          label="Collection rate"
           value={`${cur.collectionRate}%`}
-          hint={
-            colRateDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {colRateDiff >= 0 ? (
-                  <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={colRateDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {colRateDiff >= 0 ? `+${colRateDiff}%` : `${colRateDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Collected vs Total Invoiced"
-            )
-          }
-          tone="success"
+          delta={pctChange(cur.collectionRate, prev.collectionRate)}
+          hint="Collected ÷ invoiced"
         />
-
-        <KpiCard
-          icon={<AlertTriangle className="size-5" />}
-          label="Overdue Receivables"
-          value={formatMoney(cur.overdueAmount)}
-          hint={
-            overdueDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {overdueDiff <= 0 ? (
-                  <ArrowDownRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowUpRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={overdueDiff <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {overdueDiff >= 0 ? `+${overdueDiff}%` : `${overdueDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              `${cur.overdueCount} account(s) overdue`
-            )
-          }
-          tone="warning"
+        <MetricCard
+          label="Overdue receivables"
+          value={money(cur.overdueAmount)}
+          delta={pctChange(cur.overdueAmount, prev.overdueAmount)}
+          hint={`${cur.overdueCount} overdue invoice${cur.overdueCount === 1 ? "" : "s"}`}
+          lowerIsBetter
         />
-      </div>
+      </MetricGrid>
 
-      {/* Billed vs Paid Grouped Bar Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between text-base">
-            <span>Billed vs Collected by Month</span>
-            <BarChart3 className="size-4 text-muted-foreground" />
-          </CardTitle>
-          <CardDescription>Comparison of invoiced amounts against cash collected</CardDescription>
-        </CardHeader>
-        <CardContent className="h-80">
+      <ChartRow>
+        <ChartCard
+          title="Billed vs collected"
+          description="Invoiced amounts against cash collected each month"
+          legend={[
+            { label: "Billed", color: theme.series.info },
+            { label: "Collected", color: theme.series.primary },
+          ]}
+        >
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-              <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+            <BarChart data={chartData} margin={{ top: 8, right: 4, left: 4, bottom: 0 }} barGap={4}>
+              <CartesianGrid stroke={theme.grid} strokeDasharray="4 4" vertical={false} />
+              <XAxis dataKey="name" stroke={theme.axis} fontSize={12} tickLine={false} axisLine={false} />
               <YAxis
-                stroke="#888888"
+                stroke={theme.axis}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(val) =>
-                  baseCurrencyCode
-                    ? `${baseCurrencyCode} ${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
-                    : `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
-                }
+                width={48}
+                tickFormatter={compactNumber}
               />
-              <Tooltip formatter={(val: any) => [formatMoney(Number(val) || 0)]} />
-              <Legend wrapperStyle={{ paddingTop: "10px" }} />
-              <Bar dataKey="Billed" fill="#6366f1" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Collected" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Tooltip
+                cursor={{ fill: theme.cursor }}
+                content={({ active, payload, label }) => (
+                  <ChartTooltip
+                    active={active}
+                    label={label}
+                    payload={payload?.map((p) => ({ name: p.name, value: p.value as number, color: p.color }))}
+                    format={money}
+                  />
+                )}
+              />
+              <Bar dataKey="Billed" fill={theme.series.info} radius={[6, 6, 2, 2]} maxBarSize={28} />
+              <Bar dataKey="Collected" fill={theme.series.primary} radius={[6, 6, 2, 2]} maxBarSize={28} />
             </BarChart>
           </ResponsiveContainer>
-        </CardContent>
-      </Card>
+        </ChartCard>
+
+        <Card>
+          <BlockStack gap="500">
+            <BlockStack gap="050">
+              <Text as="h2" variant="headingMd">Cash position</Text>
+              <Text as="p" tone="subdued" variant="bodySm">Where this period&apos;s invoices stand</Text>
+            </BlockStack>
+
+            <BlockStack gap="200">
+              <InlineStack align="space-between">
+                <Text as="span" variant="bodySm" tone="subdued">Collected</Text>
+                <Text as="span" variant="bodySm" fontWeight="semibold">{cur.collectionRate}%</Text>
+              </InlineStack>
+              <ProgressBar progress={Math.min(100, cur.collectionRate)} tone="success" size="small" />
+            </BlockStack>
+
+            <div className="an-kv">
+              <div>
+                <span>Collected</span>
+                <strong>{money(cur.totalPaid)}</strong>
+              </div>
+              <div>
+                <span>Still outstanding</span>
+                <strong>{money(outstanding)}</strong>
+              </div>
+              <div>
+                <span>Overdue</span>
+                <strong className={cur.overdueAmount > 0 ? "is-critical" : undefined}>
+                  {money(cur.overdueAmount)}
+                </strong>
+              </div>
+              <div>
+                <span>Best collection month</span>
+                <strong>{bestMonth && bestMonth.paid > 0 ? shortMonth(bestMonth.month) : "—"}</strong>
+              </div>
+            </div>
+          </BlockStack>
+        </Card>
+      </ChartRow>
     </div>
   );
 }

@@ -133,15 +133,25 @@ export async function provisionOrgInventory(
   db: Database,
   organizationId: string,
 ) {
-  for (const name of DEFAULT_PRODUCT_CATEGORIES) {
-    await ensureProductCategory(db, organizationId, name);
-  }
+  // Each ensure* is check-then-insert, so two requests provisioning at the same
+  // time used to create duplicates. Serialise per organisation with a lock that
+  // is released when the transaction ends.
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`org-inventory:${organizationId}`}))`,
+    );
+    const txDb = tx as unknown as Database;
 
-  for (const name of DEFAULT_PRODUCT_TAGS) {
-    await ensureProductTag(db, organizationId, name);
-  }
+    for (const name of DEFAULT_PRODUCT_CATEGORIES) {
+      await ensureProductCategory(txDb, organizationId, name);
+    }
 
-  for (const policy of DEFAULT_WARRANTY_POLICIES) {
-    await ensureWarrantyPolicy(db, organizationId, policy);
-  }
+    for (const name of DEFAULT_PRODUCT_TAGS) {
+      await ensureProductTag(txDb, organizationId, name);
+    }
+
+    for (const policy of DEFAULT_WARRANTY_POLICIES) {
+      await ensureWarrantyPolicy(txDb, organizationId, policy);
+    }
+  });
 }

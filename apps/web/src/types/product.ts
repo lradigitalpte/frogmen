@@ -63,8 +63,8 @@ export interface CreateProductInput {
   description?: string;
   costPrice?: string;
   sellingPrice?: string;
-  priceCurrencyId?: string;
-  parentId?: string;
+  priceCurrencyId?: string | null;
+  parentId?: string | null;
   equipmentRole?: ProductEquipmentRole;
   usageType?: ProductUsageType;
   isRovEquipment?: boolean;
@@ -313,8 +313,26 @@ export interface StockOverviewRow {
   updatedAt: string;
 }
 
+export interface StockSummary {
+  lines: number;
+  units: number;
+  inStock: number;
+  lowStock: number;
+  outOfStock: number;
+  serialized: number;
+  bulk: number;
+  assignedUnits: number;
+  products: number;
+  warehouses: number;
+  lowStockThreshold: number;
+}
+
+export type StockStatusFilter = "all" | "in_stock" | "low_stock" | "out_of_stock" | "serialized" | "bulk";
+export type StockSort = "recent" | "name" | "qty_asc" | "qty_desc";
+
 export interface PaginatedStock {
   data: StockOverviewRow[];
+  summary?: StockSummary;
   meta: {
     page: number;
     perPage: number;

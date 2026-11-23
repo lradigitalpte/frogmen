@@ -2,101 +2,126 @@
 
 import {
   Badge,
-  Banner,
-  BlockStack,
   Button,
-  Card,
-  EmptyState,
-  InlineGrid,
-  InlineStack,
+  Icon,
   Modal,
+  Select,
+  SkeletonBodyText,
   Text,
   TextField,
 } from "@shopify/polaris";
-import { Film, ImageIcon, Upload } from "lucide-react";
+import { ImageIcon, PlayIcon, SearchIcon, UploadIcon } from "@shopify/polaris-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppSelect } from "@/components/ui/app-select";
-import { createMedia, deleteMedia, listMedia } from "@/lib/rov-api";
-import type { InspectionMedia, ProjectStructure } from "@/types/rov";
+import { useToast } from "@/components/providers/toast-provider";
+import { createMedia, deleteMedia, listAllPoints, listMedia, updateMedia } from "@/lib/rov-api";
+import { cn } from "@/lib/utils";
+import type { InspectionMedia, InspectionPoint, InspectionSeverity, ProjectStructure } from "@/types/rov";
 import { S3MultipartUploader } from "./s3-multipart-uploader";
 
 interface ManageMediaTabProps {
   projectId: string;
   structures: ProjectStructure[];
+  onChanged?: () => void;
 }
 
-type MediaFilter = "all" | "image" | "video" | "unlinked";
+type Filter = "all" | "image" | "video" | "unlinked" | "linked";
+type Sort = "newest" | "oldest" | "name" | "largest";
 
-function formatFileSize(bytes: number | null | undefined) {
-  if (!bytes) return " ";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+const SORTS = [
+  { label: "Newest first", value: "newest" },
+  { label: "Oldest first", value: "oldest" },
+  { label: "Name A–Z", value: "name" },
+  { label: "Largest first", value: "largest" },
+];
+
+const SEVERITY: Record<InspectionSeverity, { label: string; tone: "critical" | "warning" | "info" }> = {
+  major: { label: "Major", tone: "critical" },
+  moderate: { label: "Moderate", tone: "warning" },
+  minor: { label: "Minor", tone: "info" },
+};
+
+const UNLINKED = "__none";
+
+function formatSize(bytes: number | null | undefined) {
+  if (!bytes) return null;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function formatUploadedAt(value: string) {
+function formatDuration(seconds: number | null | undefined) {
+  if (!seconds) return null;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatWhen(value: string) {
   return new Date(value).toLocaleString(undefined, {
-    month: "short",
     day: "numeric",
+    month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-function MediaPreview({ item }: { item: InspectionMedia }) {
-  const previewUrl = item.thumbnailUrl ?? item.url;
+/** Upload keys are random hashes; show something a person can read. */
+function looksHashed(name: string) {
+  return /^[a-f0-9]{24,}\.[a-z0-9]+$/i.test(name);
+}
 
+function displayName(item: InspectionMedia) {
+  if (!looksHashed(item.fileName)) return item.fileName;
+  const ext = item.fileName.split(".").pop()?.toUpperCase();
+  return `${item.mediaType === "video" ? "Video" : "Photo"} ${ext ? `(${ext})` : ""}`.trim();
+}
+
+function Thumb({ item, large }: { item: InspectionMedia; large?: boolean }) {
+  const src = item.thumbnailUrl ?? item.url;
   if (item.mediaType === "video" && item.url) {
     return (
-      <div className="rov-media-card__preview">
-        <video
-          src={item.url}
-          className="rov-media-card__media"
-          preload="metadata"
-          poster={item.thumbnailUrl ?? undefined}
-        />
-        <span className="rov-media-card__type-icon">
-          <Film size={18} />
-        </span>
-      </div>
+      <video
+        className="rov-md__media"
+        src={item.url}
+        poster={item.thumbnailUrl ?? undefined}
+        preload="metadata"
+        controls={large}
+        muted={!large}
+        playsInline
+      />
     );
   }
-
-  if (previewUrl) {
-    return (
-      <div className="rov-media-card__preview">
-        <img
-          src={previewUrl}
-          alt={item.fileName}
-          className="rov-media-card__media"
-        />
-      </div>
-    );
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className="rov-md__media" src={src} alt={item.fileName} />;
   }
-
   return (
-    <div className="rov-media-card__preview rov-media-card__preview--empty">
-      {item.mediaType === "video" ? (
-        <Film size={28} strokeWidth={1.5} />
-      ) : (
-        <ImageIcon size={28} strokeWidth={1.5} />
-      )}
-    </div>
+    <span className="rov-md__media rov-md__media--empty">
+      <Icon source={item.mediaType === "video" ? PlayIcon : ImageIcon} tone="subdued" />
+    </span>
   );
 }
 
-export function ManageMediaTab({ projectId, structures }: ManageMediaTabProps) {
-  const [structureFilter, setStructureFilter] = useState(
-    structures[0]?.id ?? "all",
-  );
-  const [typeFilter, setTypeFilter] = useState<MediaFilter>("all");
-  const [displayName, setDisplayName] = useState("");
-  const [uploadStructureId, setUploadStructureId] = useState(
-    structures[0]?.id ?? "",
-  );
+export function ManageMediaTab({ projectId, structures, onChanged }: ManageMediaTabProps) {
+  const { showSuccess, showError } = useToast();
   const [media, setMedia] = useState<InspectionMedia[]>([]);
+  const [points, setPoints] = useState<InspectionPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [filter, setFilter] = useState<Filter>("all");
+  const [structureFilter, setStructureFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort>("newest");
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadStructureId, setUploadStructureId] = useState(structures[0]?.id ?? "");
+  const [uploadName, setUploadName] = useState("");
+
+  const [preview, setPreview] = useState<InspectionMedia | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InspectionMedia | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -104,351 +129,514 @@ export function ManageMediaTab({ projectId, structures }: ManageMediaTabProps) {
     setLoading(true);
     setError(null);
     try {
-      const structureId =
-        structureFilter === "all" ? undefined : structureFilter;
-      const data = await listMedia(projectId, structureId);
-      setMedia(data);
+      const [m, p] = await Promise.all([listMedia(projectId), listAllPoints(projectId)]);
+      setMedia(m);
+      setPoints(p);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load media");
+      setError(err instanceof Error ? err.message : "Could not load media");
     } finally {
       setLoading(false);
     }
-  }, [projectId, structureFilter]);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (!uploadStructureId && structures[0]) {
-      setUploadStructureId(structures[0].id);
-    }
+    if (!uploadStructureId && structures[0]) setUploadStructureId(structures[0].id);
   }, [structures, uploadStructureId]);
 
-  const filteredMedia = useMemo(() => {
-    return media.filter((item) => {
-      if (typeFilter === "image") return item.mediaType === "image";
-      if (typeFilter === "video") return item.mediaType === "video";
-      if (typeFilter === "unlinked") return !item.inspectionPointId;
-      return true;
-    });
-  }, [media, typeFilter]);
+  useEffect(() => {
+    setRenameValue(preview?.fileName ?? "");
+  }, [preview]);
+
+  const pointById = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
+
+  const pointOptionsFor = useCallback(
+    (structureId: string) => [
+      { label: "Not linked", value: UNLINKED },
+      ...points
+        .filter((p) => p.structureId === structureId)
+        .map((p) => ({
+          label: [p.observationId ?? "Observation", p.findingType, p.severity ? SEVERITY[p.severity].label : "Not rated"]
+            .filter(Boolean)
+            .join(" · "),
+          value: p.id,
+        })),
+    ],
+    [points],
+  );
 
   const stats = useMemo(() => {
-    const images = media.filter((item) => item.mediaType === "image").length;
-    const videos = media.filter((item) => item.mediaType === "video").length;
-    const linked = media.filter((item) => item.inspectionPointId).length;
-    return {
-      total: media.length,
-      images,
-      videos,
-      linked,
-      unlinked: media.length - linked,
-    };
+    let images = 0;
+    let videos = 0;
+    let linked = 0;
+    let bytes = 0;
+    for (const m of media) {
+      if (m.mediaType === "video") videos += 1;
+      else if (m.mediaType === "image") images += 1;
+      if (m.inspectionPointId) linked += 1;
+      bytes += m.fileSize ?? 0;
+    }
+    const covered = new Set(media.map((m) => m.inspectionPointId).filter(Boolean)).size;
+    return { total: media.length, images, videos, linked, unlinked: media.length - linked, bytes, covered };
   }, [media]);
 
-  const structureOptions = useMemo(
-    () => [
-      { value: "all", label: "All structures", description: "Show media for every structure" },
-      ...structures.map((structure) => ({
-        value: structure.id,
-        label: structure.name,
-        description: structure.description ?? "Structure media",
-      })),
-    ],
-    [structures],
-  );
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = media.filter((m) => {
+      if (filter === "image" && m.mediaType !== "image") return false;
+      if (filter === "video" && m.mediaType !== "video") return false;
+      if (filter === "unlinked" && m.inspectionPointId) return false;
+      if (filter === "linked" && !m.inspectionPointId) return false;
+      if (structureFilter !== "all" && m.structureId !== structureFilter) return false;
+      if (!q) return true;
+      const point = m.inspectionPointId ? pointById.get(m.inspectionPointId) : null;
+      return [m.fileName, m.structureName, point?.observationId, point?.findingType]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+    return rows.sort((a, b) => {
+      if (sort === "oldest") return a.uploadedAt.localeCompare(b.uploadedAt);
+      if (sort === "name") return displayName(a).localeCompare(displayName(b));
+      if (sort === "largest") return (b.fileSize ?? 0) - (a.fileSize ?? 0);
+      return b.uploadedAt.localeCompare(a.uploadedAt);
+    });
+  }, [filter, media, pointById, query, sort, structureFilter]);
 
-  const uploadStructureOptions = useMemo(
-    () =>
-      structures.map((structure) => ({
-        value: structure.id,
-        label: structure.name,
-        description: "Upload to this structure library",
-      })),
-    [structures],
-  );
+  const replaceItem = (updated: InspectionMedia) => {
+    setMedia((list) => list.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
+    setPreview((p) => (p && p.id === updated.id ? { ...p, ...updated } : p));
+  };
 
-  const filterOptions = [
-    { value: "all", label: "All media", description: `${stats.total} files` },
-    { value: "image", label: "Images", description: `${stats.images} images` },
-    { value: "video", label: "Videos", description: `${stats.videos} videos` },
-    {
-      value: "unlinked",
-      label: "Unlinked",
-      description: `${stats.unlinked} not attached to observations`,
-    },
-  ];
+  const handleLink = async (item: InspectionMedia, value: string) => {
+    const pointId = value === UNLINKED ? null : value;
+    if (pointId === item.inspectionPointId) return;
+    setBusyId(item.id);
+    try {
+      const updated = await updateMedia(projectId, item.id, { inspectionPointId: pointId });
+      replaceItem({ ...item, ...updated, inspectionPointId: pointId });
+      const obs = pointId ? pointById.get(pointId)?.observationId ?? "observation" : null;
+      showSuccess(obs ? `Linked to ${obs}` : "Unlinked");
+      onChanged?.();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Could not update the link");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRename = async () => {
+    if (!preview) return;
+    const name = renameValue.trim();
+    if (!name || name === preview.fileName) return;
+    setBusyId(preview.id);
+    try {
+      const updated = await updateMedia(projectId, preview.id, { fileName: name });
+      replaceItem({ ...preview, ...updated, fileName: name });
+      showSuccess("Name updated");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Could not rename the file");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const handleUploaded = useCallback(
-    async (result: {
-      key: string;
-      fileName: string;
-      contentType: string;
-      size: number;
-    }) => {
+    async (result: { key: string; fileName: string; contentType: string; size: number }) => {
       if (!uploadStructureId) {
-        setError("Select a structure before uploading.");
+        showError("Choose a structure before uploading.");
         return;
       }
-
       try {
         await createMedia(projectId, {
           structureId: uploadStructureId,
           mediaType: result.contentType.startsWith("video/") ? "video" : "image",
-          fileName: displayName.trim() || result.fileName,
+          fileName: uploadName.trim() || result.fileName,
           filePath: result.key,
           mimeType: result.contentType,
           fileSize: result.size,
         });
-        setDisplayName("");
-        if (structureFilter === "all" || structureFilter === uploadStructureId) {
-          await load();
-        } else {
-          setStructureFilter(uploadStructureId);
-        }
+        setUploadName("");
+        showSuccess(`${uploadName.trim() || result.fileName} uploaded`);
+        await load();
+        onChanged?.();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save media");
+        showError(err instanceof Error ? err.message : "Could not save the upload");
       }
     },
-    [projectId, uploadStructureId, displayName, load, structureFilter],
+    [load, onChanged, projectId, showError, showSuccess, uploadName, uploadStructureId],
   );
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    setError(null);
     try {
       await deleteMedia(projectId, deleteTarget.id);
+      showSuccess(`${displayName(deleteTarget)} deleted`);
+      if (preview?.id === deleteTarget.id) setPreview(null);
       setDeleteTarget(null);
       await load();
+      onChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      showError(err instanceof Error ? err.message : "Could not delete the file");
     } finally {
       setDeleting(false);
     }
   };
 
+  const filters: { id: Filter; label: string; count: number }[] = [
+    { id: "all", label: "All", count: stats.total },
+    { id: "image", label: "Photos", count: stats.images },
+    { id: "video", label: "Videos", count: stats.videos },
+    { id: "linked", label: "Linked", count: stats.linked },
+    { id: "unlinked", label: "Not linked", count: stats.unlinked },
+  ];
+  const isFiltered = filter !== "all" || structureFilter !== "all" || query.trim() !== "";
+  const linkedPct = stats.total ? Math.round((stats.linked / stats.total) * 100) : 0;
+  const structureSelect = structures.map((s) => ({ label: s.name, value: s.id }));
+
+  const previewPoint = preview?.inspectionPointId ? pointById.get(preview.inspectionPointId) : null;
+
   return (
-    <BlockStack gap="400">
+    <div className="rov-md">
       {error ? (
-        <Banner tone="critical" onDismiss={() => setError(null)}>
-          {error}
-        </Banner>
+        <div className="ac-error">
+          {error}{" "}
+          <button className="st-link" type="button" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
       ) : null}
 
-      <div className="rov-media-library__stats">
-        <div className="rov-media-library__stat">
-          <Text as="p" variant="headingLg" fontWeight="bold">
-            {stats.total}
-          </Text>
-          <Text as="p" tone="subdued" variant="bodySm">
-            Total files
-          </Text>
+      {/* ── Summary + upload ── */}
+      <section className="rov-ob__summary rov-md__summary">
+        <div className="rov-ob__summary-main">
+          <span className="rov-ob__summary-label">Media library</span>
+          <strong>{loading && media.length === 0 ? "…" : stats.total}</strong>
+          <small>
+            {stats.total === 0
+              ? "No files yet"
+              : `${stats.images} photo${stats.images === 1 ? "" : "s"} · ${stats.videos} video${stats.videos === 1 ? "" : "s"}${
+                  formatSize(stats.bytes) ? ` · ${formatSize(stats.bytes)}` : ""
+                }`}
+          </small>
         </div>
-        <div className="rov-media-library__stat">
-          <Text as="p" variant="headingLg" fontWeight="bold">
-            {stats.images}
-          </Text>
-          <Text as="p" tone="subdued" variant="bodySm">
-            Images
-          </Text>
+        <div className="rov-ob__summary-bar">
+          <div className="rov-md__linkline">
+            <span>Linked to findings</span>
+            <strong>
+              {stats.linked}/{stats.total}
+            </strong>
+          </div>
+          <div className="rov-ob__bar">
+            <b className="is-linked" style={{ width: `${linkedPct}%` }} />
+          </div>
+          <small className="rov-md__note">
+            {stats.total === 0
+              ? "Upload ROV stills and clips, then attach them to observations."
+              : stats.unlinked > 0
+                ? `${stats.unlinked} file${stats.unlinked === 1 ? "" : "s"} not attached to a finding yet`
+                : `Every file is attached · ${stats.covered} of ${points.length} finding${points.length === 1 ? "" : "s"} have media`}
+          </small>
         </div>
-        <div className="rov-media-library__stat">
-          <Text as="p" variant="headingLg" fontWeight="bold">
-            {stats.videos}
-          </Text>
-          <Text as="p" tone="subdued" variant="bodySm">
-            Videos
-          </Text>
+        <div className="rov-md__upload-cta">
+          <Button
+            variant="primary"
+            icon={UploadIcon}
+            disabled={structures.length === 0}
+            onClick={() => setUploadOpen((v) => !v)}
+          >
+            {uploadOpen ? "Hide upload" : "Upload media"}
+          </Button>
         </div>
-        <div className="rov-media-library__stat">
-          <Text as="p" variant="headingLg" fontWeight="bold">
-            {stats.unlinked}
-          </Text>
-          <Text as="p" tone="subdued" variant="bodySm">
-            Unlinked
-          </Text>
-        </div>
-      </div>
+      </section>
 
-      <div className="rov-media-library__layout">
-        <Card padding="400">
-          <BlockStack gap="400">
-            <BlockStack gap="100">
-              <InlineStack gap="200" blockAlign="center">
-                <Upload size={18} />
-                <Text as="h3" variant="headingSm">
-                  Upload inspection media
-                </Text>
-              </InlineStack>
-              <Text as="p" tone="subdued" variant="bodySm">
-                Add ROV photos or video to the structure library. Link files to
-                observations from the Annotate page.
-              </Text>
-            </BlockStack>
-
-            {structures.length === 0 ? (
-              <Text as="p" tone="subdued">
-                Add a structure on the Structures tab before uploading media.
-              </Text>
-            ) : (
-              <BlockStack gap="300">
-                <AppSelect
-                  label="Upload to structure"
-                  options={uploadStructureOptions}
+      {uploadOpen ? (
+        <section className="ex-surface rov-md__upload">
+          {structures.length === 0 ? (
+            <p className="rov-ov__none">Add a structure on the Structures tab before uploading media.</p>
+          ) : (
+            <>
+              <div className="rov-md__upload-fields">
+                <Select
+                  label="Structure"
+                  options={structureSelect}
                   value={uploadStructureId}
                   onChange={setUploadStructureId}
                 />
                 <TextField
-                  label="Display name"
-                  value={displayName}
-                  onChange={setDisplayName}
-                  placeholder="Optional label (defaults to filename)"
+                  label="Name"
+                  value={uploadName}
+                  onChange={setUploadName}
+                  placeholder="Optional, e.g. Pile 1 splash zone"
+                  helpText="Shown in the report. Leave empty to keep the file name."
                   autoComplete="off"
-                  helpText="Use a clear name inspectors will recognize in reports."
                 />
-                <div className="rov-media-library__upload-zone">
-                  <S3MultipartUploader
-                    variant="compact"
-                    label="Choose photo or video"
-                    helpText="MP4, MOV, WebM, JPG, PNG, WebP · large files upload in chunks"
-                    onUploaded={(result) => void handleUploaded(result)}
-                    disabled={!uploadStructureId}
-                  />
-                </div>
-              </BlockStack>
-            )}
-          </BlockStack>
-        </Card>
+              </div>
+              <div className="rov-md__upload-zone">
+                <S3MultipartUploader
+                  variant="compact"
+                  label="Choose photo or video"
+                  helpText="MP4, MOV, WebM, JPG, PNG, WebP · large files upload in chunks"
+                  onUploaded={(result) => void handleUploaded(result)}
+                  disabled={!uploadStructureId}
+                />
+              </div>
+              <p className="rov-md__upload-hint">
+                Tip: to upload straight onto a finding, open it on the diagram (Annotate) and use its Media panel.
+              </p>
+            </>
+          )}
+        </section>
+      ) : null}
 
-        <BlockStack gap="300">
-          <Card padding="400">
-            <InlineGrid columns={{ xs: 1, sm: 2 }} gap="300">
-              <AppSelect
-                label="Structure filter"
-                options={structureOptions}
+      {/* ── Library ── */}
+      <section className="ex-surface">
+        <div className="st-toolbar rov-ob__toolbar">
+          <div className="iv-filters" role="tablist" aria-label="Filter media">
+            {filters.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={filter === f.id}
+                className={cn("iv-filter", filter === f.id && "is-active")}
+                onClick={() => setFilter(f.id)}
+              >
+                {f.label}
+                <span>{f.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="st-toolbar__controls">
+            <TextField
+              label="Search media"
+              labelHidden
+              autoComplete="off"
+              placeholder="Search name, finding…"
+              prefix={<Icon source={SearchIcon} tone="subdued" />}
+              value={query}
+              onChange={setQuery}
+              clearButton
+              onClearButtonClick={() => setQuery("")}
+            />
+            {structures.length > 1 ? (
+              <Select
+                label="Structure"
+                labelHidden
+                options={[{ label: "All structures", value: "all" }, ...structureSelect]}
                 value={structureFilter}
                 onChange={setStructureFilter}
               />
-              <AppSelect
-                label="Show"
-                options={filterOptions}
-                value={typeFilter}
-                onChange={(value) => setTypeFilter(value as MediaFilter)}
-              />
-            </InlineGrid>
-          </Card>
+            ) : null}
+            <Select label="Sort" labelHidden options={SORTS} value={sort} onChange={(v) => setSort(v as Sort)} />
+          </div>
+        </div>
 
-          {loading ? (
-            <Card padding="800">
-              <Text as="p" tone="subdued" alignment="center">
-                Loading media…
-              </Text>
-            </Card>
-          ) : filteredMedia.length === 0 ? (
-            <Card>
-              <EmptyState
-                heading={media.length === 0 ? "No media yet" : "No matching media"}
-                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+        {loading && media.length === 0 ? (
+          <div className="ex-pad">
+            <SkeletonBodyText lines={6} />
+          </div>
+        ) : media.length === 0 ? (
+          <div className="ex-empty">
+            <span className="ex-empty__icon">
+              <Icon source={ImageIcon} />
+            </span>
+            <strong>No media yet</strong>
+            <p>Upload ROV photos and video, then attach each file to the finding it shows.</p>
+            {structures.length > 0 ? (
+              <Button variant="primary" onClick={() => setUploadOpen(true)}>
+                Upload media
+              </Button>
+            ) : null}
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="ex-empty">
+            <strong>No files match</strong>
+            <p>Try another filter or clear the search.</p>
+            {isFiltered ? (
+              <Button
+                onClick={() => {
+                  setFilter("all");
+                  setStructureFilter("all");
+                  setQuery("");
+                }}
               >
-                <p>
-                  {media.length === 0
-                    ? "Upload ROV footage above, then link it to observation pins while annotating."
-                    : "Try a different filter to see more files."}
-                </p>
-              </EmptyState>
-            </Card>
-          ) : (
-            <div className="rov-media-library__grid">
-              {filteredMedia.map((item) => (
-                <div key={item.id} className="rov-media-card">
-                  <MediaPreview item={item} />
-                  <div className="rov-media-card__body">
-                    <InlineStack align="space-between" blockAlign="start" gap="200">
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd" fontWeight="semibold" truncate>
-                          {item.fileName}
-                        </Text>
-                        <Text as="p" tone="subdued" variant="bodySm">
-                          {item.structureName ?? " "} · {formatFileSize(item.fileSize)}
-                        </Text>
-                      </BlockStack>
-                      <Badge tone={item.mediaType === "video" ? "info" : "success"}>
-                        {item.mediaType}
-                      </Badge>
-                    </InlineStack>
-
-                    <InlineStack gap="150" wrap>
-                      {item.inspectionPointId ? (
-                        <Badge tone="attention">Linked to observation</Badge>
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className={cn("rov-md__grid", loading && "st-dim")}>
+            {visible.map((item) => {
+              const point = item.inspectionPointId ? pointById.get(item.inspectionPointId) : null;
+              const sev = point?.severity ? SEVERITY[point.severity] : null;
+              const meta = [
+                structures.length > 1 ? item.structureName : null,
+                formatSize(item.fileSize),
+                formatDuration(item.duration),
+              ].filter(Boolean);
+              return (
+                <article className="rov-md__card" key={item.id}>
+                  <button
+                    type="button"
+                    className="rov-md__thumb"
+                    onClick={() => setPreview(item)}
+                    aria-label={`Preview ${displayName(item)}`}
+                  >
+                    <Thumb item={item} />
+                    <span className="rov-md__type">{item.mediaType === "video" ? "Video" : "Photo"}</span>
+                    {point ? (
+                      <span className={cn("rov-md__pin rov-an__pin", point.severity ? `is-${point.severity}` : "is-none")}>
+                        {point.observationId?.replace(/^O/, "") ?? "•"}
+                      </span>
+                    ) : null}
+                  </button>
+                  <div className="rov-md__body">
+                    <button type="button" className="rov-md__name" onClick={() => setPreview(item)} title={item.fileName}>
+                      {displayName(item)}
+                    </button>
+                    <small className="rov-md__meta">
+                      {[...meta, formatWhen(item.uploadedAt)].join(" · ")}
+                    </small>
+                    <div className="rov-md__link">
+                      {point ? (
+                        <span className="rov-md__linked">
+                          <span>
+                            Linked to <strong>{point.observationId ?? "observation"}</strong>
+                          </span>
+                          {sev ? <Badge tone={sev.tone}>{sev.label}</Badge> : <Badge>Not rated</Badge>}
+                        </span>
                       ) : (
-                        <Badge>Unlinked</Badge>
+                        <Badge tone="attention">Not linked</Badge>
                       )}
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {formatUploadedAt(item.uploadedAt)}
-                      </Text>
-                    </InlineStack>
-
-                    <InlineStack gap="200">
-                      {item.url ? (
-                        <Button
-                          size="slim"
-                          url={item.url}
-                          external
-                          target="_blank"
-                        >
-                          Open
-                        </Button>
-                      ) : null}
-                      <Button
-                        size="slim"
-                        tone="critical"
-                        onClick={() => setDeleteTarget(item)}
-                      >
+                    </div>
+                    <div className="rov-md__actions">
+                      <Select
+                        label="Linked finding"
+                        labelHidden
+                        disabled={busyId === item.id}
+                        options={pointOptionsFor(item.structureId)}
+                        value={item.inspectionPointId ?? UNLINKED}
+                        onChange={(v) => void handleLink(item, v)}
+                      />
+                      <Button size="slim" variant="plain" tone="critical" onClick={() => setDeleteTarget(item)}>
                         Delete
                       </Button>
-                    </InlineStack>
+                    </div>
                   </div>
-                </div>
-              ))}
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        {media.length > 0 ? (
+          <p className="pl-foot rov-ob__foot">
+            Showing {visible.length} of {media.length} file{media.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
+      </section>
+
+      {/* ── Preview ── */}
+      <Modal
+        open={preview !== null}
+        onClose={() => setPreview(null)}
+        title={preview ? displayName(preview) : "Preview"}
+        size="large"
+        primaryAction={
+          preview?.url ? { content: "Open original", url: preview.url, external: true } : undefined
+        }
+        secondaryActions={[
+          {
+            content: "Delete",
+            destructive: true,
+            onAction: () => preview && setDeleteTarget(preview),
+          },
+        ]}
+      >
+        {preview ? (
+          <>
+            <div className="rov-md__stage">
+              <Thumb item={preview} large />
             </div>
-          )}
-        </BlockStack>
-      </div>
+            <Modal.Section>
+              <div className="rov-md__details">
+                <div className="rov-md__rename">
+                  <TextField
+                    label="Name"
+                    value={renameValue}
+                    onChange={setRenameValue}
+                    autoComplete="off"
+                    connectedRight={
+                      <Button
+                        disabled={!renameValue.trim() || renameValue.trim() === preview.fileName}
+                        loading={busyId === preview.id}
+                        onClick={() => void handleRename()}
+                      >
+                        Save
+                      </Button>
+                    }
+                  />
+                </div>
+                <Select
+                  label="Linked finding"
+                  disabled={busyId === preview.id}
+                  options={pointOptionsFor(preview.structureId)}
+                  value={preview.inspectionPointId ?? UNLINKED}
+                  onChange={(v) => void handleLink(preview, v)}
+                  helpText={
+                    previewPoint
+                      ? `Shown with ${previewPoint.observationId ?? "this finding"} in the client report.`
+                      : "Attach it to the finding it shows."
+                  }
+                />
+                <dl className="rov-md__facts">
+                  <div>
+                    <dt>Structure</dt>
+                    <dd>{preview.structureName ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{preview.mimeType ?? preview.mediaType}</dd>
+                  </div>
+                  <div>
+                    <dt>Size</dt>
+                    <dd>{formatSize(preview.fileSize) ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Uploaded</dt>
+                    <dd>
+                      {formatWhen(preview.uploadedAt)}
+                      {preview.uploaderName ? ` · ${preview.uploaderName}` : ""}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </Modal.Section>
+          </>
+        ) : null}
+      </Modal>
 
       <Modal
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        title="Delete media file?"
-        primaryAction={{
-          content: "Delete file",
-          destructive: true,
-          loading: deleting,
-          onAction: () => void handleDelete(),
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setDeleteTarget(null),
-            disabled: deleting,
-          },
-        ]}
+        title={`Delete ${deleteTarget ? displayName(deleteTarget) : "file"}?`}
+        primaryAction={{ content: "Delete file", destructive: true, loading: deleting, onAction: () => void handleDelete() }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setDeleteTarget(null), disabled: deleting }]}
       >
         <Modal.Section>
           <Text as="p">
-            Delete{" "}
-            <Text as="span" fontWeight="semibold">
-              {deleteTarget?.fileName}
-            </Text>
-            ? This removes the file from the project library
+            The file is removed from the project library
             {deleteTarget?.inspectionPointId
-              ? " and unlinks it from its observation"
+              ? ` and from ${pointById.get(deleteTarget.inspectionPointId)?.observationId ?? "its observation"}`
               : ""}
             .
           </Text>
         </Modal.Section>
       </Modal>
-    </BlockStack>
+    </div>
   );
 }

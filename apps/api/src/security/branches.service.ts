@@ -10,6 +10,28 @@ import { branches, sessions, type Database } from "@frog1/db";
 import { DATABASE } from "../database/database.constants";
 import type { SecurityContext } from "./security-context";
 
+const CODE_RE = /^[A-Z0-9_-]{2,24}$/;
+
+function assertTimezone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+  } catch {
+    throw new BadRequestException(`Unknown timezone: ${value}`);
+  }
+  return value;
+}
+
+/** Drizzle wraps the Postgres error, so the SQLSTATE may sit on `cause`. */
+function isUniqueViolation(error: unknown) {
+  const e = error as { code?: string; cause?: { code?: string } };
+  return e?.code === "23505" || e?.cause?.code === "23505";
+}
+
+function optionalText(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  return value?.trim() || null;
+}
+
 @Injectable()
 export class BranchesService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
@@ -38,9 +60,14 @@ export class BranchesService {
   ) {
     const name = input.name?.trim();
     const code = input.code?.trim().toUpperCase();
-    if (!name || !code || !/^[A-Z0-9_-]{2,24}$/.test(code)) {
+    if (!name || !code || !CODE_RE.test(code)) {
       throw new BadRequestException("A valid branch name and code are required");
     }
+    const documentPrefix = input.documentPrefix?.trim().toUpperCase() || code;
+    if (!CODE_RE.test(documentPrefix)) {
+      throw new BadRequestException("Document prefix must be 2–24 letters, numbers, hyphens or underscores");
+    }
+    const timezone = assertTimezone(input.timezone?.trim() || "UTC");
 
     try {
       const [created] = await this.db
@@ -49,9 +76,8 @@ export class BranchesService {
           organizationId: context.organizationId,
           name,
           code,
-          documentPrefix:
-            input.documentPrefix?.trim().toUpperCase() || code,
-          timezone: input.timezone?.trim() || "UTC",
+          documentPrefix,
+          timezone,
           street1: input.street1?.trim() || null,
           street2: input.street2?.trim() || null,
           city: input.city?.trim() || null,
@@ -61,7 +87,7 @@ export class BranchesService {
         .returning();
       return created;
     } catch (error) {
-      if ((error as { code?: string }).code === "23505") {
+      if (isUniqueViolation(error)) {
         throw new ConflictException("Branch code already exists");
       }
       throw error;
@@ -83,23 +109,60 @@ export class BranchesService {
       countryCode: string | null;
     }>,
   ) {
-    const [updated] = await this.db
-      .update(branches)
-      .set({
-        ...input,
-        code: input.code?.trim().toUpperCase(),
-        documentPrefix: input.documentPrefix?.trim().toUpperCase(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(branches.id, id),
-          eq(branches.organizationId, context.organizationId),
-        ),
-      )
-      .returning();
-    if (!updated) throw new NotFoundException("Branch not found");
-    return updated;
+    // Only these fields are editable; isMain / isActive / organizationId are never taken from the body.
+    const patch: Partial<typeof branches.$inferInsert> = { updatedAt: new Date() };
+    if (input.name !== undefined) {
+      const name = input.name?.trim();
+      if (!name) throw new BadRequestException("Branch name is required");
+      patch.name = name;
+    }
+    if (input.code !== undefined) {
+      const code = input.code?.trim().toUpperCase();
+      if (!code || !CODE_RE.test(code)) {
+        throw new BadRequestException("Branch code must be 2–24 letters, numbers, hyphens or underscores");
+      }
+      patch.code = code;
+    }
+    if (input.documentPrefix !== undefined) {
+      const prefix = input.documentPrefix?.trim().toUpperCase();
+      if (!prefix || !CODE_RE.test(prefix)) {
+        throw new BadRequestException("Document prefix must be 2–24 letters, numbers, hyphens or underscores");
+      }
+      patch.documentPrefix = prefix;
+    }
+    if (input.timezone !== undefined) {
+      patch.timezone = assertTimezone(input.timezone?.trim() || "UTC");
+    }
+    const street1 = optionalText(input.street1);
+    if (street1 !== undefined) patch.street1 = street1;
+    const street2 = optionalText(input.street2);
+    if (street2 !== undefined) patch.street2 = street2;
+    const city = optionalText(input.city);
+    if (city !== undefined) patch.city = city;
+    const zip = optionalText(input.zip);
+    if (zip !== undefined) patch.zip = zip;
+    const countryCode = optionalText(input.countryCode);
+    if (countryCode !== undefined) patch.countryCode = countryCode?.toUpperCase() ?? null;
+
+    try {
+      const [updated] = await this.db
+        .update(branches)
+        .set(patch)
+        .where(
+          and(
+            eq(branches.id, id),
+            eq(branches.organizationId, context.organizationId),
+          ),
+        )
+        .returning();
+      if (!updated) throw new NotFoundException("Branch not found");
+      return updated;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException("Another branch already uses that code");
+      }
+      throw error;
+    }
   }
 
   async deactivate(context: SecurityContext, id: string) {
@@ -118,6 +181,8 @@ export class BranchesService {
       throw new BadRequestException("The main branch cannot be deactivated");
     }
 
+    // Requests already run in a transaction (RlsContextInterceptor), so the branch
+    // context can be switched for this check and then restored for later writes (audit log).
     await this.db.execute(
       sql`select set_config('app.branch_id', ${id}, true)`,
     );
@@ -133,7 +198,8 @@ export class BranchesService {
     await this.db.execute(
       sql`select set_config('app.branch_id', ${context.activeBranchId ?? ""}, true)`,
     );
-    if (Boolean(rows[0]?.has_records)) {
+    const hasRecords = Boolean(rows[0]?.has_records);
+    if (hasRecords) {
       throw new ConflictException(
         "Branch has operational records and cannot be deactivated",
       );
@@ -144,6 +210,16 @@ export class BranchesService {
       .set({ isActive: false, updatedAt: new Date() })
       .where(eq(branches.id, id))
       .returning();
+    return updated;
+  }
+
+  async reactivate(context: SecurityContext, id: string) {
+    const [updated] = await this.db
+      .update(branches)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(and(eq(branches.id, id), eq(branches.organizationId, context.organizationId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Branch not found");
     return updated;
   }
 

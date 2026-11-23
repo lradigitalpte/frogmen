@@ -1,42 +1,39 @@
 "use client";
 
 import {
+  ActionList,
+  Badge,
   Banner,
   BlockStack,
-  Box,
   Button,
   EmptyState,
-  IndexFilters,
-  IndexFiltersMode,
+  Icon,
   IndexTable,
-  InlineStack,
-  Link,
   Modal,
+  Popover,
+  Tabs,
   Text,
-  useSetIndexFiltersMode,
+  TextField,
 } from "@shopify/polaris";
-import { FileText, ShoppingCart, TrendingUp } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  MenuHorizontalIcon,
+  PlusIcon,
+  SearchIcon,
+  SendIcon,
+} from "@shopify/polaris-icons";
 import { useRouter } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AppPage, IndexSurface } from "@/components/layout/page";
-import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
-import { buildIndexTablePagination } from "@/lib/index-table-pagination";
-import { formatAppDate } from "@/lib/format-date";
-
-const QUOTATION_PAGE_SIZE = 16;
-const quotationResourceName = {
-  singular: "quotation",
-  plural: "quotations",
-};
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
-import { KpiCard } from "@/components/ui/kpi-card";
-import {
-  quotationStateLabel,
-  quotationStateVariant,
-  StatusBadge,
-} from "@/components/ui/status-badge";
+import { AppPage } from "@/components/layout/page";
+import { useToast } from "@/components/providers/toast-provider";
+import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
+import { useBranchLabels } from "@/hooks/use-branch-labels";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatCurrencyAmount, type CurrencyLike } from "@/lib/currency-utils";
+import { formatAppDate } from "@/lib/format-date";
 import {
   confirmQuotation,
   deleteQuotation,
@@ -45,143 +42,197 @@ import {
   type Quotation,
   type QuotationState,
 } from "@/lib/quotations-api";
-import { useBranchLabels } from "@/hooks/use-branch-labels";
-import { useToast } from "@/components/providers/toast-provider";
+import { cn } from "@/lib/utils";
 
-const tabs: { id: QuotationState | "all"; content: string }[] = [
-  { id: "all", content: "All Quotations" },
-  { id: "draft", content: "Draft" },
-  { id: "sent", content: "Sent" },
-  { id: "signed", content: "Signed" },
-  { id: "confirmed", content: "Confirmed Orders" },
-  { id: "cancelled", content: "Cancelled" },
+const PAGE_SIZE = 16;
+const resourceName = { singular: "quotation", plural: "quotations" };
+
+type TabId = QuotationState | "all";
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "draft", label: "Drafts" },
+  { id: "sent", label: "Sent" },
+  { id: "signed", label: "Signed" },
+  { id: "confirmed", label: "Orders" },
+  { id: "cancelled", label: "Cancelled" },
 ];
 
-function stateBadge(state: QuotationState) {
-  return (
-    <StatusBadge variant={quotationStateVariant(state)}>
-      {quotationStateLabel(state)}
-    </StatusBadge>
-  );
+/** The happy path a quote moves along. */
+const STAGES: Array<{ id: Exclude<QuotationState, "cancelled">; label: string; hint: string }> = [
+  { id: "draft", label: "Draft", hint: "being prepared" },
+  { id: "sent", label: "Sent", hint: "with the customer" },
+  { id: "signed", label: "Signed", hint: "accepted, to confirm" },
+  { id: "confirmed", label: "Order", hint: "confirmed sales orders" },
+];
+const STAGE_INDEX: Record<QuotationState, number> = { draft: 0, sent: 1, signed: 2, confirmed: 3, cancelled: -1 };
+
+const STATE_META: Record<QuotationState, { label: string; tone?: "success" | "info" | "attention" | "critical" }> = {
+  draft: { label: "Draft" },
+  sent: { label: "Sent", tone: "info" },
+  signed: { label: "Signed", tone: "attention" },
+  confirmed: { label: "Order", tone: "success" },
+  cancelled: { label: "Cancelled", tone: "critical" },
+};
+
+interface StageStat {
+  count: number;
+  value: number;
+  expiringSoon: number;
 }
 
-function formatQuotationAmount(
-  quotation: Quotation,
-  formatOrgMoney: (amount: string | number) => string,
-  resolveCurrency: (currencyId?: string | null) => CurrencyLike | null,
-) {
-  const currency = resolveCurrency(quotation.currencyId);
-  if (currency) {
-    return formatCurrencyAmount(quotation.amountTotal, currency);
-  }
+function daysUntil(date: string | null) {
+  if (!date) return null;
+  const target = new Date(`${date.slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
 
-  return formatOrgMoney(quotation.amountTotal);
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function StageTrack({ state }: { state: QuotationState }) {
+  const index = STAGE_INDEX[state];
+  const meta = STATE_META[state];
+  return (
+    <span className={cn("qt-track", state === "cancelled" && "is-cancelled")}>
+      <span className="qt-track__dots" aria-hidden>
+        {STAGES.map((stage, i) => (
+          <i className={cn(i <= index && "is-done", i === index && "is-current")} key={stage.id} />
+        ))}
+      </span>
+      <Badge size="small" tone={meta.tone}>
+        {meta.label}
+      </Badge>
+    </span>
+  );
 }
 
 export function QuotationsListPage() {
   const router = useRouter();
   const { showSuccess, showError } = useToast();
   const { formatOrgMoney, formatBaseMoney, baseCurrencyCode, resolveCurrency } = useOrgCurrency();
-  const [selectedTab, setSelectedTab] = useState(0);
+  const { showBranchColumn, branchLabel } = useBranchLabels();
+
+  const [tab, setTab] = useState(0);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [total, setTotal] = useState(0);
-  const [pipelineTotalBase, setPipelineTotalBase] = useState("0");
+  const [pipelineTotalBase, setPipelineTotalBase] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
-  const { showBranchColumn, branchLabel } = useBranchLabels();
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // Email Modal State
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
-  const [deleteQuote, setDeleteQuote] = useState<Quotation | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [stats, setStats] = useState<Record<QuotationState, StageStat> | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const [emailFor, setEmailFor] = useState<Quotation | null>(null);
   const [emailSending, setEmailSending] = useState(false);
+  const [deleteFor, setDeleteFor] = useState<Quotation | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const activeTab = tabs[selectedTab]?.id ?? "all";
+  const activeTab = TABS[tab]?.id ?? "all";
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
     return () => clearTimeout(timer);
   }, [query]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, debouncedQuery]);
+
   const loadQuotations = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
       const result = await listQuotations({
         page,
-        perPage: 16,
+        perPage: PAGE_SIZE,
         search: debouncedQuery || undefined,
         state: activeTab === "all" ? undefined : activeTab,
         sortBy: "quoteDate",
         sortDir: "desc",
       });
-
       setQuotations(result.data);
       setTotal(result.meta.total);
-      setPipelineTotalBase(result.meta.pipelineTotalBase ?? "0");
+      setPipelineTotalBase(parseFloat(result.meta.pipelineTotalBase ?? "0") || 0);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load quotations",
-      );
+      setError(err instanceof Error ? err.message : "Failed to load quotations");
     } finally {
       setLoading(false);
     }
   }, [activeTab, debouncedQuery, page]);
 
+  // Accurate per-stage counts and values (independent of the current page).
+  const loadStats = useCallback(async () => {
+    try {
+      const states: QuotationState[] = ["draft", "sent", "signed", "confirmed", "cancelled"];
+      const results = await Promise.all(states.map((state) => listQuotations({ state, perPage: 100 })));
+      const next = {} as Record<QuotationState, StageStat>;
+      states.forEach((state, i) => {
+        const rows = results[i].data;
+        next[state] = {
+          count: results[i].meta.total,
+          value: rows.reduce((sum, q) => sum + (parseFloat(q.amountTotalBase) || 0), 0),
+          expiringSoon: rows.filter((q) => {
+            const d = daysUntil(q.validityDate);
+            return d !== null && d >= 0 && d <= 7;
+          }).length,
+        };
+      });
+      setStats(next);
+    } catch {
+      // The stage strip simply stays empty.
+    }
+  }, []);
+
   useEffect(() => {
-    loadQuotations();
+    void loadQuotations();
   }, [loadQuotations]);
 
   useEffect(() => {
-    setPage(1);
-  }, [activeTab, debouncedQuery]);
+    void loadStats();
+  }, [loadStats]);
 
-  const emptyState = useMemo(
-    () => (
-      <EmptyState
-        action={{
-          content: "Create quotation",
-          onAction: () => router.push("/dashboard/sales/quotations/new"),
-        }}
-        heading="Create your first sales quotation"
-        image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
-      >
-        <p>Build quotes for commercial buyers, then confirm them as sales orders.</p>
-      </EmptyState>
-    ),
-    [router],
-  );
+  function refresh() {
+    void loadQuotations();
+    void loadStats();
+  }
 
-  const totalPipeline = useMemo(
-    () => parseFloat(pipelineTotalBase) || 0,
-    [pipelineTotalBase],
-  );
-
-  async function handleConfirmOrder(qId: string) {
+  async function handleConfirm(quote: Quotation) {
+    setConfirmingId(quote.id);
     try {
-      await confirmQuotation(qId);
-      setActionSuccess("Quotation successfully confirmed to Sales Order!");
-      void loadQuotations();
+      await confirmQuotation(quote.id);
+      showSuccess(`${quote.number} is now a confirmed sales order.`);
+      refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to confirm order");
+      const message = err instanceof Error ? err.message : "Failed to confirm order";
+      setError(message);
+      showError(message);
+    } finally {
+      setConfirmingId(null);
     }
   }
 
-  async function handleDeleteQuote() {
-    if (!deleteQuote) return;
+  async function handleDelete() {
+    if (!deleteFor) return;
     setDeleting(true);
     try {
-      await deleteQuotation(deleteQuote.id);
-      showSuccess(`Cancelled quotation ${deleteQuote.number} deleted.`);
-      setDeleteQuote(null);
-      await loadQuotations();
+      await deleteQuotation(deleteFor.id);
+      showSuccess(`Cancelled quotation ${deleteFor.number} deleted.`);
+      setDeleteFor(null);
+      refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete quotation";
       setError(message);
@@ -191,28 +242,14 @@ export function QuotationsListPage() {
     }
   }
 
-  function openEmailModal(quote: Quotation) {
-    setSelectedQuote(quote);
-    setEmailModalOpen(true);
-  }
-
-  async function handleSendEmail(input: {
-    recipientEmail: string;
-    subject: string;
-    body: string;
-  }) {
-    if (!selectedQuote) return;
+  async function handleSendEmail(input: { recipientEmail: string; subject: string; body: string }) {
+    if (!emailFor) return;
     setEmailSending(true);
     try {
-      await sendQuotationEmail(
-        selectedQuote.id,
-        input.recipientEmail,
-        input.subject,
-        input.body,
-      );
-      setActionSuccess(`Quotation PDF email dispatched to ${input.recipientEmail}`);
-      setEmailModalOpen(false);
-      void loadQuotations();
+      await sendQuotationEmail(emailFor.id, input.recipientEmail, input.subject, input.body);
+      setNotice(`${emailFor.number} sent to ${input.recipientEmail}.`);
+      setEmailFor(null);
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send email");
     } finally {
@@ -220,467 +257,405 @@ export function QuotationsListPage() {
     }
   }
 
-  // Collapsed deal state (map of dealId -> boolean)
-  const [collapsedDeals, setCollapsedDeals] = useState<Record<string, boolean>>({});
+  const amountOf = useCallback(
+    (quote: Quotation) => {
+      const currency: CurrencyLike | null = resolveCurrency(quote.currencyId);
+      return currency ? formatCurrencyAmount(quote.amountTotal, currency) : formatOrgMoney(quote.amountTotal);
+    },
+    [resolveCurrency, formatOrgMoney],
+  );
 
-  const toggleDealCollapse = (dealId: string) => {
-    setCollapsedDeals((prev) => ({
-      ...prev,
-      [dealId]: !prev[dealId],
-    }));
-  };
-
-  // Group quotations by dealId or render individually
-  const groupedRows = useMemo(() => {
-    const groups: { dealId: string | null; items: Quotation[] }[] = [];
-    const dealMap = new Map<string, Quotation[]>();
-    const nonDealItems: Quotation[] = [];
-
-    quotations.forEach((q) => {
+  // Group revisions of the same deal: newest first, older ones tucked below.
+  const groups = useMemo(() => {
+    const byDeal = new Map<string, Quotation[]>();
+    const order: Array<{ key: string; items: Quotation[] }> = [];
+    for (const q of quotations) {
       if (q.dealId) {
-        if (!dealMap.has(q.dealId)) {
-          dealMap.set(q.dealId, []);
+        if (!byDeal.has(q.dealId)) {
+          const list: Quotation[] = [];
+          byDeal.set(q.dealId, list);
+          order.push({ key: `deal-${q.dealId}`, items: list });
         }
-        dealMap.get(q.dealId)!.push(q);
+        byDeal.get(q.dealId)!.push(q);
       } else {
-        nonDealItems.push(q);
+        order.push({ key: q.id, items: [q] });
       }
-    });
-
-    // Sort items within each deal so latest is first
-    dealMap.forEach((items) => {
-      items.sort((a, b) => b.number.localeCompare(a.number, undefined, { numeric: true }));
-    });
-
-    const processedDeals = new Set<string>();
-    quotations.forEach((q) => {
-      if (q.dealId && !processedDeals.has(q.dealId)) {
-        processedDeals.add(q.dealId);
-        groups.push({ dealId: q.dealId, items: dealMap.get(q.dealId)! });
-      } else if (!q.dealId) {
-        groups.push({ dealId: null, items: [q] });
-      }
-    });
-
-    return groups;
+    }
+    for (const list of byDeal.values()) {
+      list.sort((a, b) => b.number.localeCompare(a.number, undefined, { numeric: true }));
+    }
+    return order;
   }, [quotations]);
 
-  let rowIndexCounter = 0;
+  // ── Derived pipeline numbers ────────────────────────────────
+  const open = stats ? stats.draft.count + stats.sent.count + stats.signed.count : 0;
+  const decided = stats ? stats.confirmed.count + stats.cancelled.count : 0;
+  const winRate = stats && decided > 0 ? Math.round((stats.confirmed.count / decided) * 100) : null;
+  const expiringSoon = stats ? stats.sent.expiringSoon + stats.draft.expiringSoon : 0;
+  const maxStageValue = stats ? Math.max(1, ...STAGES.map((s) => stats[s.id].value)) : 1;
 
-  const rowMarkup = groupedRows.map((group) => {
-    if (group.dealId && group.items.length > 1) {
-      // Render Deal Thread Group
-      const mainCustomer = group.items[0]?.customerName ?? "Customer";
-      const totalRevisions = group.items.length;
-      const latestItem = group.items[0];
-      const isCollapsed = collapsedDeals[group.dealId] ?? true;
-
-      return (
-        <React.Fragment key={`deal-group-${group.dealId}`}>
-          {/* Thread Header Row */}
-          <IndexTable.Row
-            id={`deal-header-${group.dealId}`}
-            position={rowIndexCounter++}
-            selected={false}
-            onClick={() => toggleDealCollapse(group.dealId!)}
-          >
-            <IndexTable.Cell colSpan={showBranchColumn ? 7 : 6}>
-              <Box background="bg-surface-tertiary" padding="200" borderRadius="150">
-                <InlineStack align="space-between" blockAlign="center">
-                  <InlineStack gap="200" blockAlign="center">
-                    <Button
-                      size="slim"
-                      variant="plain"
-                      accessibilityLabel={isCollapsed ? "Expand deal thread" : "Collapse deal thread"}
-                      onClick={(e?: React.MouseEvent) => {
-                        e?.stopPropagation?.();
-                        toggleDealCollapse(group.dealId!);
-                      }}
-                    >
-                      {isCollapsed ? "▶" : "▼"}
-                    </Button>
-                    <Text as="span" variant="headingSm" fontWeight="bold">
-                      📁 Deal Thread: {mainCustomer}
-                    </Text>
-                    <StatusBadge variant="info">
-                      {`${totalRevisions} Revisions`}
-                    </StatusBadge>
-                  </InlineStack>
-                  <InlineStack gap="200" blockAlign="center">
-                    <Text as="span" variant="bodySm" tone="subdued">
-                      Latest: {latestItem?.number} (
-                      {latestItem?.quoteDate
-                        ? formatAppDate(latestItem.quoteDate)
-                        : "—"}
-                      )
-                    </Text>
-                    <Text as="span" variant="bodySm" fontWeight="semibold" tone="subdued">
-                      {isCollapsed ? "[Click to Expand]" : "[Click to Collapse]"}
-                    </Text>
-                  </InlineStack>
-                </InlineStack>
-              </Box>
-            </IndexTable.Cell>
-          </IndexTable.Row>
-
-          {/* Child Rows for this Deal (only rendered if not collapsed) */}
-          {!isCollapsed &&
-            group.items.map((quotation) => {
-              const viewHref = `/dashboard/sales/quotations/${quotation.id}`;
-              const editHref = `/dashboard/sales/quotations/${quotation.id}/edit`;
-              const isCancelled = quotation.state === "cancelled";
-
-            return (
-              <IndexTable.Row
-                id={quotation.id}
-                key={quotation.id}
-                position={rowIndexCounter++}
-                onClick={() => router.push(viewHref)}
-              >
-                <IndexTable.Cell>
-                  <div style={{ paddingLeft: 20, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "var(--p-color-text-subdued)", fontSize: 14 }}>└──</span>
-                    <Link url={viewHref}>
-                      <span style={{ textDecoration: isCancelled ? "line-through" : "none", opacity: isCancelled ? 0.7 : 1 }}>
-                        <Text as="span" fontWeight="bold">
-                          {quotation.number}
-                        </Text>
-                      </span>
-                    </Link>
-                  </div>
-                </IndexTable.Cell>
-                <IndexTable.Cell>
-                  <BlockStack gap="050">
-                    <Text as="span" fontWeight="semibold">
-                      {quotation.customerName ?? "Customer Account"}
-                    </Text>
-                    {quotation.customerReference && (
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Ref: {quotation.customerReference}
-                      </Text>
-                    )}
-                  </BlockStack>
-                </IndexTable.Cell>
-                <IndexTable.Cell>{formatAppDate(quotation.quoteDate)}</IndexTable.Cell>
-                {showBranchColumn ? (
-                  <IndexTable.Cell>{branchLabel(quotation.branchId)}</IndexTable.Cell>
-                ) : null}
-                <IndexTable.Cell>{stateBadge(quotation.state)}</IndexTable.Cell>
-                <IndexTable.Cell>
-                  <Text as="span" fontWeight="bold" alignment="end">
-                    {formatQuotationAmount(quotation, formatOrgMoney, resolveCurrency)}
-                  </Text>
-                </IndexTable.Cell>
-                <IndexTable.Cell>
-                  <InlineStack gap="150" blockAlign="center">
-                    <Button
-                      size="slim"
-                      variant="primary"
-                      onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); router.push(viewHref); }}
-                    >
-                      View Quote
-                    </Button>
-
-                    <Button
-                      size="slim"
-                      onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); router.push(editHref); }}
-                    >
-                      Edit
-                    </Button>
-
-                    {quotation.state === "draft" || quotation.state === "sent" ? (
-                      <Button
-                        size="slim"
-                        onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); openEmailModal(quotation); }}
-                      >
-                        Send Email
-                      </Button>
-                    ) : null}
-
-                    {quotation.state === "sent" || quotation.state === "signed" ? (
-                      <Button
-                        size="slim"
-                        tone="success"
-                        onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); void handleConfirmOrder(quotation.id); }}
-                      >
-                        Confirm
-                      </Button>
-                    ) : null}
-
-                    {quotation.state === "cancelled" ? (
-                      <Button
-                        size="slim"
-                        tone="critical"
-                        onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); setDeleteQuote(quotation); }}
-                      >
-                        Delete
-                      </Button>
-                    ) : null}
-                  </InlineStack>
-                </IndexTable.Cell>
-              </IndexTable.Row>
-            );
-          })}
-        </React.Fragment>
-      );
+  function nextStep(quote: Quotation) {
+    switch (quote.state) {
+      case "draft":
+        return { label: "Send", icon: SendIcon, action: () => setEmailFor(quote) };
+      case "sent":
+      case "signed":
+        return { label: "Confirm order", icon: CheckIcon, action: () => void handleConfirm(quote) };
+      default:
+        return null;
     }
+  }
 
-    // Standard standalone row
-    const quotation = group.items[0];
-    const viewHref = `/dashboard/sales/quotations/${quotation.id}`;
-    const editHref = `/dashboard/sales/quotations/${quotation.id}/edit`;
+  let position = 0;
+
+  function renderRow(quote: Quotation, opts: { child?: boolean; revisions?: number; groupKey?: string; isOpen?: boolean } = {}) {
+    const viewHref = `/dashboard/sales/quotations/${quote.id}`;
+    const days = daysUntil(quote.validityDate);
+    const isOpenQuote = quote.state === "draft" || quote.state === "sent";
+    const step = opts.child ? null : nextStep(quote);
+    const name = quote.customerName ?? "Customer";
+    const foreign = quote.currencyCode && quote.currencyCode !== baseCurrencyCode;
+
+    let validity: React.ReactNode = null;
+    if (isOpenQuote && days !== null) {
+      validity =
+        days < 0 ? (
+          <span className="qt-valid is-expired">Expired {Math.abs(days)}d ago</span>
+        ) : days <= 7 ? (
+          <span className="qt-valid is-soon">Expires {days === 0 ? "today" : `in ${days}d`}</span>
+        ) : (
+          <span className="qt-valid">Valid to {formatAppDate(quote.validityDate!)}</span>
+        );
+    } else if (quote.state === "confirmed") {
+      validity = (
+        <span className={cn("qt-valid", quote.invoiceStatus === "invoiced" ? "is-done" : "is-todo")}>
+          {quote.invoiceStatus === "invoiced"
+            ? "Invoiced"
+            : quote.invoiceStatus === "partial"
+              ? "Partly invoiced"
+              : "Ready to invoice"}
+        </span>
+      );
+    } else if (quote.state === "signed" && quote.signedBy) {
+      validity = <span className="qt-valid is-done">Signed by {quote.signedBy}</span>;
+    }
 
     return (
       <IndexTable.Row
-        id={quotation.id}
-        key={quotation.id}
-        position={rowIndexCounter++}
+        id={quote.id}
+        key={quote.id}
+        position={position++}
         onClick={() => router.push(viewHref)}
       >
         <IndexTable.Cell>
-          <Link url={viewHref}>
-            <Text as="span" fontWeight="bold">
-              {quotation.number}
-            </Text>
-          </Link>
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <BlockStack gap="050">
-            <Text as="span" fontWeight="semibold">
-              {quotation.customerName ?? "Customer Account"}
-            </Text>
-            {quotation.customerReference && (
-              <Text as="span" tone="subdued" variant="bodySm">
-                Ref: {quotation.customerReference}
-              </Text>
+          <div className={cn("qt-num", opts.child && "is-child", quote.state === "cancelled" && "is-cancelled")}>
+            {opts.revisions && opts.revisions > 1 ? (
+              <button
+                aria-expanded={opts.isOpen}
+                aria-label={opts.isOpen ? "Hide older revisions" : "Show older revisions"}
+                className="qt-num__toggle"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpanded((prev) => ({ ...prev, [opts.groupKey!]: !prev[opts.groupKey!] }));
+                }}
+              >
+                <Icon source={opts.isOpen ? ChevronDownIcon : ChevronRightIcon} />
+              </button>
+            ) : opts.child ? (
+              <span className="qt-num__branch" />
+            ) : (
+              <span className="qt-num__spacer" />
             )}
-          </BlockStack>
+            <span className="qt-num__text">
+              <strong>{quote.number}</strong>
+              {opts.revisions && opts.revisions > 1 ? (
+                <small>{`${opts.revisions} revisions`}</small>
+              ) : opts.child ? (
+                <small>Earlier revision</small>
+              ) : quote.customerReference ? (
+                <small>Ref {quote.customerReference}</small>
+              ) : null}
+            </span>
+          </div>
         </IndexTable.Cell>
-        <IndexTable.Cell>{formatAppDate(quotation.quoteDate)}</IndexTable.Cell>
-        {showBranchColumn ? (
-          <IndexTable.Cell>{branchLabel(quotation.branchId)}</IndexTable.Cell>
-        ) : null}
-        <IndexTable.Cell>{stateBadge(quotation.state)}</IndexTable.Cell>
         <IndexTable.Cell>
-          <Text as="span" fontWeight="bold" alignment="end">
-            {formatQuotationAmount(quotation, formatOrgMoney, resolveCurrency)}
-          </Text>
+          <div className="qt-cust">
+            <span className="qt-cust__avatar">{initials(name)}</span>
+            <span className="qt-cust__text">
+              <strong>{name}</strong>
+              {quote.customerEmail ? <small>{quote.customerEmail}</small> : null}
+            </span>
+          </div>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <InlineStack gap="150" blockAlign="center">
-            <Button
-              size="slim"
-              variant="primary"
-              onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); router.push(viewHref); }}
+          <div className="qt-date">
+            <span>{formatAppDate(quote.quoteDate)}</span>
+            {validity}
+          </div>
+        </IndexTable.Cell>
+        {showBranchColumn ? <IndexTable.Cell>{branchLabel(quote.branchId)}</IndexTable.Cell> : null}
+        <IndexTable.Cell>
+          <StageTrack state={quote.state} />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <div className="qt-amount">
+            <strong>{amountOf(quote)}</strong>
+            {foreign ? <small>≈ {formatBaseMoney(parseFloat(quote.amountTotalBase) || 0)}</small> : null}
+          </div>
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <div className="qt-actions" onClick={(event) => event.stopPropagation()}>
+            {step ? (
+              <Button
+                icon={step.icon}
+                loading={confirmingId === quote.id}
+                size="slim"
+                variant={quote.state === "signed" ? "primary" : "secondary"}
+                onClick={step.action}
+              >
+                {step.label}
+              </Button>
+            ) : null}
+            <Popover
+              active={openMenu === quote.id}
+              activator={
+                <Button
+                  accessibilityLabel={`Actions for ${quote.number}`}
+                  icon={MenuHorizontalIcon}
+                  size="slim"
+                  variant="tertiary"
+                  onClick={() => setOpenMenu((current) => (current === quote.id ? null : quote.id))}
+                />
+              }
+              preferredAlignment="right"
+              onClose={() => setOpenMenu(null)}
             >
-              View Quote
-            </Button>
-
-            <Button
-              size="slim"
-              onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); router.push(editHref); }}
-            >
-              Edit
-            </Button>
-
-            {quotation.state === "draft" || quotation.state === "sent" ? (
-              <Button
-                size="slim"
-                onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); openEmailModal(quotation); }}
-              >
-                Send Email
-              </Button>
-            ) : null}
-
-            {quotation.state === "sent" || quotation.state === "signed" ? (
-              <Button
-                size="slim"
-                tone="success"
-                onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); void handleConfirmOrder(quotation.id); }}
-              >
-                Confirm
-              </Button>
-            ) : null}
-
-            {quotation.state === "cancelled" ? (
-              <Button
-                size="slim"
-                tone="critical"
-                onClick={(e?: React.MouseEvent) => { e?.stopPropagation?.(); setDeleteQuote(quotation); }}
-              >
-                Delete
-              </Button>
-            ) : null}
-          </InlineStack>
+              <ActionList
+                actionRole="menuitem"
+                onActionAnyItem={() => setOpenMenu(null)}
+                sections={[
+                  {
+                    items: [
+                      { content: "Open", onAction: () => router.push(viewHref) },
+                      ...(quote.state !== "confirmed" && quote.state !== "cancelled"
+                        ? [{ content: "Edit", onAction: () => router.push(`${viewHref}/edit`) }]
+                        : []),
+                      ...(quote.state === "draft" || quote.state === "sent"
+                        ? [{ content: quote.state === "sent" ? "Send again" : "Send to customer", onAction: () => setEmailFor(quote) }]
+                        : []),
+                      ...(quote.state === "sent" || quote.state === "signed"
+                        ? [{ content: "Confirm as order", onAction: () => void handleConfirm(quote) }]
+                        : []),
+                    ],
+                  },
+                  ...(quote.state === "cancelled"
+                    ? [{ items: [{ content: "Delete", destructive: true, onAction: () => setDeleteFor(quote) }] }]
+                    : []),
+                ]}
+              />
+            </Popover>
+          </div>
         </IndexTable.Cell>
       </IndexTable.Row>
     );
+  }
+
+  const rows = groups.flatMap((group) => {
+    const [latest, ...older] = group.items;
+    const isOpen = Boolean(expanded[group.key]);
+    const out = [renderRow(latest, { revisions: group.items.length, groupKey: group.key, isOpen })];
+    if (isOpen) for (const q of older) out.push(renderRow(q, { child: true }));
+    return out;
   });
 
+  const tabCount = (id: TabId) => {
+    if (!stats) return undefined;
+    if (id === "all") return String(Object.values(stats).reduce((sum, s) => sum + s.count, 0));
+    return String(stats[id].count);
+  };
 
   return (
     <AppPage
       backAction={{ content: "Home", url: "/dashboard" }}
       fullWidth
       primaryAction={{
-        content: "+ Create Quotation",
+        content: "New quotation",
+        icon: PlusIcon,
         onAction: () => router.push("/dashboard/sales/quotations/new"),
       }}
-      subtitle="Quotations become confirmed sales orders when approved by customers."
-      title="Quotations & Sales Orders"
+      subtitle="Every quote from first draft to confirmed sales order."
+      title="Quotations"
     >
       <BlockStack gap="400">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <KpiCard
-            icon={<TrendingUp className="size-5" />}
-            label="Total Quotation Pipeline"
-            value={formatBaseMoney(totalPipeline)}
-            hint={`Total active quote value in ${baseCurrencyCode}`}
-            tone="default"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<FileText className="size-5" />}
-            label="Active Drafts"
-            value={`${quotations.filter((q) => q.state === "draft").length} drafts`}
-            hint="Pending completion"
-            tone="muted"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<ShoppingCart className="size-5" />}
-            label="Confirmed Orders"
-            value={`${quotations.filter((q) => q.state === "confirmed").length} orders`}
-            hint="Ready to invoice"
-            tone="success"
-            loading={loading}
-          />
-        </div>
-
-        {actionSuccess ? (
-          <Banner tone="success" onDismiss={() => setActionSuccess(null)}>
-            {actionSuccess}
+        {notice ? (
+          <Banner tone="success" onDismiss={() => setNotice(null)}>
+            {notice}
           </Banner>
         ) : null}
-
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
             {error}
           </Banner>
         ) : null}
 
-        <IndexSurface>
-          <IndexFilters
-            canCreateNewView={false}
-            cancelAction={{
-              onAction: () => setQuery(""),
-              disabled: false,
-              loading: false,
-            }}
-            filters={[]}
-            mode={mode}
-            queryPlaceholder="Search quotations by quote number, customer name, or reference..."
-            queryValue={query}
-            selected={selectedTab}
-            tabs={tabs}
-            onClearAll={() => setQuery("")}
-            onQueryChange={setQuery}
-            onQueryClear={() => setQuery("")}
-            onSelect={setSelectedTab}
-            setMode={setMode}
-          />
+        {/* Pipeline */}
+        <section className="qt-hero">
+          <div className="qt-hero__top">
+            <div className="qt-hero__main">
+              <span className="qt-hero__label">Open pipeline</span>
+              <span className="qt-hero__value">{formatBaseMoney(pipelineTotalBase)}</span>
+              <span className="qt-hero__hint">
+                {stats ? `${open} open quote${open === 1 ? "" : "s"} waiting on you or the customer` : "Loading…"}
+              </span>
+            </div>
+            <div className="qt-hero__kpis">
+              <div>
+                <span>Win rate</span>
+                <strong>{winRate === null ? "—" : `${winRate}%`}</strong>
+                <small>{stats ? `${stats.confirmed.count} won · ${stats.cancelled.count} lost` : ""}</small>
+              </div>
+              <button
+                className={expiringSoon ? "is-alert" : undefined}
+                type="button"
+                onClick={() => setTab(TABS.findIndex((t) => t.id === "sent"))}
+              >
+                <span>Expiring this week</span>
+                <strong>{expiringSoon}</strong>
+                <small>{expiringSoon ? "follow up before they lapse" : "nothing about to lapse"}</small>
+              </button>
+            </div>
+          </div>
 
-          <IndexTablePaginationBar
-            page={page}
-            perPage={QUOTATION_PAGE_SIZE}
-            total={total}
-            resourceName={quotationResourceName}
-            loading={loading}
-            onPageChange={setPage}
-            placement="header"
-          />
+          <div className="qt-flow">
+            {STAGES.map((stage, i) => {
+              const stat = stats?.[stage.id];
+              const active = activeTab === stage.id;
+              return (
+                <React.Fragment key={stage.id}>
+                  <button
+                    className={cn("qt-stage", `is-${stage.id}`, active && "is-active")}
+                    type="button"
+                    onClick={() => setTab(active ? 0 : TABS.findIndex((t) => t.id === stage.id))}
+                  >
+                    <span className="qt-stage__label">
+                      <i>{i + 1}</i>
+                      {stage.label}
+                    </span>
+                    <strong>{stat ? stat.count : "…"}</strong>
+                    <small>{stat ? formatBaseMoney(stat.value) : stage.hint}</small>
+                    <span className="qt-stage__bar">
+                      <b style={{ width: `${stat ? Math.max(4, (stat.value / maxStageValue) * 100) : 0}%` }} />
+                    </span>
+                  </button>
+                  {i < STAGES.length - 1 ? <span className="qt-flow__arrow" aria-hidden>→</span> : null}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="qt-surface">
+          <div className="qt-bar">
+            <Tabs
+              selected={tab}
+              tabs={TABS.map((t) => ({ id: t.id, content: t.label, badge: tabCount(t.id) }))}
+              onSelect={setTab}
+            />
+            <div className="qt-bar__search">
+              <TextField
+                autoComplete="off"
+                clearButton
+                label="Search quotations"
+                labelHidden
+                placeholder="Quote number, customer or reference"
+                prefix={<Icon source={SearchIcon} />}
+                value={query}
+                onChange={setQuery}
+                onClearButtonClick={() => setQuery("")}
+              />
+            </div>
+          </div>
 
           <IndexTable
-            emptyState={emptyState}
+            emptyState={
+              debouncedQuery || activeTab !== "all" ? (
+                <div className="qt-empty">
+                  <Text as="p" fontWeight="semibold">
+                    No quotations here
+                  </Text>
+                  <Text as="p" tone="subdued">
+                    Try another tab or search.
+                  </Text>
+                </div>
+              ) : (
+                <EmptyState
+                  action={{ content: "Create quotation", onAction: () => router.push("/dashboard/sales/quotations/new") }}
+                  heading="Create your first quotation"
+                  image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
+                >
+                  <p>Build a quote, send it for signature, then confirm it as a sales order in one click.</p>
+                </EmptyState>
+              )
+            }
             headings={[
-              { title: "Quotation Number" },
-              { title: "Customer Account" },
+              { title: "Quote" },
+              { title: "Customer" },
               { title: "Date" },
               ...(showBranchColumn ? [{ title: "Branch" }] : []),
-              { title: "Status" },
-              { title: "Total Amount", alignment: "end" },
-              { title: "Actions" },
+              { title: "Stage" },
+              { title: "Amount", alignment: "end" as const },
+              { title: "", hidden: true },
             ]}
-            itemCount={total}
+            itemCount={quotations.length}
             loading={loading}
-            pagination={buildIndexTablePagination({
-              page,
-              perPage: QUOTATION_PAGE_SIZE,
-              total,
-              onPageChange: setPage,
-              resourceName: quotationResourceName,
-            })}
-            resourceName={quotationResourceName}
+            resourceName={resourceName}
+            selectable={false}
           >
-            {rowMarkup}
+            {rows}
           </IndexTable>
 
           <IndexTablePaginationBar
-            page={page}
-            perPage={QUOTATION_PAGE_SIZE}
-            total={total}
-            resourceName={quotationResourceName}
             loading={loading}
-            onPageChange={setPage}
+            page={page}
+            perPage={PAGE_SIZE}
             placement="footer"
+            resourceName={resourceName}
+            total={total}
+            onPageChange={setPage}
           />
-        </IndexSurface>
+        </div>
       </BlockStack>
 
       <SendDocumentEmailModal
-        open={emailModalOpen}
-        onClose={() => setEmailModalOpen(false)}
-        title={`Send quotation ${selectedQuote?.number ?? ""} to customer`}
-        pdfLabel={selectedQuote ? `quotation-${selectedQuote.number}.pdf` : undefined}
-        loading={emailSending}
         documentType="quotation"
-        recipient={selectedQuote?.customerEmail ?? ""}
+        loading={emailSending}
+        open={Boolean(emailFor)}
+        pdfLabel={emailFor ? `quotation-${emailFor.number}.pdf` : undefined}
         placeholders={{
-          number: selectedQuote?.number ?? "",
-          customerName: selectedQuote?.customerName ?? "Customer",
+          number: emailFor?.number ?? "",
+          customerName: emailFor?.customerName ?? "Customer",
           companyName: "",
-          total: selectedQuote
-            ? formatQuotationAmount(selectedQuote, formatOrgMoney, resolveCurrency)
-            : "",
+          total: emailFor ? amountOf(emailFor) : "",
         }}
-        primaryActionLabel="Dispatch quotation email"
+        primaryActionLabel="Send quotation"
+        recipient={emailFor?.customerEmail ?? ""}
+        title={`Send ${emailFor?.number ?? ""} to the customer`}
+        onClose={() => setEmailFor(null)}
         onSend={handleSendEmail}
       />
 
       <Modal
-        open={deleteQuote !== null}
-        onClose={() => setDeleteQuote(null)}
-        title={`Delete cancelled quotation ${deleteQuote?.number ?? ""}?`}
-        primaryAction={{
-          content: "Delete quotation",
-          destructive: true,
-          loading: deleting,
-          onAction: () => void handleDeleteQuote(),
-        }}
-        secondaryActions={[
-          { content: "Keep quotation", onAction: () => setDeleteQuote(null) },
-        ]}
+        open={deleteFor !== null}
+        primaryAction={{ content: "Delete quotation", destructive: true, loading: deleting, onAction: () => void handleDelete() }}
+        secondaryActions={[{ content: "Keep it", onAction: () => setDeleteFor(null) }]}
+        title={`Delete ${deleteFor?.number ?? ""}?`}
+        onClose={() => setDeleteFor(null)}
       >
         <Modal.Section>
-          <BlockStack gap="200">
-            <Text as="p">
-              This removes the cancelled quotation from normal lists. Its audit
-              history and document number remain recorded.
-            </Text>
-            <Text as="p" fontWeight="semibold">
-              Only cancelled quotations can be deleted.
-            </Text>
-          </BlockStack>
+          <Text as="p">
+            This removes the cancelled quotation from your lists. Its document number and audit history stay on record.
+          </Text>
         </Modal.Section>
       </Modal>
     </AppPage>

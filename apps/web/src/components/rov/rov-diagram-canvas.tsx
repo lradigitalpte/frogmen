@@ -197,8 +197,10 @@ export function RovDiagramCanvas({
             {displayPoints.map((point) => {
               const x = clampCoordinate(point.xCoordinate ?? 0);
               const y = clampCoordinate(point.yCoordinate ?? 0);
-              const severityKey = normalizeSeverity(point.severity) ?? "minor";
-              const color = severityColors[severityKey] ?? severityPinColor(severityKey);
+              const severityKey = normalizeSeverity(point.severity);
+              const color = severityKey
+                ? (severityColors[severityKey] ?? severityPinColor(severityKey))
+                : severityPinColor(null);
               const isSelected = selectedPointId === point.id;
 
               return (

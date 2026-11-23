@@ -1,24 +1,11 @@
 "use client";
 
-import {
-  Banner,
-  BlockStack,
-  Box,
-  Button,
-  InlineStack,
-  Modal,
-  Text,
-  TextField,
-} from "@shopify/polaris";
-import { ArrowRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  productUnitStatusLabel,
-  productUnitStatusVariant,
-  StatusBadge,
-} from "@/components/ui/status-badge";
-import { cn } from "@/lib/utils";
+import { Badge, Banner, Button, Icon, Modal, Spinner, TextField } from "@shopify/polaris";
+import { ArrowDownIcon, CheckIcon, SearchIcon } from "@shopify/polaris-icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { productUnitStatusLabel } from "@/components/ui/status-badge";
 import { linkProductUnit, listLinkableUnits } from "@/lib/products-api";
+import { cn } from "@/lib/utils";
 import type { LinkableProductUnit, ProductDetail, ProductUnit } from "@/types/product";
 
 export interface LinkableUnitOption {
@@ -26,6 +13,7 @@ export interface LinkableUnitOption {
   serialNumber: string;
   productId: string;
   productName: string;
+  productSku?: string | null;
   warehouseName?: string;
   status: ProductUnit["status"];
   parentUnitId: string | null;
@@ -40,111 +28,97 @@ interface LinkComponentModalProps {
   onLinked: () => void | Promise<void>;
 }
 
-function UnitPickRow({
-  unit,
-  selected,
-  onSelect,
-}: {
-  unit: LinkableUnitOption;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      className={cn(
-        "flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left transition-colors last:border-b-0",
-        "hover:bg-muted/50",
-        selected && "bg-primary/5",
-      )}
-      type="button"
-      onClick={onSelect}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "mt-0.5 h-4 w-4 shrink-0 rounded-full border-2",
-          selected ? "border-primary bg-primary" : "border-muted-foreground/40",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{unit.productName}</div>
-        <div className="truncate text-xs text-muted-foreground">
-          S/N {unit.serialNumber}
-          {unit.warehouseName ? ` · ${unit.warehouseName}` : ""}
-          {!unit.isSubProduct ? " · Standalone" : ""}
-        </div>
-      </div>
-      <StatusBadge variant={productUnitStatusVariant(unit.status)}>
-        {productUnitStatusLabel(unit.status)}
-      </StatusBadge>
-    </button>
-  );
+const PART_LIMIT = 30;
+const STATUS_RANK: Record<ProductUnit["status"], number> = { in_stock: 0, assigned: 1, sold: 2, scrapped: 3 };
+
+function statusTone(status: ProductUnit["status"]) {
+  if (status === "in_stock") return "success" as const;
+  if (status === "assigned") return "info" as const;
+  if (status === "scrapped") return "critical" as const;
+  return undefined;
 }
 
-function ScrollableUnitList({
-  children,
-  empty,
-}: {
-  children?: ReactNode;
-  empty?: ReactNode;
-}) {
-  if (empty) {
-    return <Box padding="300">{empty}</Box>;
-  }
-
-  return (
-    <div className="max-h-52 overflow-y-auto rounded-lg border border-border bg-card">
-      {children}
-    </div>
-  );
-}
-
-function toLinkableOption(unit: LinkableProductUnit): LinkableUnitOption {
+function toOption(unit: LinkableProductUnit): LinkableUnitOption {
   return {
     id: unit.id,
     serialNumber: unit.serialNumber,
     productId: unit.productId,
     productName: unit.productName,
+    productSku: unit.productSku,
     warehouseName: unit.warehouseName,
     status: unit.status,
     parentUnitId: unit.parentUnitId,
-    isSubProduct: unit.isSubProduct,
+    isSubProduct: Boolean(unit.isSubProduct),
   };
 }
 
-function matchesQuery(unit: LinkableUnitOption, query: string) {
-  const haystack = [
-    unit.productName,
-    unit.serialNumber,
-    unit.warehouseName ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(query);
+function OptionRow({
+  unit,
+  selected,
+  title,
+  onSelect,
+  name,
+}: {
+  unit: LinkableUnitOption;
+  selected: boolean;
+  title: string;
+  name: string;
+  onSelect: () => void;
+}) {
+  return (
+    <label className={cn("lc-option", selected && "is-selected")}>
+      <input checked={selected} className="lc-option__input" name={name} type="radio" onChange={onSelect} />
+      <span className="lc-option__radio" aria-hidden>
+        {selected ? <Icon source={CheckIcon} /> : null}
+      </span>
+      <span className="lc-option__text">
+        <strong>{title}</strong>
+        <small>
+          {[unit.warehouseName, unit.isSubProduct ? null : unit.productSku].filter(Boolean).join(" · ") || "No warehouse"}
+        </small>
+      </span>
+      <Badge tone={statusTone(unit.status)}>{productUnitStatusLabel(unit.status)}</Badge>
+    </label>
+  );
 }
 
-export function LinkComponentModal({
-  open,
-  product,
-  parentUnits,
-  onClose,
-  onLinked,
-}: LinkComponentModalProps) {
+function Chosen({ label, title, meta, onChange }: { label: string; title: string; meta: string; onChange: () => void }) {
+  return (
+    <div className="lc-chosen">
+      <span className="lc-chosen__check" aria-hidden>
+        <Icon source={CheckIcon} />
+      </span>
+      <span className="lc-chosen__text">
+        <small>{label}</small>
+        <strong>{title}</strong>
+        <em>{meta}</em>
+      </span>
+      <Button size="slim" variant="plain" onClick={onChange}>
+        Change
+      </Button>
+    </div>
+  );
+}
+
+export function LinkComponentModal({ open, product, parentUnits, onClose, onLinked }: LinkComponentModalProps) {
   const [partSearch, setPartSearch] = useState("");
-  const [rovSearch, setRovSearch] = useState("");
   const [debouncedPartSearch, setDebouncedPartSearch] = useState("");
-  const [componentUnits, setComponentUnits] = useState<LinkableUnitOption[]>([]);
+  const [parentSearch, setParentSearch] = useState("");
+  const [parts, setParts] = useState<LinkableUnitOption[]>([]);
+  const [partsTotal, setPartsTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedComponentId, setSelectedComponentId] = useState("");
-  const [selectedParentId, setSelectedParentId] = useState("");
+  const [part, setPart] = useState<LinkableUnitOption | null>(null);
+  const [parentId, setParentId] = useState("");
+  const [editingParent, setEditingParent] = useState(true);
+  const requestRef = useRef(0);
 
+  // Main-unit serials that can take a part: not themselves attached, not scrapped. In-stock first.
   const parentCandidates = useMemo<LinkableUnitOption[]>(
     () =>
       parentUnits
-        .filter((unit) => !unit.parentUnitId)
+        .filter((unit) => !unit.parentUnitId && unit.status !== "scrapped")
         .map((unit) => ({
           id: unit.id,
           serialNumber: unit.serialNumber,
@@ -154,279 +128,264 @@ export function LinkComponentModal({
           status: unit.status,
           parentUnitId: unit.parentUnitId,
           isSubProduct: true,
-        })),
+        }))
+        .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.serialNumber.localeCompare(b.serialNumber)),
     [parentUnits, product.id, product.name],
   );
 
-  const filteredParentCandidates = useMemo(() => {
-    const query = rovSearch.trim().toLowerCase();
-    if (!query) return parentCandidates;
-    return parentCandidates.filter((unit) => matchesQuery(unit, query));
-  }, [parentCandidates, rovSearch]);
+  const filteredParents = useMemo(() => {
+    const q = parentSearch.trim().toLowerCase();
+    if (!q) return parentCandidates;
+    return parentCandidates.filter((u) => `${u.serialNumber} ${u.warehouseName ?? ""}`.toLowerCase().includes(q));
+  }, [parentCandidates, parentSearch]);
 
-  const selectedComponent = useMemo(
-    () => componentUnits.find((unit) => unit.id === selectedComponentId),
-    [componentUnits, selectedComponentId],
-  );
-  const selectedParent = useMemo(
-    () => parentCandidates.find((unit) => unit.id === selectedParentId),
-    [parentCandidates, selectedParentId],
-  );
+  const parent = parentCandidates.find((u) => u.id === parentId) ?? null;
 
-  const canLink =
-    Boolean(selectedComponentId) &&
-    Boolean(selectedParentId) &&
-    selectedComponentId !== selectedParentId;
-
-  const shouldSearchParts = debouncedPartSearch.trim().length > 0;
+  // Reset on open/close; preselect the only in-stock main unit.
+  useEffect(() => {
+    if (open) {
+      const inStock = parentCandidates.filter((u) => u.status === "in_stock");
+      if (inStock.length === 1) {
+        setParentId(inStock[0].id);
+        setEditingParent(false);
+      }
+      return;
+    }
+    setPartSearch("");
+    setDebouncedPartSearch("");
+    setParentSearch("");
+    setParts([]);
+    setPart(null);
+    setParentId("");
+    setEditingParent(true);
+    setError(null);
+    // parentCandidates intentionally read only when the modal opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedPartSearch(partSearch), 300);
+    const timer = setTimeout(() => setDebouncedPartSearch(partSearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [partSearch]);
 
-  const loadParts = useCallback(async () => {
-    if (!shouldSearchParts) {
-      setComponentUnits([]);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await listLinkableUnits(product.id, {
-        search: debouncedPartSearch.trim(),
-        perPage: 30,
-      });
-      setComponentUnits(result.data.map(toLinkableOption));
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load component units",
-      );
-      setComponentUnits([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedPartSearch, product.id, shouldSearchParts]);
-
+  // Load part suggestions as soon as the modal opens, then on every search.
   useEffect(() => {
-    if (!open) {
-      setPartSearch("");
-      setRovSearch("");
-      setDebouncedPartSearch("");
-      setSelectedComponentId("");
-      setSelectedParentId("");
-      setComponentUnits([]);
-      setError(null);
-      return;
-    }
+    if (!open) return;
+    const request = ++requestRef.current;
+    setLoading(true);
+    listLinkableUnits(product.id, { search: debouncedPartSearch || undefined, perPage: PART_LIMIT })
+      .then((result) => {
+        if (request !== requestRef.current) return;
+        const options = result.data
+          .map(toOption)
+          .filter((u) => u.status !== "scrapped")
+          .sort(
+            (a, b) =>
+              Number(b.isSubProduct) - Number(a.isSubProduct) ||
+              STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
+              a.productName.localeCompare(b.productName),
+          );
+        setParts(options);
+        setPartsTotal(result.meta.total);
+      })
+      .catch((err) => {
+        if (request !== requestRef.current) return;
+        setError(err instanceof Error ? err.message : "Couldn't load part serials");
+        setParts([]);
+      })
+      .finally(() => {
+        if (request === requestRef.current) setLoading(false);
+      });
+  }, [debouncedPartSearch, open, product.id]);
 
-    void loadParts();
-  }, [open, loadParts]);
+  const canLink = Boolean(part && parent && part.id !== parent.id);
 
   async function handleLink() {
-    if (!canLink) return;
-
+    if (!part || !parent) return;
     setSaving(true);
     setError(null);
-
     try {
-      await linkProductUnit(selectedComponentId, selectedParentId);
-      setSelectedComponentId("");
-      setSelectedParentId("");
+      await linkProductUnit(part.id, parent.id);
       await onLinked();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to link units");
+      setError(err instanceof Error ? err.message : "Couldn't attach the part");
     } finally {
       setSaving(false);
     }
   }
 
+  const fromThisProduct = parts.filter((u) => u.isSubProduct);
+  const otherParts = parts.filter((u) => !u.isSubProduct);
+
+  function renderPartGroup(label: string, list: LinkableUnitOption[]) {
+    if (!list.length) return null;
+    return (
+      <div className="lc-group">
+        <span className="lc-group__label">{label}</span>
+        {list.map((unit) => (
+          <OptionRow
+            key={unit.id}
+            name="lc-part"
+            selected={part?.id === unit.id}
+            title={`${unit.productName} · ${unit.serialNumber}`}
+            unit={unit}
+            onSelect={() => setPart(unit)}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <Modal
+      footer={
+        <span className="lc-footnote">
+          {canLink ? "Ready to attach." : !part ? "Pick a part serial to continue." : `Pick a ${product.name} serial to continue.`}
+        </span>
+      }
       open={open}
-      primaryAction={{
-        content: "Attach component",
-        disabled: !canLink,
-        loading: saving,
-        onAction: handleLink,
-      }}
+      primaryAction={{ content: "Attach part", disabled: !canLink, loading: saving, onAction: () => void handleLink() }}
       secondaryActions={[{ content: "Cancel", onAction: onClose }]}
-      title="Attach part to ROV"
+      title={`Attach a part to ${product.name}`}
       onClose={onClose}
     >
       <Modal.Section>
-        <BlockStack gap="400">
-          <BlockStack gap="300">
-            <Text as="p" fontWeight="semibold" variant="bodyMd">
-              1. Part serial
-            </Text>
-            <TextField
-              autoComplete="off"
-              clearButton
-              label="Search parts"
-              labelHidden
-              onChange={setPartSearch}
-              onClearButtonClick={() => setPartSearch("")}
-              placeholder="Search by part name, SKU, or serial…"
-              value={partSearch}
-            />
-
-            {!shouldSearchParts ? (
-              <ScrollableUnitList
-                empty={
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Type to search unlinked part serials. Results are loaded on
-                    demand so large inventories stay fast.
-                  </Text>
-                }
-              />
-            ) : loading ? (
-              <ScrollableUnitList
-                empty={
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Searching parts…
-                  </Text>
-                }
-              />
-            ) : componentUnits.length === 0 ? (
-              <Box
-                background="bg-surface-secondary"
-                borderRadius="200"
-                padding="300"
-              >
-                <BlockStack gap="200">
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    No matching part serials for &quot;{debouncedPartSearch}
-                    &quot;.
-                  </Text>
-                  <InlineStack gap="200" wrap>
-                    <Button
-                      size="slim"
-                      url={`/dashboard/inventory/products/new?parentId=${product.id}`}
-                    >
-                      Create part
-                    </Button>
-                    <Button
-                      size="slim"
-                      url="/dashboard/inventory/products/new"
-                      variant="tertiary"
-                    >
-                      New component
-                    </Button>
-                  </InlineStack>
-                </BlockStack>
-              </Box>
-            ) : (
-              <BlockStack gap="150">
-                <Text as="p" tone="subdued" variant="bodySm">
-                  {componentUnits.length} match
-                  {componentUnits.length === 1 ? "" : "es"}
-                  {componentUnits.length >= 30 ? " (showing first 30)" : ""}
-                </Text>
-                <ScrollableUnitList>
-                  {componentUnits.map((unit) => (
-                    <UnitPickRow
-                      key={unit.id}
-                      selected={selectedComponentId === unit.id}
-                      unit={unit}
-                      onSelect={() => setSelectedComponentId(unit.id)}
-                    />
-                  ))}
-                </ScrollableUnitList>
-              </BlockStack>
-            )}
-          </BlockStack>
-
-          <BlockStack gap="300">
-            <Text as="p" fontWeight="semibold" variant="bodyMd">
-              2. Main ROV serial
-            </Text>
-            <TextField
-              autoComplete="off"
-              clearButton
-              label="Filter ROV serials"
-              labelHidden
-              onChange={setRovSearch}
-              onClearButtonClick={() => setRovSearch("")}
-              placeholder={`Filter ${product.name} serials…`}
-              value={rovSearch}
-            />
-
-            {parentCandidates.length === 0 ? (
-              <Box
-                background="bg-surface-secondary"
-                borderRadius="200"
-                padding="300"
-              >
-                <Text as="p" tone="subdued" variant="bodySm">
-                  No ROV serials on {product.name} yet. Add a main unit serial
-                  first.
-                </Text>
-              </Box>
-            ) : filteredParentCandidates.length === 0 ? (
-              <ScrollableUnitList
-                empty={
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    No ROV serials match your filter.
-                  </Text>
-                }
-              />
-            ) : (
-              <BlockStack gap="150">
-                <Text as="p" tone="subdued" variant="bodySm">
-                  {filteredParentCandidates.length} of {parentCandidates.length}{" "}
-                  serial{parentCandidates.length === 1 ? "" : "s"}
-                </Text>
-                <ScrollableUnitList>
-                  {filteredParentCandidates.map((unit) => (
-                    <UnitPickRow
-                      key={unit.id}
-                      selected={selectedParentId === unit.id}
-                      unit={unit}
-                      onSelect={() => setSelectedParentId(unit.id)}
-                    />
-                  ))}
-                </ScrollableUnitList>
-              </BlockStack>
-            )}
-          </BlockStack>
-
-          {selectedComponent && selectedParent ? (
-            <Box
-              background="bg-surface-success"
-              borderColor="border-success"
-              borderRadius="200"
-              borderWidth="025"
-              padding="300"
-            >
-              <InlineStack align="start" blockAlign="center" gap="200" wrap>
-                <Text as="span" fontWeight="semibold" variant="bodySm">
-                  {selectedComponent.productName} · S/N{" "}
-                  {selectedComponent.serialNumber}
-                </Text>
-                <ArrowRight aria-hidden className="text-primary" size={14} />
-                <Text as="span" fontWeight="semibold" variant="bodySm">
-                  {selectedParent.productName} · S/N {selectedParent.serialNumber}
-                </Text>
-              </InlineStack>
-              {!selectedComponent.isSubProduct ? (
-                <Text as="p" tone="subdued" variant="bodySm">
-                  The part product will also be linked to {product.name} in your
-                  catalog.
-                </Text>
-              ) : null}
-            </Box>
-          ) : null}
-
+        <div className="lc">
           {error ? (
             <Banner tone="critical" onDismiss={() => setError(null)}>
               {error}
             </Banner>
           ) : null}
-        </BlockStack>
+
+          {/* Step 1 */}
+          <section className={cn("lc-step", part && "is-done")}>
+            <header className="lc-step__head">
+              <span className="lc-step__num">{part ? <Icon source={CheckIcon} /> : "1"}</span>
+              <div>
+                <h3>Part serial</h3>
+                <p>A battery, thruster, camera or any serialized part that isn&apos;t attached yet.</p>
+              </div>
+            </header>
+
+            {part ? (
+              <Chosen
+                label="Part"
+                meta={[part.warehouseName, productUnitStatusLabel(part.status)].filter(Boolean).join(" · ")}
+                title={`${part.productName} · ${part.serialNumber}`}
+                onChange={() => setPart(null)}
+              />
+            ) : (
+              <>
+                <TextField
+                  autoComplete="off"
+                  autoFocus
+                  clearButton
+                  label="Search parts"
+                  labelHidden
+                  placeholder="Search by part name, SKU or serial"
+                  prefix={<Icon source={SearchIcon} />}
+                  suffix={loading ? <Spinner size="small" /> : undefined}
+                  value={partSearch}
+                  onChange={setPartSearch}
+                  onClearButtonClick={() => setPartSearch("")}
+                />
+                {parts.length === 0 && !loading ? (
+                  <div className="lc-empty">
+                    <strong>{debouncedPartSearch ? `No unattached parts match "${debouncedPartSearch}"` : "No unattached part serials"}</strong>
+                    <p>Create the part first, then add its serial.</p>
+                    <Button size="slim" url={`/dashboard/inventory/products/new?parentId=${product.id}`}>
+                      Create a part for {product.name}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className={cn("lc-list", loading && "is-loading")} role="radiogroup" aria-label="Part serials">
+                    {renderPartGroup(`${product.name} parts`, fromThisProduct)}
+                    {renderPartGroup(fromThisProduct.length ? "Other parts" : "Parts", otherParts)}
+                  </div>
+                )}
+                {partsTotal > parts.length ? (
+                  <small className="lc-hint">
+                    Showing {parts.length} of {partsTotal} — search to narrow it down.
+                  </small>
+                ) : null}
+              </>
+            )}
+          </section>
+
+          <span className="lc-arrow" aria-hidden>
+            <Icon source={ArrowDownIcon} />
+          </span>
+
+          {/* Step 2 */}
+          <section className={cn("lc-step", parent && !editingParent && "is-done")}>
+            <header className="lc-step__head">
+              <span className="lc-step__num">{parent && !editingParent ? <Icon source={CheckIcon} /> : "2"}</span>
+              <div>
+                <h3>{product.name} serial</h3>
+                <p>The main unit the part goes on.</p>
+              </div>
+            </header>
+
+            {parentCandidates.length === 0 ? (
+              <div className="lc-empty">
+                <strong>No {product.name} serials yet</strong>
+                <p>Add a serial for the main unit first, then attach parts to it.</p>
+              </div>
+            ) : parent && !editingParent ? (
+              <Chosen
+                label={product.name}
+                meta={[parent.warehouseName, productUnitStatusLabel(parent.status)].filter(Boolean).join(" · ")}
+                title={parent.serialNumber}
+                onChange={() => setEditingParent(true)}
+              />
+            ) : (
+              <>
+                {parentCandidates.length > 5 ? (
+                  <TextField
+                    autoComplete="off"
+                    clearButton
+                    label="Filter serials"
+                    labelHidden
+                    placeholder={`Filter ${product.name} serials`}
+                    prefix={<Icon source={SearchIcon} />}
+                    value={parentSearch}
+                    onChange={setParentSearch}
+                    onClearButtonClick={() => setParentSearch("")}
+                  />
+                ) : null}
+                {filteredParents.length === 0 ? (
+                  <p className="lc-hint">No serials match.</p>
+                ) : (
+                  <div className="lc-list" role="radiogroup" aria-label={`${product.name} serials`}>
+                    {filteredParents.map((unit) => (
+                      <OptionRow
+                        key={unit.id}
+                        name="lc-parent"
+                        selected={parentId === unit.id}
+                        title={unit.serialNumber}
+                        unit={unit}
+                        onSelect={() => {
+                          setParentId(unit.id);
+                          setEditingParent(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {parent?.status === "sold" ? (
+                  <small className="lc-hint">This unit is already sold — the part will follow it to the customer.</small>
+                ) : null}
+              </>
+            )}
+          </section>
+
+          {part && parent && !part.isSubProduct ? (
+            <p className="lc-hint">
+              {part.productName} will also be added to {product.name}&apos;s sub-products in your catalog.
+            </p>
+          ) : null}
+        </div>
       </Modal.Section>
     </Modal>
   );

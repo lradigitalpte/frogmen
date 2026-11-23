@@ -297,6 +297,7 @@ export class RovInspectionService {
         point: inspectionPoints,
         view: inspectionViews,
         structure: projectStructures,
+        mediaCount: sql<number>`(select count(*)::int from inspection_media m where m.inspection_point_id = ${inspectionPoints.id})`,
       })
       .from(inspectionPoints)
       .innerJoin(
@@ -320,6 +321,8 @@ export class RovInspectionService {
       viewType: row.view.viewType,
       structureId: row.structure.id,
       structureName: row.structure.name,
+      structureSort: row.structure.sort,
+      mediaCount: Number(row.mediaCount ?? 0),
     }));
   }
 
@@ -530,6 +533,24 @@ export class RovInspectionService {
   ) {
     const media = await this.getMediaRecord(organizationId, projectId, mediaId);
 
+    if (input.inspectionPointId) {
+      // A file can only be attached to a pin on its own structure.
+      const [point] = await this.db
+        .select({ id: inspectionPoints.id })
+        .from(inspectionPoints)
+        .innerJoin(inspectionViews, eq(inspectionViews.id, inspectionPoints.inspectionViewId))
+        .where(
+          and(
+            eq(inspectionPoints.id, input.inspectionPointId),
+            eq(inspectionViews.structureId, media.structureId),
+          ),
+        )
+        .limit(1);
+      if (!point) {
+        throw new BadRequestException("That observation is not on the same structure as this file");
+      }
+    }
+
     const [updated] = await this.db
       .update(inspectionMedia)
       .set(input)
@@ -619,7 +640,11 @@ export class RovInspectionService {
   // ── Reports ──────────────────────────────────────────────────────────────
 
   async listReports(organizationId: string, projectId?: string) {
-    const filters = [eq(inspectionReports.organizationId, organizationId)];
+    const filters = [
+      eq(inspectionReports.organizationId, organizationId),
+      // Reports of deleted projects are no longer reachable from the UI.
+      isNull(rovProjects.deletedAt),
+    ];
 
     if (projectId) {
       filters.push(eq(inspectionReports.rovProjectId, projectId));
@@ -629,15 +654,37 @@ export class RovInspectionService {
       .select({
         report: inspectionReports,
         projectName: rovProjects.name,
+        projectStatus: rovProjects.status,
+        customerName: customers.name,
+        sharedByName: users.name,
+        viewCount: sql<number>`(select count(*)::int from ${reportAccessLogs} where ${reportAccessLogs.reportId} = ${inspectionReports.id})`,
+        lastViewedAt: sql<string | null>`(select max(${reportAccessLogs.accessedAt}) from ${reportAccessLogs} where ${reportAccessLogs.reportId} = ${inspectionReports.id})`,
+        findingCount: sql<number>`(select count(*)::int from ${inspectionPoints}
+          join ${inspectionViews} on ${inspectionViews.id} = ${inspectionPoints.inspectionViewId}
+          join ${projectStructures} on ${projectStructures.id} = ${inspectionViews.structureId}
+          where ${projectStructures.rovProjectId} = ${rovProjects.id})`,
+        majorCount: sql<number>`(select count(*)::int from ${inspectionPoints}
+          join ${inspectionViews} on ${inspectionViews.id} = ${inspectionPoints.inspectionViewId}
+          join ${projectStructures} on ${projectStructures.id} = ${inspectionViews.structureId}
+          where ${projectStructures.rovProjectId} = ${rovProjects.id} and ${inspectionPoints.severity} = 'major')`,
       })
       .from(inspectionReports)
       .innerJoin(rovProjects, eq(rovProjects.id, inspectionReports.rovProjectId))
+      .leftJoin(customers, eq(customers.id, rovProjects.customerId))
+      .leftJoin(users, eq(users.id, inspectionReports.sharedBy))
       .where(and(...filters))
       .orderBy(desc(inspectionReports.updatedAt));
 
     return rows.map((row) => ({
       ...row.report,
       projectName: row.projectName,
+      projectStatus: row.projectStatus,
+      customerName: row.customerName,
+      sharedByName: row.sharedByName,
+      viewCount: row.viewCount ?? 0,
+      lastViewedAt: row.lastViewedAt,
+      findingCount: row.findingCount ?? 0,
+      majorCount: row.majorCount ?? 0,
     }));
   }
 

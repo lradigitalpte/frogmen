@@ -17,6 +17,11 @@ export interface Branch {
   timezone: string;
   isMain: boolean;
   isActive: boolean;
+  street1?: string | null;
+  street2?: string | null;
+  city?: string | null;
+  zip?: string | null;
+  countryCode?: string | null;
 }
 
 export interface SecurityContext {
@@ -129,6 +134,11 @@ export const createBranch = (body: {
   code: string;
   documentPrefix?: string;
   timezone?: string;
+  street1?: string;
+  street2?: string;
+  city?: string;
+  zip?: string;
+  countryCode?: string;
 }) =>
   apiFetch<Branch>("/api/v1/branches", {
     method: "POST",
@@ -139,6 +149,8 @@ export const updateBranch = (id: string, body: Partial<Branch>) =>
     method: "PATCH",
     body: JSON.stringify(body),
   });
+export const reactivateBranch = (id: string) =>
+  apiFetch<Branch>(`/api/v1/branches/${id}/reactivate`, { method: "POST" });
 export const deactivateBranch = (id: string) =>
   apiFetch<Branch>(`/api/v1/branches/${id}`, { method: "DELETE" });
 export const selectBranch = (body: {
@@ -151,6 +163,13 @@ export const selectBranch = (body: {
   );
 export const listMembers = () =>
   apiFetch<OrganizationMember[]>("/api/v1/members");
+/** Names only — usable by every member (e.g. "assign to" pickers). */
+export const listMemberDirectory = () =>
+  apiFetch<Array<Pick<OrganizationMember, "id" | "userId" | "name" | "email">>>("/api/v1/members/directory");
+export const listRolePermissions = () =>
+  apiFetch<Array<{ role: AppRole; permissions: string[] }>>("/api/v1/members/roles");
+export const removeMember = (id: string) =>
+  apiFetch<{ id: string }>(`/api/v1/members/${id}`, { method: "DELETE" });
 export const updateMember = (
   id: string,
   body: { role?: AppRole; branchIds?: string[]; primaryBranchId?: string },

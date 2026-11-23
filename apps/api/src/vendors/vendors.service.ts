@@ -12,11 +12,13 @@ import {
   eq,
   ilike,
   isNotNull,
+  inArray,
   isNull,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
-import { vendors, type Database } from "@frog1/db";
+import { purchaseOrders, vendors, type Database } from "@frog1/db";
 import type {
   CreateVendorInput,
   ListVendorsQuery,
@@ -34,6 +36,7 @@ export class VendorsService {
     const offset = (page - 1) * perPage;
 
     const filters: SQL[] = [eq(vendors.organizationId, organizationId)];
+    const searchFilters: SQL[] = [eq(vendors.organizationId, organizationId)];
 
     if (query.archived) {
       filters.push(isNotNull(vendors.deletedAt));
@@ -47,14 +50,17 @@ export class VendorsService {
 
     if (query.search?.trim()) {
       const term = `%${query.search.trim()}%`;
-      filters.push(
-        or(
-          ilike(vendors.name, term),
-          ilike(vendors.email, term),
-          ilike(vendors.phone, term),
-          ilike(vendors.mobile, term),
-        )!,
-      );
+      const match = or(
+        ilike(vendors.name, term),
+        ilike(vendors.email, term),
+        ilike(vendors.phone, term),
+        ilike(vendors.mobile, term),
+        ilike(vendors.contactName, term),
+        ilike(vendors.city, term),
+        ilike(vendors.reference, term),
+      )!;
+      filters.push(match);
+      searchFilters.push(match);
     }
 
     const whereClause = and(...filters);
@@ -67,7 +73,7 @@ export class VendorsService {
     const orderBy =
       query.sortDir === "desc" ? desc(sortColumn) : asc(sortColumn);
 
-    const [rows, totalResult] = await Promise.all([
+    const [rows, totalResult, summaryResult] = await Promise.all([
       this.db
         .select()
         .from(vendors)
@@ -76,18 +82,116 @@ export class VendorsService {
         .limit(perPage)
         .offset(offset),
       this.db.select({ total: count() }).from(vendors).where(whereClause),
+      this.db
+        .select({
+          all: sql<number>`count(*) filter (where ${vendors.deletedAt} is null)`,
+          company: sql<number>`count(*) filter (where ${vendors.deletedAt} is null and ${vendors.accountType} = 'company')`,
+          individual: sql<number>`count(*) filter (where ${vendors.deletedAt} is null and ${vendors.accountType} = 'individual')`,
+          archived: sql<number>`count(*) filter (where ${vendors.deletedAt} is not null)`,
+        })
+        .from(vendors)
+        .where(and(...searchFilters)),
     ]);
 
     const total = Number(totalResult[0]?.total ?? 0);
+    const stats = await this.purchaseStats(
+      organizationId,
+      rows.map((row) => row.id),
+    );
+    const totals = await this.purchaseTotals(organizationId);
+    const s = summaryResult[0];
 
     return {
-      data: rows,
+      data: rows.map((row) => ({
+        ...row,
+        stats: stats.get(row.id) ?? {
+          orderCount: 0,
+          openOrders: 0,
+          lastOrderDate: null,
+          spendBase: "0",
+        },
+      })),
+      summary: {
+        all: Number(s?.all ?? 0),
+        company: Number(s?.company ?? 0),
+        individual: Number(s?.individual ?? 0),
+        archived: Number(s?.archived ?? 0),
+        ...totals,
+      },
       meta: {
         page,
         perPage,
         total,
         totalPages: Math.ceil(total / perPage) || 1,
       },
+    };
+  }
+
+  /** Purchase order activity per vendor (cancelled orders excluded). */
+  private async purchaseStats(organizationId: string, vendorIds: string[]) {
+    const map = new Map<
+      string,
+      {
+        orderCount: number;
+        openOrders: number;
+        lastOrderDate: string | null;
+        spendBase: string;
+      }
+    >();
+    if (vendorIds.length === 0) return map;
+
+    const rows = await this.db
+      .select({
+        vendorId: purchaseOrders.vendorId,
+        orderCount: sql<number>`count(*)`,
+        openOrders: sql<number>`count(*) filter (where ${purchaseOrders.state} = 'confirmed' and ${purchaseOrders.receiptStatus} in ('to_receive', 'partial'))`,
+        lastOrderDate: sql<string | null>`max(${purchaseOrders.orderDate})::text`,
+        spendBase: sql<string>`coalesce(sum(${purchaseOrders.amountTotalBase}) filter (where ${purchaseOrders.state} = 'confirmed'), 0)::text`,
+      })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.organizationId, organizationId),
+          inArray(purchaseOrders.vendorId, vendorIds),
+          sql`${purchaseOrders.state} <> 'cancelled'`,
+        ),
+      )
+      .groupBy(purchaseOrders.vendorId);
+
+    for (const row of rows) {
+      map.set(row.vendorId, {
+        orderCount: Number(row.orderCount),
+        openOrders: Number(row.openOrders),
+        lastOrderDate: row.lastOrderDate,
+        spendBase: row.spendBase,
+      });
+    }
+    return map;
+  }
+
+  /** Org-wide purchasing totals for the vendors hero. */
+  private async purchaseTotals(organizationId: string) {
+    const [row] = await this.db
+      .select({
+        withOpenOrders: sql<number>`count(distinct ${purchaseOrders.vendorId}) filter (where ${purchaseOrders.state} = 'confirmed' and ${purchaseOrders.receiptStatus} in ('to_receive', 'partial'))`,
+        openOrders: sql<number>`count(*) filter (where ${purchaseOrders.state} = 'confirmed' and ${purchaseOrders.receiptStatus} in ('to_receive', 'partial'))`,
+        spendBase: sql<string>`coalesce(sum(${purchaseOrders.amountTotalBase}) filter (where ${purchaseOrders.state} = 'confirmed'), 0)::text`,
+        spendLast90Base: sql<string>`coalesce(sum(${purchaseOrders.amountTotalBase}) filter (where ${purchaseOrders.state} = 'confirmed' and ${purchaseOrders.orderDate} >= current_date - 90), 0)::text`,
+      })
+      .from(purchaseOrders)
+      .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
+      .where(
+        and(
+          eq(purchaseOrders.organizationId, organizationId),
+          isNull(vendors.deletedAt),
+        ),
+      );
+
+    return {
+      withOpenOrders: Number(row?.withOpenOrders ?? 0),
+      openOrders: Number(row?.openOrders ?? 0),
+      spendBase: row?.spendBase ?? "0",
+      spendLast90Base: row?.spendLast90Base ?? "0",
     };
   }
 

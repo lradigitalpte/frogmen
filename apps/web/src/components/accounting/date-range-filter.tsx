@@ -18,6 +18,12 @@ export const DATE_PRESETS = [
 
 export type DatePreset = (typeof DATE_PRESETS)[number]["value"];
 
+/** Local calendar date as YYYY-MM-DD (toISOString() would shift to UTC and can land on the previous day). */
+function localIso(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function presetRange(preset: DatePreset, customFrom: string, customTo: string) {
   const now = new Date();
   const end = todayIsoDate();
@@ -30,8 +36,8 @@ export function presetRange(preset: DatePreset, customFrom: string, customTo: st
     const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const finish = new Date(now.getFullYear(), now.getMonth(), 0);
     return {
-      dateFrom: start.toISOString().slice(0, 10),
-      dateTo: finish.toISOString().slice(0, 10),
+      dateFrom: localIso(start),
+      dateTo: localIso(finish),
     };
   }
 
@@ -39,8 +45,8 @@ export function presetRange(preset: DatePreset, customFrom: string, customTo: st
     const start = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 - 3, 1);
     const finish = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 0);
     return {
-      dateFrom: start.toISOString().slice(0, 10),
-      dateTo: finish.toISOString().slice(0, 10),
+      dateFrom: localIso(start),
+      dateTo: localIso(finish),
     };
   }
 
@@ -53,7 +59,7 @@ export function presetRange(preset: DatePreset, customFrom: string, customTo: st
 
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   return {
-    dateFrom: start.toISOString().slice(0, 10),
+    dateFrom: localIso(start),
     dateTo: end,
   };
 }

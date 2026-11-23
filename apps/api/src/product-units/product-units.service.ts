@@ -105,7 +105,7 @@ export class ProductUnitsService {
   ) {
     const product = await this.productsService.getById(organizationId, productId);
     const page = Math.max(query.page ?? 1, 1);
-    const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 100);
+    const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 500);
     const offset = (page - 1) * perPage;
 
     // Quantity-tracked products have no serial units — return empty instead of 400

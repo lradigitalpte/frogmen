@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -38,9 +40,28 @@ export class ExpenseClaimsController {
   private orgId(session: UserSession) {
     const organizationId = session.session.activeOrganizationId;
     if (!organizationId) {
-      throw new Error("Active organization is required");
+      throw new BadRequestException("Active organization is required");
     }
     return organizationId;
+  }
+
+  private async viewerPermissions(session: UserSession, organizationId: string) {
+    const context = await this.securityContext.resolve({
+      sessionId: session.session.id,
+      userId: session.user.id,
+      organizationId,
+      activeBranchId: (
+        session.session as typeof session.session & {
+          activeBranchId?: string | null;
+        }
+      ).activeBranchId,
+      branchScope: (
+        session.session as typeof session.session & {
+          branchScope?: string | null;
+        }
+      ).branchScope,
+    });
+    return context.permissions;
   }
 
   @Get("mine")
@@ -72,26 +93,11 @@ export class ExpenseClaimsController {
   @Get(":id")
   async getById(@Session() session: UserSession, @Param("id") id: string) {
     const organizationId = this.orgId(session);
-    const context = await this.securityContext.resolve({
-      sessionId: session.session.id,
-      userId: session.user.id,
-      organizationId,
-      activeBranchId: (
-        session.session as typeof session.session & {
-          activeBranchId?: string | null;
-        }
-      ).activeBranchId,
-      branchScope: (
-        session.session as typeof session.session & {
-          branchScope?: string | null;
-        }
-      ).branchScope,
-    });
     return this.expenseClaimsService.getByIdForViewer(
       organizationId,
       id,
       session.user.id,
-      context.permissions,
+      await this.viewerPermissions(session, organizationId),
     );
   }
 
@@ -237,10 +243,17 @@ export class ExpenseClaimsController {
     @Res() res: Response,
   ) {
     const organizationId = this.orgId(session);
-    const relativePath = await this.expenseClaimsService.getReceiptPath(
+    // Same visibility as the claim itself: the submitter or a reviewer.
+    const claim = await this.expenseClaimsService.getByIdForViewer(
       organizationId,
       id,
+      session.user.id,
+      await this.viewerPermissions(session, organizationId),
     );
+    if (!claim.receiptPath) {
+      throw new NotFoundException("Receipt not found");
+    }
+    const relativePath = claim.receiptPath;
     const { stream, contentType } =
       await this.uploadsService.getExpenseReceiptStream(
         organizationId,

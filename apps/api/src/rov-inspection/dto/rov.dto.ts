@@ -23,6 +23,9 @@ export const listRovProjectsQuerySchema = z.object({
   customerId: z.string().uuid().optional(),
   page: z.coerce.number().int().min(1).optional(),
   perPage: z.coerce.number().int().min(1).max(200).optional(),
+  sort: z.enum(["updated", "newest", "name", "start_date", "end_date"]).optional(),
+  /** "true" hides archived projects when no status is given. */
+  hideArchived: z.enum(["true", "false"]).optional(),
 });
 
 export const createRovProjectSchema = z.object({

@@ -50,6 +50,9 @@ function roleLabel(role?: string) {
 export default function ProfileOverviewPage() {
   const { data: session, isPending } = useSession();
   const [security, setSecurity] = useState<SecurityContext | null>(null);
+  // The server has no session; match its loading state on the first client render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     void getMe()
@@ -70,7 +73,7 @@ export default function ProfileOverviewPage() {
     [userName],
   );
 
-  if (isPending) {
+  if (isPending || !mounted) {
     return (
       <AppPage title="Profile overview">
         <InlineStack align="center"><Spinner /></InlineStack>

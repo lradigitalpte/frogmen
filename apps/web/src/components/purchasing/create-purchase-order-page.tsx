@@ -8,11 +8,12 @@ import {
   Card,
   InlineStack,
   Layout,
-  Tabs,
+  Modal,
   Text,
 } from "@shopify/polaris";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { AppPage } from "@/components/layout/page";
 import type { AddPurchaseOrderLineInput } from "@/components/purchasing/add-purchase-order-line-modal";
 import { PurchaseOrderCatalogSection } from "@/components/purchasing/purchase-order-catalog-section";
@@ -31,11 +32,9 @@ import {
   type PurchaseOrderHeaderValues,
 } from "@/components/purchasing/purchase-order-header-form";
 import { PurchaseOrderMarginPreview } from "@/components/purchasing/purchase-order-margin-preview";
-import { PurchaseOrderStepBanner } from "@/components/purchasing/purchase-order-step-banner";
 import { PurchaseOrderTotalsSummary } from "@/components/purchasing/purchase-order-totals-summary";
 import type { PurchaseOrderChargeBreakdownItem } from "@/components/purchasing/purchase-order-totals-summary";
 import { todayIsoDate } from "@/components/sales/format-money";
-import { Package, ShoppingCart } from "lucide-react";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import {
   applyOrderVendorDiscountToLines,
@@ -49,12 +48,13 @@ import {
   updatePurchaseOrder,
 } from "@/lib/purchase-orders-api";
 import { listWarehouses } from "@/lib/warehouses-api";
+import { getVendor } from "@/lib/vendors-api";
 import type { Warehouse } from "@/types/warehouse";
 import { useToast } from "@/components/providers/toast-provider";
 
-const pageTabs = [
-  { id: "details", content: "Vendor & details" },
-  { id: "lines", content: "Products & charges" },
+const STEPS = [
+  { title: "Vendor & details", hint: "Vendor, currency, dates, terms and freight" },
+  { title: "Products & charges", hint: "Lines, discounts, fees and margin check" },
 ];
 
 function emptyHeader(): PurchaseOrderHeaderValues {
@@ -76,6 +76,7 @@ export function CreatePurchaseOrderPage() {
     baseCurrency,
     loading: currenciesLoading,
     error: currenciesError,
+    reload: reloadCurrencies,
   } = useOrgCurrency();
   const [selectedTab, setSelectedTab] = useState(0);
   const [header, setHeader] = useState<PurchaseOrderHeaderValues>(emptyHeader);
@@ -88,6 +89,37 @@ export function CreatePurchaseOrderPage() {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [triedNext, setTriedNext] = useState(false);
+  const [pendingCurrencyId, setPendingCurrencyId] = useState<string | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const savedRef = useRef(false);
+
+  const dirty =
+    Boolean(header.vendor) ||
+    lines.length > 0 ||
+    Boolean(header.vendorReference || header.internalReference || header.expectedDate);
+
+  // Warn before closing the tab or reloading with an unsaved order.
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      if (savedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  /** Header changes go through here so a currency switch with lines can be confirmed first. */
+  function changeHeader(next: PurchaseOrderHeaderValues) {
+    if (lines.length > 0 && next.currencyId && next.currencyId !== header.currencyId) {
+      setPendingCurrencyId(next.currencyId);
+      setHeader({ ...next, currencyId: header.currencyId });
+      return;
+    }
+    setHeader(next);
+  }
 
   useEffect(() => {
     if (!baseCurrency?.id) return;
@@ -95,6 +127,18 @@ export function CreatePurchaseOrderPage() {
       current.currencyId ? current : { ...current, currencyId: baseCurrency.id },
     );
   }, [baseCurrency?.id]);
+
+  // Opened from a vendor ("New PO" on the vendors list): pre-select that vendor.
+  useEffect(() => {
+    const vendorId = new URLSearchParams(window.location.search).get("vendor");
+    if (!vendorId) return;
+    void getVendor(vendorId)
+      .then((vendor) => {
+        if (vendor.deletedAt) return;
+        setHeader((current) => (current.vendor ? current : { ...current, vendor }));
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void listWarehouses({ perPage: 100 })
@@ -245,10 +289,33 @@ export function CreatePurchaseOrderPage() {
     [editingLineId, lines],
   );
 
+  const headerErrors = useMemo(() => {
+    const errors: Partial<Record<keyof PurchaseOrderHeaderValues | "vendor", string>> = {};
+    if (!header.vendor) errors.vendor = "Choose who you're ordering from";
+    if (!header.currencyId) {
+      errors.currencyId = currencies.length === 0 && !currenciesLoading ? "No currencies available" : "Choose a currency";
+    }
+    if (!header.orderDate) errors.orderDate = "Enter the order date";
+    if (header.expectedDate && header.orderDate && header.expectedDate < header.orderDate) {
+      errors.expectedDate = "Expected delivery can't be before the order date";
+    }
+    return errors;
+  }, [currencies.length, currenciesLoading, header]);
+
   function validateHeader(): string | null {
-    if (!header.vendor) return "Select a vendor first.";
-    if (!header.currencyId) return "Select a currency.";
-    return null;
+    setTriedNext(true);
+    return Object.values(headerErrors)[0] ?? null;
+  }
+
+  const detailsDone = Object.keys(headerErrors).length === 0;
+  const linesDone = lines.length > 0;
+
+  function goToStep(index: number) {
+    if (index === 1) {
+      goToProducts();
+      return;
+    }
+    setSelectedTab(index);
   }
 
   async function handleCreate() {
@@ -314,6 +381,7 @@ export function CreatePurchaseOrderPage() {
       }
 
       showSuccess(`Purchase order ${order.number} created.`);
+      savedRef.current = true;
       router.push(`/dashboard/purchasing/orders/${order.id}`);
     } catch (err) {
       const message =
@@ -363,7 +431,7 @@ export function CreatePurchaseOrderPage() {
           : []),
         {
           content: "Cancel",
-          onAction: () => router.push("/dashboard/purchasing/orders"),
+          onAction: () => (dirty ? setLeaveOpen(true) : router.push("/dashboard/purchasing/orders")),
         },
       ]}
       subtitle="Order stock from a vendor and receive into your warehouses."
@@ -373,21 +441,36 @@ export function CreatePurchaseOrderPage() {
       <BlockStack gap="500">
         <div className="purchase-order-form-shell">
           <BlockStack gap="400">
-            <PurchaseOrderStepBanner
-              description={
-                selectedTab === 0
-                  ? "Set vendor, terms, freight, and target margin."
-                  : "Add products, assign named charges, then review landed cost and suggested sell."
-              }
-              icon={selectedTab === 0 ? ShoppingCart : Package}
-              title={
-                selectedTab === 0
-                  ? "Step 1 · Vendor & costing"
-                  : "Step 2 · Products & margin"
-              }
-            />
-
-        <Tabs selected={selectedTab} tabs={pageTabs} onSelect={setSelectedTab} />
+        <ol className="npo-stepper" aria-label="Purchase order steps">
+          {STEPS.map((step, index) => {
+            const done = index === 0 ? detailsDone : linesDone;
+            const current = selectedTab === index;
+            return (
+              <li key={step.title}>
+                <button
+                  aria-current={current ? "step" : undefined}
+                  className={cn("npo-step", current && "is-current", done && "is-done")}
+                  type="button"
+                  onClick={() => goToStep(index)}
+                >
+                  <span className="npo-step__num">{done && !current ? "✓" : index + 1}</span>
+                  <span className="npo-step__text">
+                    <strong>{step.title}</strong>
+                    <small>
+                      {index === 0
+                        ? header.vendor
+                          ? `${header.vendor.name}${currency ? ` · ${currency.code}` : ""}`
+                          : step.hint
+                        : lines.length > 0
+                          ? `${lines.length} line${lines.length === 1 ? "" : "s"} · ${unitCount} unit${unitCount === 1 ? "" : "s"}`
+                          : step.hint}
+                    </small>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
 
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
@@ -396,9 +479,12 @@ export function CreatePurchaseOrderPage() {
         ) : null}
 
         {currenciesError ? (
-          <Banner tone="warning">
-            Could not load currencies: {currenciesError}. Check Settings →
-            Currencies or refresh the page.
+          <Banner
+            tone="warning"
+            action={{ content: "Try again", onAction: () => void reloadCurrencies() }}
+            secondaryAction={{ content: "Currency settings", url: "/dashboard/settings/currencies" }}
+          >
+            Couldn&apos;t load currencies ({currenciesError}). Try again, or check your currency settings.
           </Banner>
         ) : null}
 
@@ -411,11 +497,14 @@ export function CreatePurchaseOrderPage() {
                   currenciesError={currenciesError}
                   currenciesLoading={currenciesLoading}
                   errors={
-                    currencies.length === 0 && !currenciesLoading
-                      ? { currencyId: "No currencies available" }
-                      : undefined
+                    triedNext
+                      ? headerErrors
+                      : {
+                          currencyId: currencies.length === 0 && !currenciesLoading ? "No currencies available" : undefined,
+                          expectedDate: headerErrors.expectedDate,
+                        }
                   }
-                  onChange={setHeader}
+                  onChange={changeHeader}
                   values={header}
                 />
                 <PurchaseOrderVendorTermsForm
@@ -539,6 +628,45 @@ export function CreatePurchaseOrderPage() {
           </BlockStack>
         </div>
       </BlockStack>
+
+      <Modal
+        open={Boolean(pendingCurrencyId)}
+        primaryAction={{
+          content: "Change currency",
+          onAction: () => {
+            setHeader((current) => ({ ...current, currencyId: pendingCurrencyId ?? current.currencyId }));
+            setPendingCurrencyId(null);
+          },
+        }}
+        secondaryActions={[{ content: "Keep current currency", onAction: () => setPendingCurrencyId(null) }]}
+        title="Change the order currency?"
+        onClose={() => setPendingCurrencyId(null)}
+      >
+        <Modal.Section>
+          <Text as="p">
+            {`You already have ${lines.length} line${lines.length === 1 ? "" : "s"} priced in ${currency?.code ?? "the current currency"}. Their unit prices won't be converted, so check each price after switching to ${currencies.find((c) => c.id === pendingCurrencyId)?.code ?? "the new currency"}.`}
+          </Text>
+        </Modal.Section>
+      </Modal>
+
+      <Modal
+        open={leaveOpen}
+        primaryAction={{
+          content: "Discard order",
+          destructive: true,
+          onAction: () => {
+            savedRef.current = true;
+            router.push("/dashboard/purchasing/orders");
+          },
+        }}
+        secondaryActions={[{ content: "Keep editing", onAction: () => setLeaveOpen(false) }]}
+        title="Discard this purchase order?"
+        onClose={() => setLeaveOpen(false)}
+      >
+        <Modal.Section>
+          <Text as="p">It hasn&apos;t been saved yet. Leaving now throws away the vendor, lines and charges you entered.</Text>
+        </Modal.Section>
+      </Modal>
 
       <EditPurchaseOrderLineModal
         currencyCode={currency?.code}

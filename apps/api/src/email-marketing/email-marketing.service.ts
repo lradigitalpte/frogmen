@@ -887,7 +887,8 @@ export class EmailMarketingService {
   }
 
   async trackClick(token: string, targetUrl: string): Promise<string> {
-    if (!token) return targetUrl || "/";
+    // Unknown tokens never redirect, so the tracker can't be abused to bounce people to arbitrary sites.
+    if (!token) return "/";
 
     const [recipient] = await this.db
       .select()
@@ -909,9 +910,10 @@ export class EmailMarketingService {
         .where(eq(emailCampaignRecipients.id, recipient.id));
 
       await this.recalculateCampaignStats(recipient.campaignId);
+      return targetUrl || "/";
     }
 
-    return targetUrl || "/";
+    return "/";
   }
 
   async handleUnsubscribe(token: string, reason?: string) {

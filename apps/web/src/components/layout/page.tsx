@@ -55,6 +55,7 @@ interface AppPageProps {
   titleMetadata?: PageProps["titleMetadata"];
   primaryAction?: PageProps["primaryAction"];
   secondaryActions?: PageProps["secondaryActions"];
+  actionGroups?: PageProps["actionGroups"];
   children: ReactNode;
 }
 
@@ -66,6 +67,7 @@ export function AppPage({
   titleMetadata,
   primaryAction,
   secondaryActions,
+  actionGroups,
   children,
 }: AppPageProps) {
   return (
@@ -74,6 +76,7 @@ export function AppPage({
       fullWidth={fullWidth}
       primaryAction={primaryAction}
       secondaryActions={secondaryActions}
+      actionGroups={actionGroups}
       subtitle={subtitle}
       title={title}
       titleMetadata={titleMetadata}

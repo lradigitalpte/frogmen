@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  Banner,
-  BlockStack,
-  Box,
-  Divider,
-  FormLayout,
-  Modal,
-  Text,
-  TextField,
-} from "@shopify/polaris";
+import { Banner, Form, Modal } from "@shopify/polaris";
 import { useCallback, useEffect, useState } from "react";
 import {
   updateStructure,
@@ -17,13 +8,19 @@ import {
   uploadStructurePhoto,
 } from "@/lib/rov-api";
 import type { ProjectStructure } from "@/types/rov";
-import { RovLocalImagePicker } from "./rov-local-image-picker";
-import { RovStructureImage } from "./rov-structure-image";
+import {
+  StructureFormFields,
+  StructureSavingNote,
+  validateStructureForm,
+  type StructureFormErrors,
+  type StructureFormValues,
+} from "./structure-form-fields";
 
 interface EditStructureModalProps {
   open: boolean;
   projectId: string;
   structure: ProjectStructure | null;
+  structures?: ProjectStructure[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -32,85 +29,95 @@ export function EditStructureModal({
   open,
   projectId,
   structure,
+  structures = [],
   onClose,
   onSaved,
 }: EditStructureModalProps) {
-  const [name, setName] = useState("");
-  const [sort, setSort] = useState("0");
-  const [description, setDescription] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [diagramFile, setDiagramFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [values, setValues] = useState<StructureFormValues>({
+    name: "",
+    sort: "0",
+    description: "",
+    photoFile: null,
+    diagramFile: null,
+  });
+  const [errors, setErrors] = useState<StructureFormErrors>({});
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const saving = stage !== null;
 
   useEffect(() => {
     if (!structure) return;
-    setName(structure.name);
-    setSort(String(structure.sort ?? 0));
-    setDescription(structure.description ?? "");
-    setPhotoFile(null);
-    setDiagramFile(null);
+    setValues({
+      name: structure.name,
+      sort: String(structure.sort ?? 0),
+      description: structure.description ?? "",
+      photoFile: null,
+      diagramFile: null,
+    });
+    setErrors({});
     setError(null);
   }, [structure]);
 
+  const set = useCallback(<K extends keyof StructureFormValues>(key: K, value: StructureFormValues[K]) => {
+    setValues((v) => ({ ...v, [key]: value }));
+    if (key === "name" || key === "sort") setErrors((e) => ({ ...e, [key]: undefined }));
+  }, []);
+
   const handleClose = useCallback(() => {
-    setPhotoFile(null);
-    setDiagramFile(null);
+    if (saving) return;
     setError(null);
     onClose();
-  }, [onClose]);
+  }, [onClose, saving]);
 
   const handleSave = useCallback(async () => {
-    if (!structure) return;
+    if (!structure || saving) return;
+    const found = validateStructureForm(values, structures, structure.id);
+    setErrors(found);
+    if (found.name || found.sort) return;
 
-    if (!name.trim()) {
-      setError("Structure name is required");
-      return;
-    }
-
-    const sortValue = Number.parseInt(sort, 10);
-    if (Number.isNaN(sortValue) || sortValue < 0) {
-      setError("Display order must be 0 or greater");
-      return;
-    }
-
-    setSaving(true);
     setError(null);
-
     try {
+      setStage("Saving details…");
       await updateStructure(projectId, structure.id, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        sort: sortValue,
+        name: values.name.trim(),
+        description: values.description.trim() || undefined,
+        sort: Number.parseInt(values.sort, 10),
       });
-
-      if (photoFile) {
-        await uploadStructurePhoto(projectId, structure.id, photoFile);
+      if (values.photoFile) {
+        setStage("Uploading surface photo…");
+        await uploadStructurePhoto(projectId, structure.id, values.photoFile);
       }
-      if (diagramFile) {
-        await uploadStructureDiagram(projectId, structure.id, diagramFile);
+      if (values.diagramFile) {
+        setStage("Uploading diagram…");
+        await uploadStructureDiagram(projectId, structure.id, values.diagramFile);
       }
-
       onSaved();
-      handleClose();
+      setStage(null);
+      onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save structure");
+      setError(err instanceof Error ? err.message : "Could not save the structure");
     } finally {
-      setSaving(false);
+      setStage(null);
     }
-  }, [
-    description,
-    diagramFile,
-    handleClose,
-    name,
-    onSaved,
-    photoFile,
-    projectId,
-    sort,
-    structure,
-  ]);
+  }, [onClose, onSaved, projectId, saving, structure, structures, values]);
 
   if (!structure) return null;
+
+  const notice = (
+    <>
+      {error ? (
+        <Banner tone="critical" onDismiss={() => setError(null)}>
+          {error}
+        </Banner>
+      ) : null}
+      {values.diagramFile && structure.diagramPath ? (
+        <Banner tone="warning">
+          Existing finding pins stay at the same positions. Replace the diagram only with a drawing of the same layout.
+        </Banner>
+      ) : null}
+      <StructureSavingNote stage={stage} />
+    </>
+  );
 
   return (
     <Modal
@@ -123,114 +130,19 @@ export function EditStructureModal({
         loading: saving,
         onAction: () => void handleSave(),
       }}
-      secondaryActions={[
-        {
-          content: "Cancel",
-          onAction: handleClose,
-        },
-      ]}
+      secondaryActions={[{ content: "Cancel", disabled: saving, onAction: handleClose }]}
     >
       <Modal.Section>
-        <BlockStack gap="500">
-          {error ? (
-            <Banner tone="critical" onDismiss={() => setError(null)}>
-              {error}
-            </Banner>
-          ) : null}
-
-          <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">
-              Structure details
-            </Text>
-            <FormLayout>
-              <FormLayout.Group>
-                <TextField
-                  label="Structure name"
-                  value={name}
-                  onChange={setName}
-                  autoComplete="off"
-                  requiredIndicator
-                />
-                <TextField
-                  label="Display order"
-                  type="number"
-                  value={sort}
-                  onChange={setSort}
-                  autoComplete="off"
-                  helpText="Lower number = displayed first."
-                  min={0}
-                />
-              </FormLayout.Group>
-              <TextField
-                label="Description"
-                value={description}
-                onChange={setDescription}
-                multiline={3}
-                autoComplete="off"
-              />
-            </FormLayout>
-          </BlockStack>
-
-          <Divider />
-
-          <BlockStack gap="300">
-            <BlockStack gap="100">
-              <Text as="h3" variant="headingSm">
-                Images
-              </Text>
-              <Text as="p" tone="subdued" variant="bodySm">
-                Replace the surface photo or annotatable diagram. Upload a new
-                file if the current image is missing or broken.
-              </Text>
-            </BlockStack>
-
-            <Box
-              background="bg-surface-secondary"
-              borderColor="border"
-              borderWidth="025"
-              borderRadius="300"
-              padding="400"
-            >
-              <div className="rov-structure-modal__upload-grid">
-                <BlockStack gap="300">
-                  <Text as="p" variant="bodySm" fontWeight="semibold">
-                    Current surface photo
-                  </Text>
-                  <RovStructureImage
-                    path={structure.photoPath}
-                    alt={`${structure.name} photo`}
-                    className="rov-structure-modal__preview"
-                  />
-                  <RovLocalImagePicker
-                    label="Replace surface photo"
-                    helpText="Above-water photo shown in the inspection gallery."
-                    file={photoFile}
-                    onChange={setPhotoFile}
-                    disabled={saving}
-                  />
-                </BlockStack>
-
-                <BlockStack gap="300">
-                  <Text as="p" variant="bodySm" fontWeight="semibold">
-                    Current annotatable diagram
-                  </Text>
-                  <RovStructureImage
-                    path={structure.diagramPath}
-                    alt={`${structure.name} diagram`}
-                    className="rov-structure-modal__preview"
-                  />
-                  <RovLocalImagePicker
-                    label="Replace diagram"
-                    helpText="Engineering drawing used for annotation pins."
-                    file={diagramFile}
-                    onChange={setDiagramFile}
-                    disabled={saving}
-                  />
-                </BlockStack>
-              </div>
-            </Box>
-          </BlockStack>
-        </BlockStack>
+        <Form onSubmit={() => void handleSave()} implicitSubmit>
+          <StructureFormFields
+            values={values}
+            errors={errors}
+            disabled={saving}
+            current={{ photoPath: structure.photoPath, diagramPath: structure.diagramPath }}
+            onChange={set}
+            notice={notice}
+          />
+        </Form>
       </Modal.Section>
     </Modal>
   );

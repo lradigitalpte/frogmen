@@ -1,5 +1,6 @@
 import { apiFetch } from "./api";
 import type {
+  RovOverview,
   CreateMediaInput,
   CreateReportInput,
   CreateRovProjectInput,
@@ -42,10 +43,16 @@ export function listRovProjects(params: {
   status?: string;
   page?: number;
   perPage?: number;
+  sort?: string;
+  hideArchived?: boolean;
 } = {}) {
   return apiFetch<PaginatedRovProjects>(
     `/api/v1/rov/projects${toQuery(params)}`,
   );
+}
+
+export function getRovOverview() {
+  return apiFetch<RovOverview>("/api/v1/rov/projects/overview");
 }
 
 export function getRovProject(id: string) {

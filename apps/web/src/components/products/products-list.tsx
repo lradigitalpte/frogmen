@@ -1,25 +1,27 @@
 "use client";
 
 import {
+  ActionList,
   Badge,
+  Banner,
   BlockStack,
-  Box,
   Button,
   Checkbox,
-  ChoiceList,
   DropZone,
-  EmptyState,
-  IndexFilters,
-  IndexFiltersMode,
-  IndexTable,
+  Icon,
   InlineStack,
-  Link,
   Modal,
+  Pagination,
+  Popover,
+  Select,
+  SkeletonBodyText,
   Text,
-  useSetIndexFiltersMode,
+  TextField,
 } from "@shopify/polaris";
-import { useRouter } from "next/navigation";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon, MenuHorizontalIcon, SearchIcon } from "@shopify/polaris-icons";
+import { Package } from "lucide-react";
+import NextLink from "next/link";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeleteProductModal } from "@/components/products/delete-product-modal";
 import {
   archiveProduct,
@@ -33,115 +35,90 @@ import {
   type ProductTransferField,
   type ProductTransferPreview,
 } from "@/lib/products-api";
-import type { Product, ProductTab } from "@/types/product";
+import type { ListProductsParams, Product, ProductTab } from "@/types/product";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
-import { AppPage, IndexSurface } from "@/components/layout/page";
-import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
-import { buildIndexTablePagination } from "@/lib/index-table-pagination";
+import { AppPage } from "@/components/layout/page";
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { useToast } from "@/components/providers/toast-provider";
 import { formatSerialSummaryPreview } from "@/lib/format-serial-summary";
+import { cn } from "@/lib/utils";
 
-const tabs: { id: ProductTab; content: string }[] = [
-  { id: "all", content: "All" },
-  { id: "for_sale", content: "For sale" },
-  { id: "operations", content: "Operations" },
-  { id: "rov", content: "ROV equipment" },
-  { id: "goods", content: "Goods" },
-  { id: "service", content: "Services" },
-  { id: "archived", content: "Archived" },
+const TABS: Array<{ id: ProductTab; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "for_sale", label: "For sale" },
+  { id: "operations", label: "Operations" },
+  { id: "rov", label: "ROV equipment" },
+  { id: "goods", label: "Goods" },
+  { id: "service", label: "Services" },
+  { id: "archived", label: "Archived" },
 ];
 
-const REDUNDANT_TABLE_TAGS = new Set(["goods", "for sale"]);
-const PRODUCT_PAGE_SIZES = [16, 25, 50, 100] as const;
-const productResourceName = { singular: "product", plural: "products" };
+type SortMode = "newest" | "name" | "sku";
 
-function getTableDisplayTags(product: Product): string[] {
-  const allTags = getProductDisplayTags(product);
-  return allTags.filter((t) => !REDUNDANT_TABLE_TAGS.has(t.trim().toLowerCase()));
+const SORT_OPTIONS: Array<{ label: string; value: SortMode }> = [
+  { label: "Newest first", value: "newest" },
+  { label: "Name (A–Z)", value: "name" },
+  { label: "SKU", value: "sku" },
+];
+
+const PAGE_SIZES = [16, 25, 50, 100];
+const REDUNDANT_TAGS = new Set(["goods", "for sale"]);
+const LOW_STOCK_MAX = 2;
+
+function tabParams(tab: ProductTab): ListProductsParams {
+  return {
+    archived: tab === "archived",
+    type: tab === "goods" || tab === "service" ? tab : undefined,
+    usageType: tab === "for_sale" || tab === "operations" ? tab : undefined,
+    isRovEquipment: tab === "rov" ? true : undefined,
+  };
 }
 
-function renderOnHandBadge(
-  product: Product,
-  qty: number,
-  assignedQty: number,
-  isLinkedComponent: boolean,
-) {
-  if (product.type === "service" || !product.isStorable) {
-    return (
-      <Text as="span" tone="subdued">
-        {" "}
-      </Text>
-    );
-  }
+function sortParams(sort: SortMode): Pick<ListProductsParams, "sortBy" | "sortDir"> {
+  if (sort === "name") return { sortBy: "name", sortDir: "asc" };
+  if (sort === "sku") return { sortBy: "sku", sortDir: "asc" };
+  return { sortBy: "createdAt", sortDir: "desc" };
+}
 
-  if (isLinkedComponent && assignedQty > 0 && qty === 0) {
-    return (
-      <Badge tone="info">
-        {assignedQty === 1 ? "Assigned" : `${assignedQty} assigned`}
-      </Badge>
-    );
-  }
-
-  if (qty === 0) {
-    return <Badge tone="critical">0 on hand</Badge>;
-  }
-
-  if (isLinkedComponent && assignedQty > 0) {
-    return (
-      <Badge tone={qty <= 2 ? "attention" : "success"}>
-        {`${qty} spare · ${assignedQty} assigned`}
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge tone={qty <= 2 ? "attention" : "success"}>
-      {`${qty} on hand`}
-    </Badge>
-  );
+interface StockInfo {
+  qty: number;
+  assigned: number;
+  serials: string[];
 }
 
 export function ProductsListPage() {
-  const router = useRouter();
   const { showSuccess } = useToast();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
 
-  function formatProductPrice(product: Product) {
-    const currency = currencyById(
-      currencies,
-      product.priceCurrencyId ?? catalogCurrencyId,
-    );
-
-    return product.sellingPrice
-      ? formatCurrencyAmount(product.sellingPrice, currency)
-      : " ";
-  }
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [tab, setTab] = useState<ProductTab>("all");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sort, setSort] = useState<SortMode>("newest");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState<number>(25);
+  const [perPage, setPerPage] = useState(25);
   const [salesHistoryOnly, setSalesHistoryOnly] = useState(false);
+
   const [products, setProducts] = useState<Product[]>([]);
-  const [stockByProduct, setStockByProduct] = useState<Map<string, number>>(
-    new Map(),
-  );
-  const [assignedByProduct, setAssignedByProduct] = useState<
-    Map<string, number>
-  >(new Map());
-  const [serialsByProduct, setSerialsByProduct] = useState<Map<string, string[]>>(
-    new Map(),
-  );
   const [total, setTotal] = useState(0);
+  const [tabCounts, setTabCounts] = useState<Partial<Record<ProductTab, number>>>({});
+  const [stock, setStock] = useState<Map<string, StockInfo>>(new Map());
+  const [stockSummary, setStockSummary] = useState({ units: 0, low: 0, out: 0 });
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [pendingArchive, setPendingArchive] = useState<Product | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const requestRef = useRef(0);
+
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const [transferFile, setTransferFile] = useState<File | null>(null);
   const [transferPreview, setTransferPreview] = useState<ProductTransferPreview | null>(null);
   const [existingStrategy, setExistingStrategy] = useState<"skip" | "update">("skip");
@@ -153,153 +130,135 @@ export function ProductsListPage() {
   const [pendingDelete, setPendingDelete] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
-
-  const activeTab = tabs[selectedTab]?.id ?? "all";
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
     return () => clearTimeout(timer);
   }, [query]);
 
+  const loadCounts = useCallback(async () => {
+    const results = await Promise.all(
+      TABS.map((t) =>
+        listProducts({ perPage: 1, ...tabParams(t.id) })
+          .then((r) => [t.id, r.meta.total] as const)
+          .catch(() => [t.id, undefined] as const),
+      ),
+    );
+    setTabCounts(Object.fromEntries(results.filter(([, n]) => n !== undefined)));
+  }, []);
+
+  const loadStock = useCallback(async () => {
+    try {
+      const result = await listStock({ perPage: 1000 });
+      const map = new Map<string, StockInfo>();
+      for (const row of result.data) {
+        const entry = map.get(row.productId) ?? { qty: 0, assigned: 0, serials: [] };
+        entry.qty += Number(row.quantity) || 0;
+        entry.assigned += Number(row.assignedQuantity) || 0;
+        if (row.serialSummary) {
+          entry.serials.push(...row.serialSummary.split(",").map((s) => s.trim()).filter(Boolean));
+        }
+        map.set(row.productId, entry);
+      }
+      setStock(map);
+      setStockSummary({
+        units: result.summary?.units ?? [...map.values()].reduce((s, e) => s + e.qty, 0),
+        low: result.summary?.lowStock ?? 0,
+        out: result.summary?.outOfStock ?? 0,
+      });
+    } catch {
+      // Stock badges are a nice-to-have; the list still works without them.
+    }
+  }, []);
+
   const loadProducts = useCallback(async () => {
+    const request = ++requestRef.current;
     setLoading(true);
     setError(null);
-
     try {
-      const [result, stockResult] = await Promise.all([
-        listProducts({
-          page,
-          perPage,
-          search: debouncedQuery || undefined,
-          archived: activeTab === "archived",
-          type:
-            activeTab === "goods" || activeTab === "service"
-              ? activeTab
-              : undefined,
-          usageType:
-            activeTab === "for_sale" || activeTab === "operations"
-              ? activeTab
-              : undefined,
-          isRovEquipment: activeTab === "rov" ? true : undefined,
-          hasSalesHistory: salesHistoryOnly || undefined,
-          sortBy: "name",
-          sortDir: "asc",
-        }),
-        listStock({ perPage: 500 }),
-      ]);
-
-      const stockMap = new Map<string, number>();
-      const assignedMap = new Map<string, number>();
-      const serialMap = new Map<string, string[]>();
-      for (const row of stockResult.data) {
-        stockMap.set(
-          row.productId,
-          (stockMap.get(row.productId) ?? 0) + (Number(row.quantity) || 0),
-        );
-
-        if (row.assignedQuantity) {
-          assignedMap.set(
-            row.productId,
-            (assignedMap.get(row.productId) ?? 0) +
-              (Number(row.assignedQuantity) || 0),
-          );
-        }
-
-        if (row.serialSummary) {
-          const existing = serialMap.get(row.productId) ?? [];
-          const serials = row.serialSummary
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean);
-          serialMap.set(row.productId, [...existing, ...serials]);
-        }
-      }
-
-      setStockByProduct(stockMap);
-      setAssignedByProduct(assignedMap);
-      setSerialsByProduct(serialMap);
+      const result = await listProducts({
+        page,
+        perPage,
+        search: debouncedQuery || undefined,
+        hasSalesHistory: salesHistoryOnly || undefined,
+        ...tabParams(tab),
+        ...sortParams(sort),
+      });
+      if (request !== requestRef.current) return;
       setProducts(result.data);
       setTotal(result.meta.total);
     } catch (err) {
+      if (request !== requestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load products");
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) {
+        setLoading(false);
+        setLoaded(true);
+      }
     }
-  }, [activeTab, debouncedQuery, page, perPage, salesHistoryOnly]);
+  }, [debouncedQuery, page, perPage, salesHistoryOnly, sort, tab]);
 
   useEffect(() => {
-    loadProducts();
+    void loadProducts();
   }, [loadProducts]);
 
   useEffect(() => {
+    void loadCounts();
+    void loadStock();
+  }, [loadCounts, loadStock]);
+
+  async function refreshAll() {
+    await Promise.all([loadProducts(), loadCounts(), loadStock()]);
+  }
+
+  function chooseTab(next: ProductTab) {
+    setTab(next);
     setPage(1);
-  }, [activeTab, debouncedQuery, perPage, salesHistoryOnly]);
+    setExpanded({});
+  }
 
-  const appliedFilters = useMemo(() => {
-    if (!salesHistoryOnly) return [];
-    return [
-      {
-        key: "salesHistory",
-        label: "Sales history: sold before",
-        onRemove: () => setSalesHistoryOnly(false),
-      },
-    ];
-  }, [salesHistoryOnly]);
+  function formatPrice(product: Product) {
+    if (product.usageType === "operations") return null;
+    if (!product.sellingPrice || Number(product.sellingPrice) === 0) return null;
+    const currency = currencyById(currencies, product.priceCurrencyId ?? catalogCurrencyId);
+    return formatCurrencyAmount(product.sellingPrice, currency);
+  }
 
-  const indexFilters = useMemo(
-    () => [
-      {
-        key: "salesHistory",
-        label: "Sales history",
-        filter: (
-          <ChoiceList
-            allowMultiple={false}
-            choices={[
-              { label: "All products", value: "all" },
-              {
-                label: "Sold before (confirmed order or posted invoice)",
-                value: "sold",
-              },
-            ]}
-            selected={[salesHistoryOnly ? "sold" : "all"]}
-            title="Sales history"
-            titleHidden
-            onChange={(value) => setSalesHistoryOnly(value[0] === "sold")}
-          />
-        ),
-        shortcut: true,
-      },
-    ],
-    [salesHistoryOnly],
-  );
-
-  async function handleArchive(id: string) {
-    if (activeTab === "archived") {
-      await restoreProduct(id);
-    } else {
-      await archiveProduct(id);
+  async function handleArchiveConfirm() {
+    if (!pendingArchive) return;
+    setArchiving(true);
+    try {
+      if (pendingArchive.deletedAt || tab === "archived") {
+        await restoreProduct(pendingArchive.id);
+        showSuccess(`${pendingArchive.name} restored`);
+      } else {
+        await archiveProduct(pendingArchive.id);
+        showSuccess(`${pendingArchive.name} archived`);
+      }
+      setPendingArchive(null);
+      await refreshAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update the product");
+      setPendingArchive(null);
+    } finally {
+      setArchiving(false);
     }
-
-    await loadProducts();
   }
 
   async function handlePermanentDelete() {
-    if (!pendingDelete) {
-      return;
-    }
-
+    if (!pendingDelete) return;
     setDeleting(true);
     setDeleteError(null);
     try {
       await permanentlyDeleteProduct(pendingDelete.id);
       showSuccess(`${pendingDelete.name} deleted`);
       setPendingDelete(null);
-      await loadProducts();
+      await refreshAll();
     } catch (err) {
-      setDeleteError(
-        err instanceof Error ? err.message : "Could not delete product",
-      );
+      setDeleteError(err instanceof Error ? err.message : "Could not delete product");
     } finally {
       setDeleting(false);
     }
@@ -313,401 +272,409 @@ export function ProductsListPage() {
 
   async function handleExport() {
     setTransferBusy(true);
+    setTransferError(null);
     try {
       await exportProductCatalog({ fields: exportFields });
       setExportOpen(false);
+      showSuccess("Catalog exported");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
-    } finally { setTransferBusy(false); }
+      setTransferError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setTransferBusy(false);
+    }
   }
 
   async function handleTransferFile(file: File | undefined) {
     if (!file) return;
-    setTransferBusy(true); setTransferFile(file); setTransferPreview(null);
-    try { setTransferPreview(await previewProductCatalog(file)); }
-    catch (err) { setError(err instanceof Error ? err.message : "Preview failed"); }
-    finally { setTransferBusy(false); }
+    setTransferBusy(true);
+    setTransferError(null);
+    setTransferFile(file);
+    setTransferPreview(null);
+    try {
+      setTransferPreview(await previewProductCatalog(file));
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "Preview failed");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  function closeImport() {
+    setImportOpen(false);
+    setTransferFile(null);
+    setTransferPreview(null);
+    setTransferError(null);
   }
 
   async function handleImport() {
     if (!transferFile || !transferPreview || transferPreview.summary.conflict) return;
     setTransferBusy(true);
+    setTransferError(null);
     try {
       const result = await importProductCatalog(transferFile, { existingStrategy, createCategories, includeCost });
-      setImportOpen(false); setTransferFile(null); setTransferPreview(null);
-      setError(null);
-      await loadProducts();
+      closeImport();
+      await refreshAll();
       showSuccess(`Import complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`);
-    } catch (err) { setError(err instanceof Error ? err.message : "Import failed"); }
-    finally { setTransferBusy(false); }
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setTransferBusy(false);
+    }
   }
 
-  // Collapsed parent products state (map of parentId -> boolean)
-  const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
-
-  const toggleParentCollapse = (parentId: string) => {
-    setCollapsedParents((prev) => ({
-      ...prev,
-      [parentId]: !prev[parentId],
-    }));
-  };
-
-  // Group products into parent-child hierarchy
-  const groupedProducts = useMemo(() => {
-    const parentMap = new Map<string, Product[]>();
-    const rootProducts: Product[] = [];
-    const childProductIds = new Set<string>();
-
-    // First pass: identify children and map by parentId
-    products.forEach((p) => {
-      if (p.parentId) {
-        childProductIds.add(p.id);
-        if (!parentMap.has(p.parentId)) {
-          parentMap.set(p.parentId, []);
-        }
-        parentMap.get(p.parentId)!.push(p);
+  // Group sub-products under their parent when both are on this page.
+  const { roots, childrenOf } = useMemo(() => {
+    const ids = new Set(products.map((p) => p.id));
+    const childrenOf = new Map<string, Product[]>();
+    const roots: Product[] = [];
+    for (const p of products) {
+      if (p.parentId && ids.has(p.parentId)) {
+        childrenOf.set(p.parentId, [...(childrenOf.get(p.parentId) ?? []), p]);
+      } else {
+        roots.push(p);
       }
-    });
-
-    // Second pass: root products and orphaned child products
-    products.forEach((p) => {
-      if (!p.parentId) {
-        rootProducts.push(p);
-      } else if (!products.some((parent) => parent.id === p.parentId)) {
-        // Parent is not in current list, treat as root for display
-        rootProducts.push(p);
-      }
-    });
-
-    return { rootProducts, parentMap };
+    }
+    return { roots, childrenOf };
   }, [products]);
 
-  let rowIndexCounter = 0;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const safePage = Math.min(page, totalPages);
+  const first = loading && !loaded;
+  const filtersActive = Boolean(debouncedQuery || salesHistoryOnly || tab !== "all");
+  const archivedView = tab === "archived";
 
-  const renderSingleProductRow = (
-    product: Product,
-    isChild: boolean = false,
-  ) => {
-    const serials = serialsByProduct.get(product.id) ?? [];
-    const serialLabel =
-      product.trackSerial && serials.length > 0
-        ? formatSerialSummaryPreview([...new Set(serials)].join(", "), 2)
-        : null;
-
-    const qty = stockByProduct.get(product.id) ?? 0;
-    const assignedQty = assignedByProduct.get(product.id) ?? 0;
-    const isLinkedComponent = Boolean(product.parentId);
+  function renderRow(product: Product, opts: { child?: boolean; kids?: number } = {}) {
+    const info = stock.get(product.id) ?? { qty: 0, assigned: 0, serials: [] };
+    const stocked = product.type === "goods" && product.isStorable;
+    const level = info.qty <= 0 ? "is-out" : info.qty <= LOW_STOCK_MAX ? "is-low" : "is-ok";
+    const tags = getProductDisplayTags(product).filter((t) => !REDUNDANT_TAGS.has(t.trim().toLowerCase()));
+    const serialPreview =
+      product.trackSerial && info.serials.length ? formatSerialSummaryPreview([...new Set(info.serials)].join(", "), 2) : null;
+    const price = formatPrice(product);
+    const url = `/dashboard/inventory/products/${product.id}`;
+    const isOpen = expanded[product.id] ?? false;
+    const archived = archivedView || Boolean(product.deletedAt);
 
     return (
-      <IndexTable.Row id={product.id} key={product.id} position={rowIndexCounter++}>
-        <IndexTable.Cell>
-          <div style={{ paddingLeft: isChild ? 24 : 0, display: "flex", alignItems: "center", gap: 8 }}>
-            {isChild && (
-              <span style={{ color: "var(--p-color-text-subdued)", fontSize: 14 }}>└──</span>
-            )}
-            <InlineStack gap="300" blockAlign="center">
-              <ProductListThumbnail
-                alt={product.name}
-                imagePath={product.images[0]}
-              />
-              <BlockStack gap="100">
-                <Link
-                  dataPrimaryLink
-                  url={`/dashboard/inventory/products/${product.id}`}
-                >
-                  <Text as="span" fontWeight="semibold">
-                    {product.name}
-                  </Text>
-                </Link>
-                <InlineStack gap="150">
-                  {getTableDisplayTags(product).map((tag) => (
-                    <Badge key={`${product.id}-${tag}`}>
-                      {tag}
-                    </Badge>
-                  ))}
-                </InlineStack>
-              </BlockStack>
-            </InlineStack>
-          </div>
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          {product.sku || serialLabel || " "}
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          {renderOnHandBadge(product, qty, assignedQty, isLinkedComponent)}
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          {formatProductPrice(product)}
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <InlineStack gap="200">
+      <li className={cn("pr-row", opts.child && "is-child")} key={product.id}>
+        <span className="pr-row__toggle">
+          {opts.kids ? (
             <Button
-              size="slim"
-              url={`/dashboard/inventory/products/${product.id}`}
-              variant="plain"
-            >
-              View
+              accessibilityLabel={isOpen ? "Hide sub-products" : "Show sub-products"}
+              icon={isOpen ? ChevronDownIcon : ChevronRightIcon}
+              size="micro"
+              variant="tertiary"
+              onClick={() => setExpanded((prev) => ({ ...prev, [product.id]: !isOpen }))}
+            />
+          ) : opts.child ? (
+            <span className="pr-row__branch" aria-hidden>
+              ↳
+            </span>
+          ) : null}
+        </span>
+        <NextLink className="st-thumb" href={url}>
+          <ProductListThumbnail alt={product.name} imagePath={product.images?.[0] ?? null} />
+        </NextLink>
+        <NextLink className="pr-row__main" href={url}>
+          <strong>
+            {product.name}
+            {opts.kids ? (
+              <em>
+                {opts.kids} sub-product{opts.kids === 1 ? "" : "s"}
+              </em>
+            ) : null}
+          </strong>
+          <small>
+            {product.sku ? <span className="ex-num">{product.sku}</span> : <span>No SKU</span>}
+            {serialPreview ? <span className="st-serials">{serialPreview}</span> : null}
+          </small>
+          {tags.length ? (
+            <span className="pr-row__tags">
+              {tags.map((tag) => (
+                <Badge key={`${product.id}-${tag}`} size="small" tone={getProductBadgeTone(tag)}>
+                  {tag}
+                </Badge>
+              ))}
+            </span>
+          ) : null}
+        </NextLink>
+        <span className={cn("st-qty", stocked ? level : "is-na")}>
+          {stocked ? (
+            <>
+              <b>{info.qty}</b>
+              <small>
+                {level === "is-out" ? "Out of stock" : level === "is-low" ? "Low stock" : "On hand"}
+                {info.assigned ? ` · ${info.assigned} assigned` : ""}
+              </small>
+            </>
+          ) : (
+            <small>{product.type === "service" ? "Service" : "Not tracked"}</small>
+          )}
+        </span>
+        <span className="st-price">
+          {price ?? <span className="st-muted">{product.usageType === "operations" ? "Internal" : "No price"}</span>}
+        </span>
+        <span className="pr-row__actions">
+          {archived ? (
+            <Button size="slim" onClick={() => setPendingArchive(product)}>
+              Restore
             </Button>
-            <Button
-              size="slim"
-              url={`/dashboard/inventory/products/${product.id}/edit`}
-              variant="plain"
-            >
+          ) : (
+            <Button size="slim" url={`${url}/edit`}>
               Edit
             </Button>
-            <Button
-              size="slim"
-              tone={activeTab === "archived" ? "success" : "critical"}
-              variant="plain"
-              onClick={() => handleArchive(product.id)}
-            >
-              {activeTab === "archived" ? "Restore" : "Archive"}
-            </Button>
-            {activeTab === "archived" ? (
+          )}
+          <Popover
+            active={menuFor === product.id}
+            activator={
               <Button
+                accessibilityLabel={`More actions for ${product.name}`}
+                icon={MenuHorizontalIcon}
                 size="slim"
-                tone="critical"
-                variant="plain"
-                onClick={() => {
-                  setDeleteError(null);
-                  setPendingDelete(product);
-                }}
-              >
-                Delete forever
-              </Button>
-            ) : null}
-          </InlineStack>
-        </IndexTable.Cell>
-      </IndexTable.Row>
-    );
-  };
-
-  const rowMarkup = groupedProducts.rootProducts.map((rootProduct) => {
-    const children = groupedProducts.parentMap.get(rootProduct.id) ?? [];
-    const hasChildren = children.length > 0;
-    const isCollapsed = collapsedParents[rootProduct.id] ?? true;
-
-    if (!hasChildren) {
-      return renderSingleProductRow(rootProduct, false);
-    }
-
-    return (
-      <React.Fragment key={`group-${rootProduct.id}`}>
-        {/* Parent Header Row with Expand/Collapse */}
-        <IndexTable.Row id={`parent-${rootProduct.id}`} position={rowIndexCounter++}>
-          <IndexTable.Cell>
-            <InlineStack gap="200" blockAlign="center">
-              <Button
-                size="slim"
-                variant="plain"
-                accessibilityLabel={isCollapsed ? "Expand linked components" : "Collapse linked components"}
-                onClick={(e?: React.MouseEvent) => {
-                  e?.stopPropagation?.();
-                  toggleParentCollapse(rootProduct.id);
-                }}
-              >
-                {isCollapsed ? "▶" : "▼"}
-              </Button>
-              <ProductListThumbnail
-                alt={rootProduct.name}
-                imagePath={rootProduct.images[0]}
+                variant="tertiary"
+                onClick={() => setMenuFor(menuFor === product.id ? null : product.id)}
               />
-              <BlockStack gap="100">
-                <InlineStack gap="200" blockAlign="center">
-                  <Link
-                    dataPrimaryLink
-                    url={`/dashboard/inventory/products/${rootProduct.id}`}
-                  >
-                    <Text as="span" fontWeight="bold">
-                      {rootProduct.name}
-                    </Text>
-                  </Link>
-                  <Badge tone="info">{`${children.length} Linked Component${children.length > 1 ? "s" : ""}`}</Badge>
-                </InlineStack>
-                <InlineStack gap="150">
-                  {getTableDisplayTags(rootProduct).map((tag) => (
-                    <Badge key={`${rootProduct.id}-${tag}`}>
-                      {tag}
-                    </Badge>
-                  ))}
-                </InlineStack>
-              </BlockStack>
-            </InlineStack>
-          </IndexTable.Cell>
-          <IndexTable.Cell>
-            {(() => {
-              const serials = serialsByProduct.get(rootProduct.id) ?? [];
-              const serialLabel =
-                rootProduct.trackSerial && serials.length > 0
-                  ? formatSerialSummaryPreview([...new Set(serials)].join(", "), 2)
-                  : null;
-              return rootProduct.sku || serialLabel || " ";
-            })()}
-          </IndexTable.Cell>
-          <IndexTable.Cell>
-            {renderOnHandBadge(
-              rootProduct,
-              stockByProduct.get(rootProduct.id) ?? 0,
-              assignedByProduct.get(rootProduct.id) ?? 0,
-              false,
-            )}
-          </IndexTable.Cell>
-          <IndexTable.Cell>
-            {formatProductPrice(rootProduct)}
-          </IndexTable.Cell>
-          <IndexTable.Cell>
-            <InlineStack gap="200">
-              <Button
-                size="slim"
-                url={`/dashboard/inventory/products/${rootProduct.id}`}
-                variant="plain"
-              >
-                View
-              </Button>
-              <Button
-                size="slim"
-                url={`/dashboard/inventory/products/${rootProduct.id}/edit`}
-                variant="plain"
-              >
-                Edit
-              </Button>
-              <Button
-                size="slim"
-                tone={activeTab === "archived" ? "success" : "critical"}
-                variant="plain"
-                onClick={() => handleArchive(rootProduct.id)}
-              >
-                {activeTab === "archived" ? "Restore" : "Archive"}
-              </Button>
-              {activeTab === "archived" ? (
-                <Button
-                  size="slim"
-                  tone="critical"
-                  variant="plain"
-                  onClick={() => {
-                    setDeleteError(null);
-                    setPendingDelete(rootProduct);
-                  }}
-                >
-                  Delete forever
-                </Button>
-              ) : null}
-            </InlineStack>
-          </IndexTable.Cell>
-        </IndexTable.Row>
-
-        {/* Linked Child Rows (when expanded) */}
-        {!isCollapsed &&
-          children.map((child) => renderSingleProductRow(child, true))}
-      </React.Fragment>
+            }
+            preferredAlignment="right"
+            onClose={() => setMenuFor(null)}
+          >
+            <ActionList
+              actionRole="menuitem"
+              items={[
+                { content: "View product", url },
+                ...(stocked && !archived
+                  ? [{ content: product.trackSerial ? "Manage serials" : "Update stock", url: `/dashboard/inventory/update-stock?productId=${product.id}` }]
+                  : []),
+                ...(!product.parentId && !archived
+                  ? [{ content: "Add sub-product", url: `/dashboard/inventory/products/new?parentId=${product.id}` }]
+                  : []),
+                archived
+                  ? {
+                      content: "Delete forever",
+                      destructive: true,
+                      onAction: () => {
+                        setMenuFor(null);
+                        setDeleteError(null);
+                        setPendingDelete(product);
+                      },
+                    }
+                  : {
+                      content: "Archive",
+                      destructive: true,
+                      onAction: () => {
+                        setMenuFor(null);
+                        setPendingArchive(product);
+                      },
+                    },
+              ]}
+            />
+          </Popover>
+        </span>
+      </li>
     );
-  });
-
-  const emptyState = useMemo(
-    () => (
-      <EmptyState
-        action={{
-          content: "Create product",
-          onAction: () => router.push("/dashboard/inventory/products/new"),
-        }}
-        heading="Create your first product"
-        image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
-      >
-        <p>Add goods and services for your inventory.</p>
-      </EmptyState>
-    ),
-    [router],
-  );
+  }
 
   return (
     <AppPage
       backAction={{ content: "Inventory", url: "/dashboard/inventory" }}
       fullWidth
-      primaryAction={{
-        content: "Create product",
-        onAction: () => router.push("/dashboard/inventory/products/new"),
-      }}
+      primaryAction={{ content: "Add product", url: "/dashboard/inventory/products/new" }}
       secondaryActions={[
         { content: "Export catalog", onAction: () => setExportOpen(true) },
         { content: "Import catalog", onAction: () => setImportOpen(true) },
       ]}
-      subtitle="Goods, services, and sub-products."
+      subtitle="Everything you sell or use — goods, services and the parts that go with them."
       title="Products"
     >
-      <BlockStack gap="400">
+      <div className="pl pr">
         {error ? (
-          <Text as="p" tone="critical">
+          <Banner tone="critical" onDismiss={() => setError(null)}>
             {error}
-          </Text>
+          </Banner>
         ) : null}
 
-        <IndexSurface>
-          <IndexFilters
-            appliedFilters={appliedFilters}
-            canCreateNewView={false}
-            cancelAction={{
-              onAction: () => {
-                setQuery("");
-                setSalesHistoryOnly(false);
-              },
-              disabled: false,
-              loading: false,
-            }}
-            filters={indexFilters}
-            mode={mode}
-            queryPlaceholder="Search products"
-            queryValue={query}
-            selected={selectedTab}
-            tabs={tabs}
-            onClearAll={() => {
-              setQuery("");
-              setSalesHistoryOnly(false);
-            }}
-            onQueryChange={setQuery}
-            onQueryClear={() => setQuery("")}
-            onSelect={setSelectedTab}
-            setMode={setMode}
-          />
+        {/* Summary */}
+        <div className="pc-stats">
+          <button className="pc-stat pr-stat" type="button" onClick={() => chooseTab("all")}>
+            <small>Active products</small>
+            <strong>{tabCounts.all ?? "…"}</strong>
+          </button>
+          <button className="pc-stat pr-stat" type="button" onClick={() => chooseTab("for_sale")}>
+            <small>For sale</small>
+            <strong>{tabCounts.for_sale ?? "…"}</strong>
+          </button>
+          <NextLink className="pc-stat pr-stat" href="/dashboard/inventory">
+            <small>Units in stock</small>
+            <strong>{stockSummary.units.toLocaleString()}</strong>
+          </NextLink>
+          <NextLink className={cn("pc-stat pr-stat", stockSummary.low + stockSummary.out > 0 && "is-alert")} href="/dashboard/inventory">
+            <small>Stock lines low or out</small>
+            <strong>{stockSummary.low + stockSummary.out}</strong>
+          </NextLink>
+        </div>
 
-          <IndexTablePaginationBar
-            page={page}
-            perPage={perPage}
-            total={total}
-            resourceName={productResourceName}
-            loading={loading}
-            onPageChange={setPage}
-            perPageOptions={[...PRODUCT_PAGE_SIZES]}
-            onPerPageChange={(next) => {
-              setPerPage(next);
-              setPage(1);
-            }}
-            placement="header"
-          />
+        <section className="ex-surface">
+          <div className="st-toolbar">
+            <div className="iv-filters">
+              {TABS.map((t) => (
+                <button
+                  className={cn("iv-filter", tab === t.id && "is-active")}
+                  key={t.id}
+                  type="button"
+                  onClick={() => chooseTab(t.id)}
+                >
+                  {t.label} {tabCounts[t.id] !== undefined ? <span>{tabCounts[t.id]}</span> : null}
+                </button>
+              ))}
+            </div>
+            <div className="st-toolbar__controls">
+              <div className="st-toolbar__search">
+                <TextField
+                  autoComplete="off"
+                  clearButton
+                  label="Search products"
+                  labelHidden
+                  placeholder="Search name, SKU or barcode"
+                  prefix={<Icon source={SearchIcon} />}
+                  value={query}
+                  onChange={setQuery}
+                  onClearButtonClick={() => setQuery("")}
+                />
+              </div>
+              <Checkbox
+                checked={salesHistoryOnly}
+                label="Sold before"
+                onChange={(checked) => {
+                  setSalesHistoryOnly(checked);
+                  setPage(1);
+                }}
+              />
+              <Select
+                label="Sort"
+                labelInline
+                options={SORT_OPTIONS}
+                value={sort}
+                onChange={(value) => {
+                  setSort(value as SortMode);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </div>
 
-          <IndexTable
-            emptyState={emptyState}
-            headings={[
-              { title: "Name" },
-              { title: "SKU / Serial" },
-              { title: "On hand" },
-              { title: "Selling price" },
-              { title: "" },
-            ]}
-            itemCount={total}
-            loading={loading}
-            pagination={buildIndexTablePagination({
-              page,
-              perPage,
-              total,
-              onPageChange: setPage,
-              resourceName: productResourceName,
-            })}
-            resourceName={productResourceName}
-          >
-            {rowMarkup}
-          </IndexTable>
-        </IndexSurface>
-      </BlockStack>
+          {first ? (
+            <div className="ex-pad">
+              <SkeletonBodyText lines={8} />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="ex-empty">
+              <span className="ex-empty__icon">
+                <Package aria-hidden size={20} />
+              </span>
+              <strong>
+                {filtersActive ? "No products match" : "Add your first product"}
+              </strong>
+              <p>
+                {filtersActive
+                  ? "Try another search or tab."
+                  : "Products are what you sell, rent or use — ROVs, parts, consumables and services."}
+              </p>
+              {filtersActive ? (
+                <Button
+                  onClick={() => {
+                    setQuery("");
+                    setSalesHistoryOnly(false);
+                    chooseTab("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button url="/dashboard/inventory/products/new" variant="primary">
+                  Add product
+                </Button>
+              )}
+            </div>
+          ) : (
+            <ul className={cn("ex-list", loading && "st-dim")}>
+              <li className="pr-row is-head" aria-hidden>
+                <span />
+                <span />
+                <span>Product</span>
+                <span>Stock</span>
+                <span>Selling price</span>
+                <span />
+              </li>
+              {roots.map((root) => {
+                const kids = childrenOf.get(root.id) ?? [];
+                return (
+                  <React.Fragment key={root.id}>
+                    {renderRow(root, { kids: kids.length })}
+                    {kids.length && expanded[root.id] ? kids.map((kid) => renderRow(kid, { child: true })) : null}
+                  </React.Fragment>
+                );
+              })}
+            </ul>
+          )}
+
+          {!first && total > 0 ? (
+            <div className="iv-pager">
+              <span>
+                Showing{" "}
+                <strong>
+                  {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, total)}
+                </strong>{" "}
+                of <strong>{total}</strong> product{total === 1 ? "" : "s"}
+                {roots.length !== products.length ? ` · ${products.length - roots.length} grouped under their parent` : ""}
+              </span>
+              <div className="iv-pager__controls">
+                <div className="ex-perpage">
+                  <Select
+                    label="Rows per page"
+                    labelInline
+                    options={PAGE_SIZES.map((n) => ({ label: String(n), value: String(n) }))}
+                    value={String(perPage)}
+                    onChange={(value) => {
+                      setPerPage(Number(value));
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <Pagination
+                  hasNext={safePage < totalPages}
+                  hasPrevious={safePage > 1}
+                  label={`${safePage} / ${totalPages}`}
+                  onNext={() => setPage(safePage + 1)}
+                  onPrevious={() => setPage(safePage - 1)}
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      </div>
+
+      <Modal
+        open={Boolean(pendingArchive)}
+        primaryAction={{
+          content: archivedView ? "Restore product" : "Archive product",
+          destructive: !archivedView,
+          loading: archiving,
+          onAction: () => void handleArchiveConfirm(),
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setPendingArchive(null) }]}
+        title={pendingArchive ? `${archivedView ? "Restore" : "Archive"} ${pendingArchive.name}?` : "Product"}
+        onClose={() => setPendingArchive(null)}
+      >
+        <Modal.Section>
+          <Text as="p">
+            {archivedView
+              ? "It will show up again on quotations, orders and invoices."
+              : (stock.get(pendingArchive?.id ?? "")?.qty ?? 0) > 0
+                ? `It still has ${stock.get(pendingArchive?.id ?? "")?.qty} in stock. Archiving hides it from new quotations, orders and invoices; stock and history stay as they are.`
+                : "It will be hidden from new quotations, orders and invoices. Existing documents and history stay as they are, and you can restore it any time."}
+          </Text>
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={exportOpen}
@@ -718,7 +685,11 @@ export function ProductsListPage() {
       >
         <Modal.Section>
           <BlockStack gap="300">
-            <Text as="p">Exports all products matching the current organization catalog. Product IDs, live stock, warehouses, assigned units, and serial numbers are never copied.</Text>
+            {transferError ? <Banner tone="critical">{transferError}</Banner> : null}
+            <Text as="p">
+              Exports every product in this organisation. IDs, live stock, warehouses, assigned units and serial numbers are
+              never copied.
+            </Text>
             {([
               ["description", "Descriptions"], ["barcode", "Barcodes"],
               ["sellingPrice", "Selling prices and currency codes"], ["costPrice", "Cost prices (sensitive)"],
@@ -733,39 +704,50 @@ export function ProductsListPage() {
 
       <Modal
         open={importOpen}
-        onClose={() => { setImportOpen(false); setTransferFile(null); setTransferPreview(null); }}
+        onClose={closeImport}
         title="Import product catalog"
         primaryAction={{
-          content: "Apply import", loading: transferBusy,
+          content: "Apply import",
+          loading: transferBusy,
           disabled: !transferPreview || transferPreview.summary.conflict > 0,
           onAction: () => void handleImport(),
         }}
-        secondaryActions={[{ content: "Cancel", onAction: () => setImportOpen(false) }]}
+        secondaryActions={[{ content: "Cancel", onAction: closeImport }]}
       >
         <Modal.Section>
           <BlockStack gap="400">
+            {transferError ? <Banner tone="critical">{transferError}</Banner> : null}
             <DropZone accept=".zip,application/zip" allowMultiple={false} onDrop={(_files, accepted) => void handleTransferFile(accepted[0])}>
               <DropZone.FileUpload actionTitle={transferFile ? "Choose another transfer package" : "Choose transfer ZIP"} />
             </DropZone>
             {transferPreview ? (
               <>
                 <InlineStack gap="300">
-                  <Badge tone="success">{`${transferPreview.summary.create} create`}</Badge>
-                  <Badge tone="info">{`${transferPreview.summary.update} existing`}</Badge>
+                  <Badge tone="success">{`${transferPreview.summary.create} new`}</Badge>
+                  <Badge tone="info">{`${transferPreview.summary.update} already exist`}</Badge>
                   <Badge tone={transferPreview.summary.conflict ? "critical" : "success"}>{`${transferPreview.summary.conflict} conflicts`}</Badge>
                 </InlineStack>
+                {transferPreview.summary.conflict ? (
+                  <Banner tone="warning">Fix the conflicts below in the file, then choose it again.</Banner>
+                ) : null}
                 <Checkbox label="Update products whose SKU already exists" checked={existingStrategy === "update"} onChange={(checked) => setExistingStrategy(checked ? "update" : "skip")} />
                 <Checkbox label="Create missing categories by name" checked={createCategories} onChange={setCreateCategories} />
                 <Checkbox label="Import cost prices when included" checked={includeCost} onChange={setIncludeCost} />
-                <div style={{ maxHeight: 280, overflow: "auto" }}>
-                  <BlockStack gap="200">
-                    {transferPreview.rows.map((row) => (
-                      <InlineStack key={row.sku} align="space-between" blockAlign="center">
-                        <BlockStack gap="050"><Text as="span" fontWeight="semibold">{row.name}</Text><Text as="span" tone="subdued" variant="bodySm">{row.sku}{row.conflicts.length ? ` · ${row.conflicts.join(", ")}` : ""}</Text></BlockStack>
-                        <Badge tone={row.action === "conflict" ? "critical" : row.action === "create" ? "success" : "info"}>{row.action}</Badge>
-                      </InlineStack>
-                    ))}
-                  </BlockStack>
+                <div className="pr-import-list">
+                  {transferPreview.rows.map((row) => (
+                    <div className="pr-import-row" key={row.sku}>
+                      <span>
+                        <strong>{row.name}</strong>
+                        <small>
+                          {row.sku}
+                          {row.conflicts.length ? ` · ${row.conflicts.join(", ")}` : ""}
+                        </small>
+                      </span>
+                      <Badge tone={row.action === "conflict" ? "critical" : row.action === "create" ? "success" : "info"}>
+                        {row.action}
+                      </Badge>
+                    </div>
+                  ))}
                 </div>
               </>
             ) : null}
@@ -779,9 +761,7 @@ export function ProductsListPage() {
         open={Boolean(pendingDelete)}
         productName={pendingDelete?.name ?? ""}
         onClose={() => {
-          if (deleting) {
-            return;
-          }
+          if (deleting) return;
           setPendingDelete(null);
           setDeleteError(null);
         }}

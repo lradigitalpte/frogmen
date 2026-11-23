@@ -207,11 +207,29 @@ export class PurchaseOrdersController {
   @Get("v1/goods-receipts")
   listReceipts(
     @Session() session: UserSession,
-    @Query() query: { page?: number; perPage?: number },
+    @Query()
+    query: {
+      page?: number;
+      perPage?: number;
+      state?: string;
+      search?: string;
+      sort?: string;
+      purchaseOrderId?: string;
+    },
   ) {
+    const state =
+      query.state === "draft" || query.state === "done" || query.state === "cancelled"
+        ? query.state
+        : undefined;
+    const sort =
+      query.sort === "receipt_date" || query.sort === "number" ? query.sort : "newest";
     return this.purchaseOrdersService.listReceipts(this.orgId(session), {
       page: query.page ? Number(query.page) : undefined,
       perPage: query.perPage ? Number(query.perPage) : undefined,
+      state,
+      search: query.search?.slice(0, 200),
+      sort,
+      purchaseOrderId: query.purchaseOrderId || undefined,
     });
   }
 

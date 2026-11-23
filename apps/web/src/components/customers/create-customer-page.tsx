@@ -63,7 +63,7 @@ export function CreateCustomerPage() {
     <AppPage
       backAction={{ content: "Customers", url: "/dashboard/customers" }}
       primaryAction={{
-        content: "Save",
+        content: "Save customer",
         loading: saving,
         onAction: handleSave,
       }}
@@ -73,8 +73,8 @@ export function CreateCustomerPage() {
           onAction: () => router.push("/dashboard/customers"),
         },
       ]}
-      subtitle="Add a new contact or company to your organization."
-      title="Create contact"
+      subtitle="Add a company or individual you work with."
+      title="New customer"
     >
       <BlockStack gap="400">
         {error ? (

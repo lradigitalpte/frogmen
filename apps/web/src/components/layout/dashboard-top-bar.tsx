@@ -1,9 +1,11 @@
 "use client";
 
-import { Select, TopBar } from "@shopify/polaris";
+import { ActionList, Badge, Button, Icon, Popover, TopBar } from "@shopify/polaris";
+import { CheckIcon, GlobeIcon, NotificationIcon, StoreIcon } from "@shopify/polaris-icons";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "@/lib/auth-client";
+import { getOverdueAlertCount } from "@/lib/alerts-api";
 import { useTheme } from "@/components/providers/theme-provider";
 import { getMe, selectBranch, type SecurityContext } from "@/lib/security-api";
 import { listCustomers } from "@/lib/customers-api";
@@ -39,9 +41,15 @@ export function DashboardTopBar({
   const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [alertCount, setAlertCount] = useState(0);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchSwitching, setBranchSwitching] = useState(false);
 
   useEffect(() => {
     getMe().then((result) => setSecurity(result.security)).catch(() => null);
+    getOverdueAlertCount()
+      .then((result) => setAlertCount(result.count ?? 0))
+      .catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -133,14 +141,20 @@ export function DashboardTopBar({
   }, [searchValue]);
 
   async function handleBranchChange(value: string) {
+    setBranchMenuOpen(false);
+    const current = security?.branchScope === "all" ? "all" : security?.activeBranchId ?? "";
+    if (value === current) return;
     const mode = value === "all" ? "all" : "single";
-    await selectBranch({
-      mode,
-      branchId: mode === "single" ? value : null,
-    });
-    const result = await getMe();
-    setSecurity(result.security);
-    window.location.reload();
+    setBranchSwitching(true);
+    try {
+      await selectBranch({
+        mode,
+        branchId: mode === "single" ? value : null,
+      });
+      window.location.reload();
+    } catch {
+      setBranchSwitching(false);
+    }
   }
 
   const toggleUserMenu = useCallback(
@@ -165,30 +179,85 @@ export function DashboardTopBar({
   const userName = session?.user?.name ?? "admin";
   const userEmail = session?.user?.email ?? "admin@gmail.com";
   const isDark = theme === "dark";
+  const firstName = userName.split(" ")[0] || userName;
+
+  const welcomeMarkup = (
+    <div className="app-shell-welcome">
+      Welcome, <strong>{firstName}</strong>!
+    </div>
+  );
 
   const userMenuMarkup = (
     <div className="frogmen-topbar-actions">
-      {security ? (
+      {security && security.branches.length > 0 ? (
         <div className="frogmen-topbar-branch">
-          <Select
-            label="Active branch"
-            labelHidden
-            options={[
-              ...(security.canAccessAllBranches
-                ? [{ label: "All branches", value: "all" }]
-                : []),
-              ...security.branches.map((branch) => ({
-                label: branch.name,
-                value: branch.id,
-              })),
-            ]}
-            value={
-              security.branchScope === "all"
-                ? "all"
-                : security.activeBranchId ?? ""
-            }
-            onChange={handleBranchChange}
-          />
+          {(() => {
+            const allMode = security.branchScope === "all";
+            const active = security.branches.find((b) => b.id === security.activeBranchId);
+            const label = allMode ? "All branches" : active?.name ?? "Choose branch";
+            const canSwitch = security.branches.length > 1 || security.canAccessAllBranches;
+            const activator = (
+              <Button
+                disabled={!canSwitch}
+                disclosure={canSwitch ? (branchMenuOpen ? "up" : "down") : undefined}
+                icon={allMode ? GlobeIcon : StoreIcon}
+                loading={branchSwitching}
+                accessibilityLabel={`Active branch: ${label}`}
+                onClick={() => setBranchMenuOpen((open) => !open)}
+              >
+                {label}
+              </Button>
+            );
+            if (!canSwitch) return activator;
+            return (
+              <Popover
+                active={branchMenuOpen}
+                activator={activator}
+                autofocusTarget="first-node"
+                preferredAlignment="right"
+                onClose={() => setBranchMenuOpen(false)}
+              >
+                <div className="frogmen-branch-menu">
+                  <ActionList
+                    actionRole="menuitem"
+                    sections={[
+                      ...(security.canAccessAllBranches
+                        ? [
+                            {
+                              title: "View",
+                              items: [
+                                {
+                                  content: "All branches",
+                                  helpText: `Combined data from ${security.branches.length} branch${security.branches.length === 1 ? "" : "es"}`,
+                                  prefix: <span className="frogmen-branch-menu__icon"><Icon source={GlobeIcon} /></span>,
+                                  suffix: allMode ? <span className="frogmen-branch-menu__check"><Icon source={CheckIcon} tone="success" /></span> : undefined,
+                                  onAction: () => void handleBranchChange("all"),
+                                },
+                              ],
+                            },
+                          ]
+                        : []),
+                      {
+                        title: "Branches",
+                        items: [...security.branches]
+                          .sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name))
+                          .map((branch) => {
+                            const selected = !allMode && branch.id === security.activeBranchId;
+                            return {
+                              content: branch.name,
+                              helpText: [branch.code, branch.isMain ? "Main branch" : null].filter(Boolean).join(" · ") || undefined,
+                              prefix: <span className="frogmen-branch-menu__icon"><Icon source={StoreIcon} /></span>,
+                              suffix: selected ? <span className="frogmen-branch-menu__check"><Icon source={CheckIcon} tone="success" /></span> : undefined,
+                              onAction: () => void handleBranchChange(branch.id),
+                            };
+                          }),
+                      },
+                    ]}
+                  />
+                </div>
+              </Popover>
+            );
+          })()}
         </div>
       ) : null}
       <button
@@ -199,6 +268,24 @@ export function DashboardTopBar({
       >
         <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
       </button>
+
+      <div className="app-shell-bell">
+        <Button
+          accessibilityLabel={
+            alertCount > 0 ? `${alertCount} overdue alerts` : "Alerts"
+          }
+          icon={NotificationIcon}
+          url="/dashboard/alerts"
+          variant="tertiary"
+        />
+        {alertCount > 0 ? (
+          <span className="app-shell-bell__count">
+            <Badge size="small" tone="critical">
+              {alertCount > 99 ? "99+" : String(alertCount)}
+            </Badge>
+          </span>
+        ) : null}
+      </div>
 
       <TopBar.UserMenu
         actions={[
@@ -220,6 +307,7 @@ export function DashboardTopBar({
           },
         ]}
         detail={userEmail}
+        avatar={session?.user?.image ?? undefined}
         initials={userName.slice(0, 2).toUpperCase()}
         name={userName}
         open={userMenuActive}
@@ -275,6 +363,7 @@ export function DashboardTopBar({
 
   return (
     <TopBar
+      contextControl={welcomeMarkup}
       searchField={searchMarkup}
       searchResults={searchResultsMarkup}
       searchResultsVisible={searchActive && searchValue.length > 0}

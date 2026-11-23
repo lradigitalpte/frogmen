@@ -5,6 +5,8 @@ export interface ProductTag {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Live products carrying this tag (from the list endpoint). */
+  productCount?: number;
 }
 
 export interface ListProductTagsParams {

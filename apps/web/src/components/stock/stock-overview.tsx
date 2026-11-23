@@ -1,90 +1,80 @@
 "use client";
 
-import {
-  BlockStack,
-  Button,
-  ChoiceList,
-  EmptyState,
-  IndexFilters,
-  IndexFiltersMode,
-  IndexTable,
-  InlineStack,
-  Link,
-  Text,
-  useSetIndexFiltersMode,
-} from "@shopify/polaris";
-import { AlertTriangle, Boxes, Package, PackageX } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppPage, IndexSurface } from "@/components/layout/page";
-import { IndexTablePaginationBar } from "@/components/ui/index-table-pagination-bar";
-import { buildIndexTablePagination } from "@/lib/index-table-pagination";
-
-const stockRowResourceName = {
-  singular: "stock row",
-  plural: "stock rows",
-};
+import { Badge, Button, Icon, Pagination, Select, SkeletonBodyText, TextField } from "@shopify/polaris";
+import { AlertTriangleIcon, InventoryIcon, SearchIcon } from "@shopify/polaris-icons";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppPage } from "@/components/layout/page";
 import { ProductListThumbnail } from "@/components/products/product-list-thumbnail";
-import { KpiCard } from "@/components/ui/kpi-card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { formatQuantity } from "@/lib/format-quantity";
-import {
-  formatSerialSummaryPreview,
-  isSerialSummaryTruncated,
-} from "@/lib/format-serial-summary";
+import { formatSerialSummaryPreview, isSerialSummaryTruncated } from "@/lib/format-serial-summary";
 import { listStock } from "@/lib/products-api";
+import { cn } from "@/lib/utils";
 import { listWarehouses } from "@/lib/warehouses-api";
-import type { StockOverviewRow } from "@/types/product";
+import type { StockOverviewRow, StockSort, StockStatusFilter, StockSummary } from "@/types/product";
 import type { Warehouse } from "@/types/warehouse";
 
-const PER_PAGE = 20;
+const PAGE_SIZES = [10, 25, 50, 100];
 
-type StockTab = "all" | "out_of_stock" | "low_stock" | "serialized";
-
-const tabs: { id: StockTab; content: string }[] = [
-  { id: "all", content: "All stock" },
-  { id: "out_of_stock", content: "Out of stock" },
-  { id: "low_stock", content: "Low stock" },
-  { id: "serialized", content: "Serialized" },
+const STATUS_FILTERS: Array<{ id: StockStatusFilter; label: string; key: keyof StockSummary | null; alert?: boolean }> = [
+  { id: "all", label: "All", key: "lines" },
+  { id: "in_stock", label: "In stock", key: "inStock" },
+  { id: "low_stock", label: "Low stock", key: "lowStock", alert: true },
+  { id: "out_of_stock", label: "Out of stock", key: "outOfStock", alert: true },
+  { id: "serialized", label: "Serialized", key: "serialized" },
+  { id: "bulk", label: "Bulk", key: "bulk" },
 ];
 
-function quantityBadge(row: StockOverviewRow) {
-  const qty = Number(row.quantity) || 0;
-  const formatted = formatQuantity(row.quantity);
-  if (qty === 0) {
-    return <StatusBadge variant="destructive">0</StatusBadge>;
-  }
-  if (qty <= 2) {
-    return <StatusBadge variant="warning">{formatted}</StatusBadge>;
-  }
-  return (
-    <Text as="span" fontWeight="bold" variant="bodyLg">
-      {formatted}
-    </Text>
-  );
+const SORT_OPTIONS: Array<{ label: string; value: StockSort }> = [
+  { label: "Recently updated", value: "recent" },
+  { label: "Product name (A–Z)", value: "name" },
+  { label: "Lowest quantity first", value: "qty_asc" },
+  { label: "Highest quantity first", value: "qty_desc" },
+];
+
+const EMPTY_SUMMARY: StockSummary = {
+  lines: 0,
+  units: 0,
+  inStock: 0,
+  lowStock: 0,
+  outOfStock: 0,
+  serialized: 0,
+  bulk: 0,
+  assignedUnits: 0,
+  products: 0,
+  warehouses: 0,
+  lowStockThreshold: 2,
+};
+
+function plural(n: number, word: string, many = `${word}s`) {
+  return `${formatQuantity(String(n))} ${n === 1 ? word : many}`;
 }
 
 export function StockOverviewPage() {
-  const router = useRouter();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [status, setStatus] = useState<StockStatusFilter>("all");
+  const [sort, setSort] = useState<StockSort>("recent");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PAGE_SIZES[1]);
   const [rows, setRows] = useState<StockOverviewRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<StockSummary>(EMPTY_SUMMARY);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { mode, setMode } = useSetIndexFiltersMode(IndexFiltersMode.Filtering);
-
-  const activeTab = tabs[selectedTab]?.id ?? "all";
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
     return () => clearTimeout(timer);
   }, [query]);
 
@@ -95,346 +85,349 @@ export function StockOverviewPage() {
   }, []);
 
   const loadStock = useCallback(async () => {
+    const request = ++requestRef.current;
     setLoading(true);
     setError(null);
-
     try {
       const result = await listStock({
         page,
-        perPage: PER_PAGE,
+        perPage,
         search: debouncedQuery || undefined,
         warehouseId: warehouseFilter || undefined,
+        status: status === "all" ? undefined : status,
+        sort,
       });
-
+      if (request !== requestRef.current) return;
       setRows(result.data);
       setTotal(result.meta.total);
+      setSummary(result.summary ?? EMPTY_SUMMARY);
+      // If filters shrank the result set, jump back to the last real page.
+      if (result.data.length === 0 && result.meta.total > 0 && page > 1) {
+        setPage(Math.max(1, Math.ceil(result.meta.total / perPage)));
+      }
     } catch (err) {
+      if (request !== requestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load stock");
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) {
+        setLoading(false);
+        setLoaded(true);
+      }
     }
-  }, [debouncedQuery, page, warehouseFilter]);
+  }, [debouncedQuery, page, perPage, sort, status, warehouseFilter]);
 
   useEffect(() => {
     void loadStock();
   }, [loadStock]);
 
-  useEffect(() => {
+  function chooseStatus(next: StockStatusFilter) {
+    setStatus(next);
     setPage(1);
-  }, [debouncedQuery, warehouseFilter, activeTab]);
+  }
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const qty = Number(row.quantity) || 0;
-      if (activeTab === "out_of_stock") return qty === 0;
-      if (activeTab === "low_stock") return qty > 0 && qty <= 2;
-      if (activeTab === "serialized") return row.trackSerial;
-      return true;
-    });
-  }, [activeTab, rows]);
-
-  const paginationTotal =
-    activeTab === "all" ? total : filteredRows.length;
-  const paginationPage = activeTab === "all" ? page : 1;
-
-  const stats = useMemo(() => {
-    let zeroCount = 0;
-    let lowCount = 0;
-    let totalUnits = 0;
-
-    for (const row of rows) {
-      const qty = Number(row.quantity) || 0;
-      totalUnits += qty;
-      if (qty === 0) zeroCount += 1;
-      else if (qty <= 2) lowCount += 1;
-    }
-
-    return { zeroCount, lowCount, totalUnits };
-  }, [rows]);
-
-  const warehouseChoices = useMemo(
-    () => [
-      { label: "All warehouses", value: "" },
-      ...warehouses.map((warehouse) => ({
-        label: warehouse.name,
-        value: warehouse.id,
-      })),
-    ],
-    [warehouses],
-  );
-
-  const filters = useMemo(
-    () => [
-      {
-        key: "warehouse",
-        label: "Warehouse",
-        filter: (
-          <ChoiceList
-            allowMultiple={false}
-            choices={warehouseChoices}
-            selected={warehouseFilter ? [warehouseFilter] : [""]}
-            title="Warehouse"
-            titleHidden
-            onChange={(value) => setWarehouseFilter(value[0] ?? "")}
-          />
-        ),
-        shortcut: true,
-      },
-    ],
-    [warehouseChoices, warehouseFilter],
-  );
-
-  const appliedFilters = useMemo(() => {
-    if (!warehouseFilter) return [];
-    const warehouse = warehouses.find((item) => item.id === warehouseFilter);
-    return [
-      {
-        key: "warehouse",
-        label: `Warehouse: ${warehouse?.name ?? "Selected"}`,
-        onRemove: () => setWarehouseFilter(""),
-      },
-    ];
-  }, [warehouseFilter, warehouses]);
+  function clearFilters() {
+    setQuery("");
+    setDebouncedQuery("");
+    setWarehouseFilter("");
+    setStatus("all");
+    setPage(1);
+  }
 
   function formatSellingPrice(row: StockOverviewRow) {
-    if (!row.sellingPrice) {
-      return " ";
-    }
-
-    const currency = currencyById(
-      currencies,
-      row.priceCurrencyId ?? catalogCurrencyId,
-    );
-
+    if (!row.sellingPrice || Number(row.sellingPrice) === 0) return null;
+    const currency = currencyById(currencies, row.priceCurrencyId ?? catalogCurrencyId);
     return formatCurrencyAmount(row.sellingPrice, currency);
   }
 
-  const rowMarkup = filteredRows.map((row, index) => (
-    <IndexTable.Row
-      id={`${row.productId}-${row.warehouseId}`}
-      key={`${row.productId}-${row.warehouseId}`}
-      position={index}
-    >
-      <IndexTable.Cell>
-        <InlineStack gap="300" blockAlign="center">
-          <ProductListThumbnail
-            alt={row.productName}
-            imagePath={row.productImage}
-          />
-          <BlockStack gap="100">
-            <Link url={`/dashboard/inventory/products/${row.productId}`}>
-              <Text as="span" fontWeight="semibold">
-                {row.productName}
-              </Text>
-            </Link>
-            <span
-              className="stock-overview-row__meta"
-              title={
-                row.trackSerial &&
-                row.serialSummary &&
-                isSerialSummaryTruncated(row.serialSummary)
-                  ? row.serialSummary
-                  : undefined
-              }
-            >
-              <Text as="span" tone="subdued" variant="bodySm" truncate>
-                {row.trackSerial && row.serialSummary
-                  ? formatSerialSummaryPreview(row.serialSummary, 2)
-                  : row.productSku || "No SKU"}
-              </Text>
-            </span>
-          </BlockStack>
-        </InlineStack>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Link url={`/dashboard/inventory/warehouses/${row.warehouseId}`}>
-          {row.warehouseName}
-        </Link>
-      </IndexTable.Cell>
-      <IndexTable.Cell>{quantityBadge(row)}</IndexTable.Cell>
-      <IndexTable.Cell>{formatSellingPrice(row)}</IndexTable.Cell>
-      <IndexTable.Cell>
-        <StatusBadge variant={row.trackSerial ? "info" : "neutral"}>
-          {row.trackSerial ? "Serialized" : "Bulk"}
-        </StatusBadge>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <InlineStack gap="200">
-          <Button
-            size="slim"
-            url={`/dashboard/inventory/update-stock?productId=${row.productId}&warehouseId=${row.warehouseId}`}
-            variant="primary"
-          >
-            Update stock
-          </Button>
-          <Button
-            size="slim"
-            variant="plain"
-            url={`/dashboard/inventory/products/${row.productId}`}
-          >
-            View
-          </Button>
-        </InlineStack>
-      </IndexTable.Cell>
-    </IndexTable.Row>
-  ));
-
-  const emptyState = useMemo(
-    () => (
-      <EmptyState
-        action={{
-          content: "Add product",
-          onAction: () => router.push("/dashboard/inventory/products/new"),
-        }}
-        heading="No stock rows found"
-        image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
-      >
-        <p>
-          {debouncedQuery || warehouseFilter || activeTab !== "all"
-            ? "Try changing the filters or search term."
-            : "Create a product and warehouse, then receive stock to see rows here."}
-        </p>
-      </EmptyState>
-    ),
-    [activeTab, debouncedQuery, router, warehouseFilter],
-  );
+  const threshold = summary.lowStockThreshold;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const safePage = Math.min(page, totalPages);
+  const first = loading && !loaded;
+  const filtersActive = Boolean(debouncedQuery || warehouseFilter || status !== "all");
+  const warehouseName = warehouses.find((w) => w.id === warehouseFilter)?.name;
+  const attention = summary.lowStock + summary.outOfStock;
 
   return (
     <AppPage
       fullWidth
-      title="Inventory"
-      subtitle="On-hand quantities across products and warehouses."
-      primaryAction={{
-        content: "Update stock",
-        url: "/dashboard/inventory/update-stock",
-      }}
+      primaryAction={{ content: "Update stock", url: "/dashboard/inventory/update-stock" }}
       secondaryActions={[
         { content: "Add product", url: "/dashboard/inventory/products/new" },
         { content: "Products", url: "/dashboard/inventory/products" },
-        { content: "Tags", url: "/dashboard/inventory/product-tags" },
-        { content: "Categories", url: "/dashboard/inventory/product-categories" },
         { content: "Warehouses", url: "/dashboard/inventory/warehouses" },
+        { content: "Categories", url: "/dashboard/inventory/product-categories" },
+        { content: "Tags", url: "/dashboard/inventory/product-tags" },
       ]}
+      subtitle="What you have on hand, where it is, and what needs restocking."
+      title="Inventory"
     >
-      <BlockStack gap="400">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            icon={<Boxes className="size-5" />}
-            label="Stock lines"
-            value={String(total)}
-            hint="product × warehouse rows"
-            tone="default"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<Package className="size-5" />}
-            label="Units on page"
-            value={String(stats.totalUnits)}
-            hint="quantity in current view"
-            tone="default"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<PackageX className="size-5" />}
-            label="Out of stock"
-            value={String(stats.zeroCount)}
-            hint="zero qty on this page"
-            tone={stats.zeroCount > 0 ? "warning" : "default"}
-            loading={loading}
-          />
-          <KpiCard
-            icon={<AlertTriangle className="size-5" />}
-            label="Low stock"
-            value={String(stats.lowCount)}
-            hint="≤2 units on this page"
-            tone={stats.lowCount > 0 ? "warning" : "muted"}
-            loading={loading}
-          />
-        </div>
+      <div className="pl st">
+        {error ? <div className="ac-error">{error}</div> : null}
 
-        {error ? (
-          <Text as="p" tone="critical">
-            {error}
-          </Text>
+        {/* Hero */}
+        <section className={cn("pl-hero", loading && loaded && "is-loading")}>
+          <div className="pl-hero__main">
+            <span className="pl-hero__label">Units on hand{warehouseName ? ` · ${warehouseName}` : ""}</span>
+            <strong className="pl-hero__value">{first ? "…" : formatQuantity(String(summary.units))}</strong>
+            <span className="pl-hero__period">
+              {first
+                ? "Loading…"
+                : `${plural(summary.products, "product")} · ${plural(summary.warehouses, "warehouse")} · ${plural(summary.lines, "stock line")}`}
+            </span>
+            {summary.assignedUnits > 0 ? (
+              <span className="pl-hero__period">
+                + {plural(summary.assignedUnits, "serialized unit")} assigned to customers or jobs
+              </span>
+            ) : null}
+          </div>
+          <div className="pl-hero__tiles">
+            <button className="ac-tile is-link" type="button" onClick={() => chooseStatus("in_stock")}>
+              <span>Healthy</span>
+              <strong>{summary.inStock}</strong>
+              <small>More than {threshold} units</small>
+            </button>
+            <button
+              className={cn("ac-tile is-link", summary.lowStock > 0 && "is-alert-soft")}
+              type="button"
+              onClick={() => chooseStatus("low_stock")}
+            >
+              <span>Low stock</span>
+              <strong>{summary.lowStock}</strong>
+              <small>{threshold} units or fewer</small>
+            </button>
+            <button
+              className={cn("ac-tile is-link", summary.outOfStock > 0 && "is-alert-soft")}
+              type="button"
+              onClick={() => chooseStatus("out_of_stock")}
+            >
+              <span>Out of stock</span>
+              <strong>{summary.outOfStock}</strong>
+              <small>{summary.outOfStock ? "Needs restocking" : "Nothing at zero"}</small>
+            </button>
+          </div>
+          {summary.lines > 0 ? (
+            <div className="pl-hero__bar">
+              <div className="st-split">
+                <b className="is-ok" style={{ width: `${(summary.inStock / summary.lines) * 100}%` }} />
+                <b className="is-low" style={{ width: `${(summary.lowStock / summary.lines) * 100}%` }} />
+                <b className="is-out" style={{ width: `${(summary.outOfStock / summary.lines) * 100}%` }} />
+              </div>
+              <div className="pl-hero__legend">
+                <span>
+                  <i className="st-dot is-ok" /> Healthy {summary.inStock}
+                </span>
+                <span>
+                  <i className="st-dot is-low" /> Low {summary.lowStock}
+                </span>
+                <span>
+                  <i className="st-dot is-out" /> Out {summary.outOfStock}
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        {attention > 0 && status === "all" && !first ? (
+          <p className="ac-warn st-warn">
+            <Icon source={AlertTriangleIcon} />
+            {plural(attention, "stock line")} {attention === 1 ? "is" : "are"} low or out of stock.{" "}
+            <button className="st-link" type="button" onClick={() => chooseStatus("low_stock")}>
+              Show low stock
+            </button>
+          </p>
         ) : null}
 
-        <IndexSurface>
-          <IndexFilters
-            appliedFilters={appliedFilters}
-            canCreateNewView={false}
-            cancelAction={{
-              onAction: () => {
-                setQuery("");
-                setWarehouseFilter("");
-              },
-              disabled: false,
-              loading: false,
-            }}
-            filters={filters}
-            mode={mode}
-            queryPlaceholder="Search products, SKU, or serials"
-            queryValue={query}
-            selected={selectedTab}
-            tabs={tabs}
-            onClearAll={() => {
-              setQuery("");
-              setWarehouseFilter("");
-            }}
-            onQueryChange={setQuery}
-            onQueryClear={() => setQuery("")}
-            onSelect={setSelectedTab}
-            setMode={setMode}
-          />
+        {/* List */}
+        <section className="ex-surface">
+          <div className="st-toolbar">
+            <div className="iv-filters">
+              {STATUS_FILTERS.map((f) => {
+                const count = f.key ? Number(summary[f.key]) : 0;
+                return (
+                  <button
+                    className={cn("iv-filter", status === f.id && "is-active", f.alert && count > 0 && "is-alert")}
+                    key={f.id}
+                    type="button"
+                    onClick={() => chooseStatus(f.id)}
+                  >
+                    {f.label} <span>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="st-toolbar__controls">
+              <div className="st-toolbar__search">
+                <TextField
+                  autoComplete="off"
+                  clearButton
+                  label="Search stock"
+                  labelHidden
+                  placeholder="Search products, SKU or serial"
+                  prefix={<Icon source={SearchIcon} />}
+                  value={query}
+                  onChange={setQuery}
+                  onClearButtonClick={() => setQuery("")}
+                />
+              </div>
+              <Select
+                label="Warehouse"
+                labelHidden
+                options={[
+                  { label: "All warehouses", value: "" },
+                  ...warehouses.map((w) => ({ label: w.name, value: w.id })),
+                ]}
+                value={warehouseFilter}
+                onChange={(value) => {
+                  setWarehouseFilter(value);
+                  setPage(1);
+                }}
+              />
+              <Select
+                label="Sort"
+                labelInline
+                options={SORT_OPTIONS}
+                value={sort}
+                onChange={(value) => {
+                  setSort(value as StockSort);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </div>
 
-          <IndexTablePaginationBar
-            page={paginationPage}
-            perPage={activeTab === "all" ? PER_PAGE : Math.max(filteredRows.length, 1)}
-            total={paginationTotal}
-            resourceName={stockRowResourceName}
-            loading={loading}
-            onPageChange={activeTab === "all" ? setPage : () => {}}
-            placement="header"
-          />
+          {first ? (
+            <div className="ex-pad">
+              <SkeletonBodyText lines={8} />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="ex-empty">
+              <span className="ex-empty__icon">
+                <Icon source={InventoryIcon} />
+              </span>
+              <strong>{filtersActive ? "No stock matches these filters" : "No stock yet"}</strong>
+              <p>
+                {filtersActive
+                  ? "Try another search, warehouse or status."
+                  : "Add a product and a warehouse, then receive stock to see it here."}
+              </p>
+              {filtersActive ? (
+                <Button onClick={clearFilters}>Clear filters</Button>
+              ) : (
+                <Button url="/dashboard/inventory/products/new" variant="primary">
+                  Add product
+                </Button>
+              )}
+            </div>
+          ) : (
+            <ul className={cn("ex-list", loading && "st-dim")}>
+              <li className="st-row is-head" aria-hidden>
+                <span />
+                <span>Product</span>
+                <span>Warehouse</span>
+                <span>On hand</span>
+                <span>Selling price</span>
+                <span>Type</span>
+                <span />
+              </li>
+              {rows.map((row) => {
+                const qty = Number(row.quantity) || 0;
+                const level = qty <= 0 ? "is-out" : qty <= threshold ? "is-low" : "is-ok";
+                const assigned = Number(row.assignedQuantity) || 0;
+                const price = formatSellingPrice(row);
+                const serials = row.trackSerial && row.serialSummary ? row.serialSummary : null;
+                const productUrl = `/dashboard/inventory/products/${row.productId}`;
+                return (
+                  <li className="ex-row st-row" key={`${row.productId}-${row.warehouseId}`}>
+                    <Link className="st-thumb" href={productUrl}>
+                      <ProductListThumbnail alt={row.productName} imagePath={row.productImage} />
+                    </Link>
+                    <Link className="st-product" href={productUrl}>
+                      <strong>{row.productName}</strong>
+                      <small title={serials && isSerialSummaryTruncated(serials) ? serials : undefined}>
+                        {row.productSku ? <span className="ex-num">{row.productSku}</span> : null}
+                        {serials ? (
+                          <span className="st-serials">{formatSerialSummaryPreview(serials, 2)}</span>
+                        ) : !row.productSku ? (
+                          <span>No SKU</span>
+                        ) : null}
+                      </small>
+                    </Link>
+                    <Link className="st-wh" href={`/dashboard/inventory/warehouses/${row.warehouseId}`}>
+                      {row.warehouseName}
+                      {row.warehouseCode && row.warehouseCode !== row.warehouseName ? <small>{row.warehouseCode}</small> : null}
+                    </Link>
+                    <span className={cn("st-qty", level)}>
+                      <b>{formatQuantity(row.quantity)}</b>
+                      <small>
+                        {level === "is-out" ? "Out of stock" : level === "is-low" ? "Low stock" : "In stock"}
+                        {assigned ? ` · ${assigned} assigned` : ""}
+                      </small>
+                    </span>
+                    <span className="st-price">{price ?? <span className="st-muted">No price</span>}</span>
+                    <span className="st-type">
+                      <Badge tone={row.trackSerial ? "info" : undefined}>{row.trackSerial ? "Serialized" : "Bulk"}</Badge>
+                    </span>
+                    <span className="st-actions">
+                      <Button
+                        size="slim"
+                        url={`/dashboard/inventory/update-stock?productId=${row.productId}&warehouseId=${row.warehouseId}`}
+                      >
+                        {row.trackSerial ? "Manage serials" : "Update stock"}
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
-          <IndexTable
-            emptyState={emptyState}
-            headings={[
-              { title: "Product" },
-              { title: "Warehouse" },
-              { title: "On hand" },
-              { title: "Selling price" },
-              { title: "Type" },
-              { title: "" },
-            ]}
-            itemCount={paginationTotal}
-            loading={loading}
-            pagination={
-              activeTab === "all"
-                ? buildIndexTablePagination({
-                    page,
-                    perPage: PER_PAGE,
-                    total,
-                    onPageChange: setPage,
-                    resourceName: stockRowResourceName,
-                  })
-                : undefined
-            }
-            resourceName={stockRowResourceName}
-          >
-            {rowMarkup}
-          </IndexTable>
+          {!first && total > 0 ? (
+            <div className="iv-pager">
+              <span>
+                Showing{" "}
+                <strong>
+                  {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, total)}
+                </strong>{" "}
+                of <strong>{total}</strong> stock line{total === 1 ? "" : "s"}
+                {filtersActive ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <button className="st-link" type="button" onClick={clearFilters}>
+                      Clear filters
+                    </button>
+                  </>
+                ) : null}
+              </span>
+              <div className="iv-pager__controls">
+                <div className="ex-perpage">
+                  <Select
+                    label="Rows per page"
+                    labelInline
+                    options={PAGE_SIZES.map((n) => ({ label: String(n), value: String(n) }))}
+                    value={String(perPage)}
+                    onChange={(value) => {
+                      setPerPage(Number(value));
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <Pagination
+                  hasNext={safePage < totalPages}
+                  hasPrevious={safePage > 1}
+                  label={`${safePage} / ${totalPages}`}
+                  onNext={() => setPage(safePage + 1)}
+                  onPrevious={() => setPage(safePage - 1)}
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
 
-          <IndexTablePaginationBar
-            page={paginationPage}
-            perPage={activeTab === "all" ? PER_PAGE : Math.max(filteredRows.length, 1)}
-            total={paginationTotal}
-            resourceName={stockRowResourceName}
-            loading={loading}
-            onPageChange={activeTab === "all" ? setPage : () => {}}
-            placement="footer"
-          />
-        </IndexSurface>
-      </BlockStack>
+        <p className="pl-foot">
+          {`Low stock means ${threshold} units or fewer in a warehouse. Serialized products count one unit per available serial; sold or assigned serials aren't counted as on hand.`}
+        </p>
+      </div>
     </AppPage>
   );
 }

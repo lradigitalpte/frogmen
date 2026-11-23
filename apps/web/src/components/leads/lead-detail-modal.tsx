@@ -8,6 +8,7 @@ import { useOrgCurrency } from "@/hooks/use-org-currency";
 import {
   contactStatusLabel,
   convertLeadToCustomer,
+  getLead,
   priorityBadgeVariant,
   priorityLabel,
   sourceBadgeVariant,
@@ -52,7 +53,7 @@ const STAGES: { id: LeadStage; label: string }[] = [
 ];
 
 export function LeadDetailModal({
-  lead,
+  lead: leadProp,
   open,
   onOpenChange,
   onLeadUpdated,
@@ -61,6 +62,11 @@ export function LeadDetailModal({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "timeline">("overview");
   const [mounted, setMounted] = useState(false);
+  // Full record (with communication history) loaded from the API on open.
+  const [detail, setDetail] = useState<Lead | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [convertedCustomerId, setConvertedCustomerId] = useState<string | null>(null);
 
   const { formatBaseMoney } = useOrgCurrency();
 
@@ -68,7 +74,27 @@ export function LeadDetailModal({
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!open || !leadProp) return;
+    let cancelled = false;
+    setActionError(null);
+    setConvertedCustomerId(null);
+    getLead(leadProp.id)
+      .then((full) => !cancelled && setDetail(full))
+      .catch(() => !cancelled && setDetail(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, leadProp?.id, leadProp?.updatedAt]);
+
+  const lead = detail && leadProp && detail.id === leadProp.id ? detail : leadProp;
+
   if (!open || !lead || !mounted) return null;
+
+  function applyUpdate(updated: Lead) {
+    setDetail(updated);
+    onLeadUpdated(updated);
+  }
 
   const initials = lead.name
     .split(" ")
@@ -77,14 +103,32 @@ export function LeadDetailModal({
     .substring(0, 2)
     .toUpperCase();
 
-  const handleStageChange = (newStage: LeadStage) => {
-    const updated = updateLeadStage(lead.id, newStage);
-    if (updated) onLeadUpdated(updated);
+  const handleStageChange = async (newStage: LeadStage) => {
+    if (busy || newStage === lead.stage) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      applyUpdate({ ...(await updateLeadStage(lead.id, newStage)), communicationLogs: lead.communicationLogs });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not change the stage");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleConvert = () => {
-    const updated = convertLeadToCustomer(lead.id);
-    if (updated) onLeadUpdated(updated);
+  const handleConvert = async () => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await convertLeadToCustomer(lead.id);
+      applyUpdate({ ...result.lead, communicationLogs: lead.communicationLogs });
+      setConvertedCustomerId(result.customerId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not convert the lead");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const isFollowUpOverdue =
@@ -157,13 +201,25 @@ export function LeadDetailModal({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={busy}
                 className="text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 font-bold"
-                onClick={handleConvert}
+                onClick={() => void handleConvert()}
               >
-                <CheckCircle2 className="h-4 w-4 mr-1.5" /> Convert to Customer
+                <CheckCircle2 className="h-4 w-4 mr-1.5" /> {busy ? "Working…" : "Convert to customer"}
               </Button>
             )}
+            {convertedCustomerId ? (
+              <a
+                href={`/dashboard/customers/${convertedCustomerId}`}
+                className="text-xs font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
+              >
+                Customer created — open profile →
+              </a>
+            ) : null}
           </div>
+          {actionError ? (
+            <p className="text-xs font-medium text-destructive">{actionError}</p>
+          ) : null}
 
           {/* Pipeline Stage Stepper Bar */}
           <div className="pt-2">
@@ -416,7 +472,8 @@ export function LeadDetailModal({
         open={logModalOpen}
         onOpenChange={setLogModalOpen}
         onContactLogged={(updated) => {
-          onLeadUpdated(updated);
+          // logLeadContact returns the full record, history included.
+          applyUpdate(updated);
         }}
       />
 
@@ -425,7 +482,7 @@ export function LeadDetailModal({
         open={editModalOpen}
         onOpenChange={setEditModalOpen}
         onLeadUpdated={(updated) => {
-          onLeadUpdated(updated);
+          applyUpdate({ ...updated, communicationLogs: lead.communicationLogs });
         }}
       />
     </div>

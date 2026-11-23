@@ -41,7 +41,7 @@ export function ReimburseClaimModal({
   const [error, setError] = useState<string | null>(null);
 
   const requiresBankAccount =
-    paymentMethod !== "cash" && paymentMethod !== "cheque";
+    paymentMethod !== "cash";
 
   const bankAccountOptions = useMemo(
     () =>

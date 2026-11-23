@@ -10,11 +10,12 @@ import {
   count,
   eq,
   ilike,
+  inArray,
   isNull,
   sql,
   type SQL,
 } from "drizzle-orm";
-import { productCategoryCatalog, type Database } from "@frog1/db";
+import { productCategoryCatalog, products, type Database } from "@frog1/db";
 import type {
   CreateProductCategoryDto,
   ListProductCategoriesQuery,
@@ -87,8 +88,25 @@ export class ProductCategoriesService {
       );
     }
 
+    // How many live products use each category on this page.
+    const ids = rows.map((row) => row.id);
+    const counts = ids.length
+      ? await this.db
+          .select({ categoryId: products.categoryId, total: count() })
+          .from(products)
+          .where(
+            and(
+              eq(products.organizationId, organizationId),
+              inArray(products.categoryId, ids),
+              isNull(products.deletedAt),
+            ),
+          )
+          .groupBy(products.categoryId)
+      : [];
+    const countById = new Map(counts.map((row) => [row.categoryId, Number(row.total)]));
+
     return {
-      data: rows,
+      data: rows.map((row) => ({ ...row, productCount: countById.get(row.id) ?? 0 })),
       meta: {
         page,
         perPage,
@@ -202,6 +220,12 @@ export class ProductCategoriesService {
     if (!category) {
       throw new NotFoundException("Category not found");
     }
+
+    // Don't leave products pointing at a deleted category.
+    await this.db
+      .update(products)
+      .set({ categoryId: null, updatedAt: new Date() })
+      .where(and(eq(products.organizationId, organizationId), eq(products.categoryId, id)));
 
     return category;
   }

@@ -48,6 +48,7 @@ export class WarrantiesController {
       productUnitId: query.productUnitId,
       expiringSoon:
         query.expiringSoon === "true" || query.expiringSoon === true,
+      sort: query.sort,
       page: query.page ? Number(query.page) : undefined,
       perPage: query.perPage ? Number(query.perPage) : undefined,
     });

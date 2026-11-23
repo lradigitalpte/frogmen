@@ -106,7 +106,7 @@ export function RegisterPaymentModal({
     invoiceEquivalent - outstanding > 0.01;
 
   const requiresBankAccount =
-    paymentMethod !== "cash" && paymentMethod !== "cheque";
+    paymentMethod !== "cash";
 
   const eligibleBanks = useMemo(
     () =>

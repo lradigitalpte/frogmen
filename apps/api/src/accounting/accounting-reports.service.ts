@@ -78,6 +78,12 @@ function formatWeekLabel(start: Date, end: Date) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+/** Local calendar date as YYYY-MM-DD (toISOString() shifts to UTC and can land on the previous day). */
+function localIsoDate(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function parseIsoDate(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00`);
@@ -267,8 +273,26 @@ export class AccountingReportsService {
     accountId: string | null,
   ): Promise<JournalChart> {
     const end = new Date();
-    const start = new Date(end);
-    start.setDate(start.getDate() - 42);
+    const firstWeekStart = startOfWeek(new Date(end));
+    firstWeekStart.setDate(firstWeekStart.getDate() - 5 * 7);
+    const windowStart = localIsoDate(firstWeekStart);
+    const windowEnd = localIsoDate(end);
+
+    const baseFilters = [
+      eq(accountMoves.organizationId, organizationId),
+      eq(accountMoves.journalId, journalId),
+      eq(accountMoves.state, "posted"),
+      ...(accountId ? [eq(accountMoveLines.accountId, accountId)] : []),
+    ];
+
+    // Balance carried in from before the chart window.
+    const [openingRow] = await this.db
+      .select({
+        balance: sql<string>`coalesce(sum(${accountMoveLines.debit}::numeric - ${accountMoveLines.credit}::numeric), 0)`,
+      })
+      .from(accountMoveLines)
+      .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
+      .where(and(...baseFilters, sql`${accountMoves.moveDate} < ${windowStart}`));
 
     const rows = await this.db
       .select({
@@ -278,48 +302,31 @@ export class AccountingReportsService {
       })
       .from(accountMoveLines)
       .innerJoin(accountMoves, eq(accountMoves.id, accountMoveLines.moveId))
-      .where(
-        and(
-          eq(accountMoves.organizationId, organizationId),
-          eq(accountMoves.journalId, journalId),
-          eq(accountMoves.state, "posted"),
-          ...(accountId ? [eq(accountMoveLines.accountId, accountId)] : []),
-          gte(accountMoves.moveDate, start.toISOString().slice(0, 10)),
-          lte(accountMoves.moveDate, end.toISOString().slice(0, 10)),
-        ),
-      )
+      .where(and(...baseFilters, gte(accountMoves.moveDate, windowStart), lte(accountMoves.moveDate, windowEnd)))
       .orderBy(accountMoves.moveDate);
 
-    const weekBuckets = new Map<string, number>();
-    for (let i = 5; i >= 0; i -= 1) {
-      const weekStart = startOfWeek(new Date(end));
-      weekStart.setDate(weekStart.getDate() - i * 7);
-      weekBuckets.set(weekStart.toISOString().slice(0, 10), 0);
-    }
+    // Six weekly points; each shows the balance at the end of that week.
+    const weeks = Array.from({ length: 6 }, (_, index) => {
+      const weekStart = new Date(firstWeekStart);
+      weekStart.setDate(weekStart.getDate() + index * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      return { key: localIsoDate(weekStart), endKey: localIsoDate(weekEnd) };
+    });
 
-    let running = 0;
-    for (const row of rows) {
-      running += Number(row.debit ?? 0) - Number(row.credit ?? 0);
-      const moveDate = parseIsoDate(row.moveDate);
-      if (!moveDate) continue;
-
-      const bucketStart = startOfWeek(moveDate).toISOString().slice(0, 10);
-      if (weekBuckets.has(bucketStart)) {
-        weekBuckets.set(bucketStart, roundMoney(running));
+    let running = Number(openingRow?.balance ?? 0);
+    let rowIndex = 0;
+    const balances = weeks.map((week) => {
+      while (rowIndex < rows.length && rows[rowIndex].moveDate <= week.endKey) {
+        running += Number(rows[rowIndex].debit ?? 0) - Number(rows[rowIndex].credit ?? 0);
+        rowIndex += 1;
       }
-    }
-
-    const labels: string[] = [];
-    const balances: number[] = [];
-    for (const [key, balance] of weekBuckets.entries()) {
-      const date = parseIsoDate(key);
-      labels.push(date ? formatAppDate(key) : key);
-      balances.push(balance);
-    }
+      return roundMoney(running);
+    });
 
     return {
       type: "line",
-      labels,
+      labels: weeks.map((week) => formatAppDate(week.key)),
       datasets: [
         {
           label: "Balance",
@@ -564,7 +571,9 @@ export class AccountingReportsService {
           code: journal.code,
           name: journal.name,
           journalType: journal.journalType,
-          balance: roundMoney(balance),
+          // The sales journal's default account is revenue; what people expect on this card is
+          // the amount customers still owe, which matches the unpaid-invoices figure.
+          balance: journal.journalType === "sale" ? roundMoney(unpaidInvoiceTotalBase) : roundMoney(balance),
           stats,
           chart,
         };
@@ -573,9 +582,37 @@ export class AccountingReportsService {
     const profitLossCard = await this.buildProfitLossCard(organizationId);
     const bankBalances = await this.getBankBalances(organizationId);
 
+    const linkedCodes = new Set(bankBalances.accounts.map((account) => account.glAccountCode));
+    const unlinked = await Promise.all(
+      journalRows
+        .filter((journal) => journal.journalType === "bank" && journal.defaultAccountId)
+        .map(async (journal) => {
+          const [account] = await this.db
+            .select({ code: glAccounts.code, name: glAccounts.name })
+            .from(glAccounts)
+            .where(eq(glAccounts.id, journal.defaultAccountId!));
+          if (!account || linkedCodes.has(account.code)) return null;
+          const card = cards.find((c) => c.id === journal.id);
+          const balance = card?.balance ?? 0;
+          if (Math.abs(balance) < 0.005) return null;
+          return {
+            id: `journal-${journal.id}`,
+            name: account.name,
+            currencyCode: "",
+            glAccountCode: account.code,
+            balance,
+            receiptsInPeriod: 0,
+            expensesInPeriod: 0,
+          };
+        }),
+    );
+
     return {
       journals: [...cards, profitLossCard],
-      bankAccounts: bankBalances.accounts,
+      bankAccounts: [
+        ...bankBalances.accounts,
+        ...unlinked.filter((account): account is NonNullable<typeof account> => account !== null),
+      ],
       unpaidInvoiceCount,
       unpaidInvoiceTotalBase: roundMoney(unpaidInvoiceTotalBase),
     };

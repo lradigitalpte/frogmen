@@ -5,6 +5,8 @@ export interface ProductCategory {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Live products using this category (from the list endpoint). */
+  productCount?: number;
 }
 
 export interface ListProductCategoriesParams {

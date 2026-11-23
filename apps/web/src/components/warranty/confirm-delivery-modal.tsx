@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAppDate } from "@/lib/format-date";
 import {
   Banner,
   BlockStack,
@@ -40,10 +41,27 @@ export function ConfirmDeliveryModal({
 
   if (!warranty) return null;
 
+  const editing = warranty.status !== "pending_delivery";
+  const soldOn = warranty.soldAt?.slice(0, 10) ?? "";
+  const months = warranty.policy?.durationMonths ?? 0;
+  const dateValid = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(deliveryDate.trim());
+  const beforeSale = dateValid && soldOn && deliveryDate.trim() < soldOn;
+  const endsPreview = (() => {
+    if (!dateValid || !months) return null;
+    const [y, m, d] = deliveryDate.trim().split("-").map(Number);
+    const end = new Date(Date.UTC(y, m - 1, d));
+    end.setUTCMonth(end.getUTCMonth() + months);
+    return end.toISOString().slice(0, 10);
+  })();
+
   async function handleConfirm() {
     if (!warranty) return;
     if (!deliveryDate.trim()) {
       setError("Please select a valid delivery date");
+      return;
+    }
+    if (deliveryDate.trim() < (warranty.soldAt?.slice(0, 10) ?? "")) {
+      setError("Delivery date can't be before the sale date");
       return;
     }
 
@@ -68,9 +86,10 @@ export function ConfirmDeliveryModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Confirm Equipment Delivery"
+      title={editing ? "Change delivery date" : "Confirm delivery"}
       primaryAction={{
-        content: "Confirm & Start Warranty",
+        content: editing ? "Save delivery date" : "Confirm and start warranty",
+        disabled: Boolean(beforeSale),
         onAction: () => void handleConfirm(),
         loading: submitting,
       }}
@@ -92,7 +111,7 @@ export function ConfirmDeliveryModal({
             </Text>
             {warranty.serialNumber ? (
               <Text as="p" tone="subdued" variant="bodySm">
-                Serial Number: {warranty.serialNumber}
+                Serial number: {warranty.serialNumber}
               </Text>
             ) : null}
             <Text as="p" tone="subdued" variant="bodySm">
@@ -106,23 +125,30 @@ export function ConfirmDeliveryModal({
           </BlockStack>
 
           <Text as="p" tone="subdued">
-            Confirming delivery will start the warranty clock on the selected delivery date
-            and calculate the expiration date based on the warranty policy.
+            {editing
+              ? "Coverage is recalculated from the new delivery date using the policy length."
+              : "Coverage starts on the delivery date and runs for the policy length."}
           </Text>
 
           <FormLayout>
             <TextField
               autoComplete="off"
-              label="Delivery Date"
+              error={beforeSale ? "Can't be before the sale date" : undefined}
+              label="Delivery date"
+              min={soldOn || undefined}
               type="date"
               value={deliveryDate}
               onChange={setDeliveryDate}
-              helpText="The date the customer physically received the equipment."
+              helpText={
+                endsPreview
+                  ? `The day the customer received it. Coverage would end on ${formatAppDate(endsPreview)}.`
+                  : "The day the customer received it."
+              }
             />
 
             <TextField
               autoComplete="off"
-              label="Delivery Reference / Notes"
+              label="Delivery reference or notes"
               value={notes}
               onChange={setNotes}
               placeholder="e.g. Courier tracking # or recipient signature"

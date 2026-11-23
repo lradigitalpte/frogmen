@@ -29,7 +29,7 @@ export class StockService {
 
   async list(organizationId: string, query: ListStockQuery) {
     const page = Math.max(query.page ?? 1, 1);
-    const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 100);
+    const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 1000);
     const offset = (page - 1) * perPage;
 
     const bulkFilters: SQL[] = [
@@ -286,13 +286,70 @@ export class StockService {
           updatedAt: row.updatedAt,
           assignedQuantity: String(row.quantity),
         })),
-    ].sort((a, b) => a.productName.localeCompare(b.productName));
+    ];
 
-    const total = combined.length;
-    const data = combined.slice(offset, offset + perPage);
+    // Summary covers everything matching search/warehouse, before the status filter.
+    const LOW_STOCK_MAX = 2;
+    const qtyOf = (row: { quantity: string | number | null }) => Number(row.quantity) || 0;
+    const summary = {
+      lines: combined.length,
+      units: combined.reduce((sum, row) => sum + qtyOf(row), 0),
+      inStock: combined.filter((row) => qtyOf(row) > LOW_STOCK_MAX).length,
+      lowStock: combined.filter((row) => qtyOf(row) > 0 && qtyOf(row) <= LOW_STOCK_MAX).length,
+      outOfStock: combined.filter((row) => qtyOf(row) <= 0).length,
+      serialized: combined.filter((row) => row.trackSerial).length,
+      bulk: combined.filter((row) => !row.trackSerial).length,
+      assignedUnits: combined.reduce((sum, row) => sum + (Number(row.assignedQuantity) || 0), 0),
+      products: new Set(combined.map((row) => row.productId)).size,
+      warehouses: new Set(combined.map((row) => row.warehouseId)).size,
+      lowStockThreshold: LOW_STOCK_MAX,
+    };
+
+    const status = query.status ?? "all";
+    const filtered = combined.filter((row) => {
+      const qty = qtyOf(row);
+      switch (status) {
+        case "in_stock":
+          return qty > LOW_STOCK_MAX;
+        case "low_stock":
+          return qty > 0 && qty <= LOW_STOCK_MAX;
+        case "out_of_stock":
+          return qty <= 0;
+        case "serialized":
+          return row.trackSerial;
+        case "bulk":
+          return !row.trackSerial;
+        default:
+          return true;
+      }
+    });
+
+    const byName = (a: (typeof combined)[number], b: (typeof combined)[number]) =>
+      a.productName.localeCompare(b.productName) || a.warehouseName.localeCompare(b.warehouseName);
+    const time = (value: Date | string | null | undefined) => (value ? new Date(value).getTime() : 0);
+    switch (query.sort) {
+      case "name":
+        filtered.sort(byName);
+        break;
+      case "qty_asc":
+        filtered.sort((a, b) => qtyOf(a) - qtyOf(b) || byName(a, b));
+        break;
+      case "qty_desc":
+        filtered.sort((a, b) => qtyOf(b) - qtyOf(a) || byName(a, b));
+        break;
+      case "recent":
+        filtered.sort((a, b) => time(b.updatedAt) - time(a.updatedAt) || byName(a, b));
+        break;
+      default:
+        filtered.sort(byName);
+    }
+
+    const total = filtered.length;
+    const data = filtered.slice(offset, offset + perPage);
 
     return {
       data,
+      summary,
       meta: {
         page,
         perPage,

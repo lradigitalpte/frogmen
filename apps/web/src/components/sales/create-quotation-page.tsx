@@ -4,100 +4,78 @@ import {
   Badge,
   Banner,
   BlockStack,
-  Box,
   Button,
-  Card,
+  ButtonGroup,
   Checkbox,
-  Divider,
-  FormLayout,
+  Icon,
   InlineStack,
-  Layout,
-  Modal,
-  ResourceItem,
   Select,
-  Tabs,
+  Spinner,
   Text,
   TextField,
 } from "@shopify/polaris";
-import { pricingAdjustmentHelpText, pricingAdjustmentLabel } from "@frog1/shared";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppPage } from "@/components/layout/page";
-import { ProductCatalogSearchResults } from "@/components/products/product-catalog-search-results";
-import { ProductCatalogResourceList } from "@/components/products/product-catalog-resource-list";
-import { formatMoney, todayIsoDate } from "@/components/sales/format-money";
-import { defaultValidityHeader } from "@/components/sales/validity-period";
 import {
-  QuotationHeaderForm,
-  type QuotationHeaderValues,
-} from "@/components/sales/quotation-header-form";
-import { listCurrencies } from "@/lib/currencies-api";
-import type { Currency } from "@/lib/currencies-api";
+  CheckIcon,
+  LockIcon,
+  PersonIcon,
+  PlusIcon,
+  ProductIcon,
+  SearchIcon,
+  XIcon,
+} from "@shopify/polaris-icons";
+import {
+  defaultBillingDocumentTypeForCustomer,
+  pricingAdjustmentHelpText,
+  pricingAdjustmentLabel,
+  type BillingDocumentType,
+} from "@frog1/shared";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DocumentNotesField } from "@/components/documents/document-notes-field";
+import { AppPage } from "@/components/layout/page";
+import { useToast } from "@/components/providers/toast-provider";
+import { ConfiguredLineItemsList } from "@/components/sales/configured-line-items-list";
+import { CurrencyPicker } from "@/components/sales/currency-picker";
+import { CustomerPicker } from "@/components/sales/customer-picker";
+import { EditConfiguredLineModal, type DeliveryFeeMode } from "@/components/sales/edit-configured-line-modal";
+import { todayIsoDate } from "@/components/sales/format-money";
+import type { QuotationHeaderValues } from "@/components/sales/quotation-header-form";
+import { computeValidityDate, defaultValidityHeader } from "@/components/sales/validity-period";
+import { ValidityPeriodPicker } from "@/components/sales/validity-period-picker";
+import { useOrgCurrency } from "@/hooks/use-org-currency";
+import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
+import { useSalesPricing } from "@/hooks/use-sales-pricing";
+import { listCurrencies, type Currency } from "@/lib/currencies-api";
+import { convertAmount, currencyInputPrefix } from "@/lib/currency-utils";
+import { getLatestExchangeRate } from "@/lib/exchange-rates-api";
 import {
   applyGlobalDiscountToLines,
   applyPricingToLines,
   computeLineFinancialSummary,
-  computeLineTotal,
   formatMarginPercent,
   getMaxAllowedQuantity,
   sumStockQuantity,
-} from "@/lib/line-item-utils";
-import { listProducts, listProductUnits, getProductStock } from "@/lib/products-api";
-import type { Product, ProductUnit, ProductStock } from "@/types/product";
-import { createQuotation, addQuotationLine } from "@/lib/quotations-api";
-import { useOrgCurrency } from "@/hooks/use-org-currency";
-import { useProductDocumentCurrency } from "@/hooks/use-product-document-currency";
-import { useSalesPricing } from "@/hooks/use-sales-pricing";
-import { convertAmount, currencyInputPrefix } from "@/lib/currency-utils";
-import { formatQuantity } from "@/lib/format-quantity";
-import { getLatestExchangeRate } from "@/lib/exchange-rates-api";
-import { ConfiguredLineItemsList } from "@/components/sales/configured-line-items-list";
-import { LineItemDescription } from "@/components/sales/line-item-description";
-import {
-  EditConfiguredLineModal,
-  type DeliveryFeeMode,
-} from "@/components/sales/edit-configured-line-modal";
-import type { ConfiguredLineItem } from "@/types/configured-line-item";
-import { useToast } from "@/components/providers/toast-provider";
-import { formatAppDate } from "@/lib/format-date";
-import {
-  formatDiscountLabel,
   type DiscountMode,
 } from "@/lib/line-item-utils";
+import { getProductStock, listProducts, listProductUnits } from "@/lib/products-api";
+import { addQuotationLine, createQuotation } from "@/lib/quotations-api";
+import { cn } from "@/lib/utils";
+import type { ConfiguredLineItem } from "@/types/configured-line-item";
+import type { Product, ProductStock, ProductUnit } from "@/types/product";
 
 function buildDeliveryFeePayload(mode: DeliveryFeeMode, value: string) {
-  if (mode === "none") {
-    return {
-      deliveryFeeAmount: null,
-      deliveryFeePercent: null,
-    };
-  }
-
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return {
-      deliveryFeeAmount: null,
-      deliveryFeePercent: null,
-    };
+  if (mode === "none" || !Number.isFinite(parsed) || parsed <= 0) {
+    return { deliveryFeeAmount: null, deliveryFeePercent: null };
   }
-
-  if (mode === "amount") {
-    return {
-      deliveryFeeAmount: parsed,
-      deliveryFeePercent: null,
-    };
-  }
-
-  return {
-    deliveryFeeAmount: null,
-    deliveryFeePercent: parsed,
-  };
+  return mode === "amount"
+    ? { deliveryFeeAmount: parsed, deliveryFeePercent: null }
+    : { deliveryFeeAmount: null, deliveryFeePercent: parsed };
 }
 
 function emptyHeader(): QuotationHeaderValues {
   const quoteDate = todayIsoDate();
   const validity = defaultValidityHeader(quoteDate);
-
   return {
     customer: null,
     currencyId: "",
@@ -113,65 +91,45 @@ function emptyHeader(): QuotationHeaderValues {
   };
 }
 
-function formatDisplayDate(value: string) {
-  if (!value) return " ";
-  return formatAppDate(value) || value;
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
 }
 
-function ProfitSummaryPanel({
-  totalCost,
-  grossProfit,
-  profitMarginPercent,
-  formatAmount,
+/** Numbered section card used down the main column. */
+function Section({
+  id,
+  step,
+  title,
+  hint,
+  done,
+  aside,
+  children,
 }: {
-  totalCost: number;
-  grossProfit: number;
-  profitMarginPercent: number | null;
-  formatAmount: (amount: number) => string;
+  id: string;
+  step: number;
+  title: string;
+  hint?: string;
+  done?: boolean;
+  aside?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <>
-      <Divider />
-      <Text as="h3" variant="headingSm">
-        Profit summary
-      </Text>
-      <div className="quotation-summary-panel__rows">
-        <div className="quotation-summary-row">
-          <Text as="span" tone="subdued" variant="bodySm">
-            Total cost
-          </Text>
-          <Text as="span" fontWeight="semibold">
-            {formatAmount(totalCost)}
-          </Text>
+    <section className="cq-section" id={id}>
+      <header className="cq-section__head">
+        <span className={cn("cq-section__num", done && "is-done")}>{done ? <Icon source={CheckIcon} /> : step}</span>
+        <div className="cq-section__title">
+          <h2>{title}</h2>
+          {hint ? <p>{hint}</p> : null}
         </div>
-        <div className="quotation-summary-row">
-          <Text as="span" tone="subdued" variant="bodySm">
-            Gross profit
-          </Text>
-          <Text
-            as="span"
-            fontWeight="semibold"
-            tone={grossProfit >= 0 ? "success" : "critical"}
-          >
-            {formatAmount(grossProfit)}
-          </Text>
-        </div>
-        <div className="quotation-summary-row">
-          <Text as="span" tone="subdued" variant="bodySm">
-            Margin
-          </Text>
-          <span
-            className={
-              grossProfit >= 0
-                ? "frogmen-margin-badge"
-                : "frogmen-margin-badge frogmen-margin-badge--loss"
-            }
-          >
-            {formatMarginPercent(profitMarginPercent)}
-          </span>
-        </div>
-      </div>
-    </>
+        {aside ? <div className="cq-section__aside">{aside}</div> : null}
+      </header>
+      <div className="cq-section__body">{children}</div>
+    </section>
   );
 }
 
@@ -180,13 +138,12 @@ export function CreateQuotationPage() {
   const { showError, showSuccess } = useToast();
   const { settings: salesPricing } = useSalesPricing();
   const { baseCurrency } = useOrgCurrency();
-  const [selectedTab, setSelectedTab] = useState(0);
   const [values, setValues] = useState<QuotationHeaderValues>(emptyHeader);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [currenciesLoading, setCurrenciesLoading] = useState(true);
-  const [currenciesError, setCurrenciesError] = useState<string | null>(null);
+  const billingTypeManualRef = useRef(false);
 
-  // Product catalog state
+  // Product catalog
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -196,34 +153,42 @@ export function CreateQuotationPage() {
   const [deliveryFeeMode, setDeliveryFeeMode] = useState<DeliveryFeeMode>("none");
   const [deliveryFeeValue, setDeliveryFeeValue] = useState("");
 
-  // Serial Selection State for serial-tracked items
+  // Selected product being configured
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [inStockUnits, setInStockUnits] = useState<ProductUnit[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
-
-  // Line items state
-  const [lines, setLines] = useState<ConfiguredLineItem[]>([]);
-  const [priceAdjustmentEnabled, setPriceAdjustmentEnabled] = useState(true);
   const [selectedProductStock, setSelectedProductStock] = useState<ProductStock | null>(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [quantityWarning, setQuantityWarning] = useState<string | null>(null);
+
+  // Lines
+  const [lines, setLines] = useState<ConfiguredLineItem[]>([]);
+  const [priceAdjustmentEnabled, setPriceAdjustmentEnabled] = useState(true);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [internalNotesModalOpen, setInternalNotesModalOpen] = useState(false);
-  const [tempInternalNotes, setTempInternalNotes] = useState("");
   const [documentCurrencyError, setDocumentCurrencyError] = useState<string | null>(null);
+  const [showReferences, setShowReferences] = useState(false);
   const prevCurrencyIdRef = useRef<string | null>(null);
 
-  // Global Commercial Discount (percent or fixed amount) & Global VAT Rate (%)
-  const [globalDiscountMode, setGlobalDiscountMode] =
-    useState<DiscountMode>("percent");
+  // Quote-wide discount & VAT
+  const [globalDiscountMode, setGlobalDiscountMode] = useState<DiscountMode>("percent");
   const [globalDiscountValue, setGlobalDiscountValue] = useState<string>("0");
   const [globalVatPercent, setGlobalVatPercent] = useState<string>("5");
   const [isDropship, setIsDropship] = useState(false);
   const [dropshipSupplyReference, setDropshipSupplyReference] = useState("");
+
+  function patch(partial: Partial<QuotationHeaderValues>) {
+    setValues((current) => {
+      const next = { ...current, ...partial };
+      if (partial.quoteDate !== undefined && next.validityPreset !== "custom") {
+        next.validityDate = computeValidityDate(next.quoteDate, next.validityPreset);
+      }
+      return next;
+    });
+  }
 
   function applyGlobalDiscount(mode: DiscountMode, valueStr: string) {
     setGlobalDiscountMode(mode);
@@ -235,17 +200,12 @@ export function CreateQuotationPage() {
   function applyGlobalVat(vatPctStr: string) {
     setGlobalVatPercent(vatPctStr);
     const pct = Math.max(0, parseFloat(vatPctStr) || 0);
-    setLines((prev) =>
-      prev.map((line) => ({
-        ...line,
-        taxRatePercent: pct,
-      })),
-    );
+    setLines((prev) => prev.map((line) => ({ ...line, taxRatePercent: pct })));
   }
 
   const {
     exchangeRateError: productExchangeRateError,
-    exchangeRateLoading: productExchangeRateLoading,
+    exchangeRateLoading,
     hasProductConversionRates,
     fmt,
     formatProductCatalogPrice,
@@ -253,19 +213,9 @@ export function CreateQuotationPage() {
   } = useProductDocumentCurrency(values.currencyId, products, selectedProduct);
 
   const exchangeRateError = documentCurrencyError ?? productExchangeRateError;
-  const exchangeRateLoading = productExchangeRateLoading;
 
-  const pageTabs = [
-    { id: "setup", content: "1. Customer & Setup" },
-    { id: "items", content: "2. Products & Serial Selection" },
-    { id: "summary", content: "3. Review & Save Draft" },
-  ];
-
-  // Fetch Currencies from Backend
   const loadCurrencies = useCallback(async () => {
     setCurrenciesLoading(true);
-    setCurrenciesError(null);
-
     try {
       const rows = await listCurrencies();
       setCurrencies(rows);
@@ -281,10 +231,7 @@ export function CreateQuotationPage() {
   }, [baseCurrency]);
 
   useEffect(() => {
-    const timer = setTimeout(
-      () => setDebouncedCatalogSearch(catalogSearch.trim()),
-      300,
-    );
+    const timer = setTimeout(() => setDebouncedCatalogSearch(catalogSearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [catalogSearch]);
 
@@ -292,7 +239,6 @@ export function CreateQuotationPage() {
     setCatalogPage(1);
   }, [debouncedCatalogSearch]);
 
-  // Fetch Products from Backend (search queries the full catalog via API, not the 4 suggestions)
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     setProductsError(null);
@@ -301,7 +247,7 @@ export function CreateQuotationPage() {
       const result = await listProducts({
         search: debouncedCatalogSearch || undefined,
         page: isSearch ? catalogPage : 1,
-        perPage: isSearch ? 100 : 4,
+        perPage: isSearch ? 100 : 6,
         sortBy: isSearch ? "name" : undefined,
         sortDir: isSearch ? "asc" : undefined,
         forSaleOnly: true,
@@ -309,18 +255,12 @@ export function CreateQuotationPage() {
         includeStock: true,
         inStockOnly: !isDropship,
       });
-      setProducts((current) =>
-        isSearch && catalogPage > 1
-          ? [...current, ...result.data]
-          : result.data,
-      );
+      setProducts((current) => (isSearch && catalogPage > 1 ? [...current, ...result.data] : result.data));
       setCatalogTotal(result.meta.total);
     } catch (err) {
       setProducts([]);
       setCatalogTotal(0);
-      setProductsError(
-        err instanceof Error ? err.message : "Failed to load product catalog",
-      );
+      setProductsError(err instanceof Error ? err.message : "Failed to load product catalog");
     } finally {
       setProductsLoading(false);
     }
@@ -331,12 +271,9 @@ export function CreateQuotationPage() {
   }, [loadCurrencies]);
 
   useEffect(() => {
-    if (selectedTab === 1) {
-      void loadProducts();
-    }
-  }, [selectedTab, loadProducts]);
+    void loadProducts();
+  }, [loadProducts]);
 
-  // When a product is selected, fetch in-stock serial numbers and stock levels
   async function handleSelectProduct(product: Product) {
     setSelectedProduct(product);
     setSelectedUnitId("");
@@ -345,24 +282,18 @@ export function CreateQuotationPage() {
     setQuantityWarning(null);
     setDropshipSupplyReference("");
 
-    const isInventoryTracked =
-      !isDropship && product.type === "goods" && product.isStorable;
-    if (!isInventoryTracked) {
+    const tracked = !isDropship && product.type === "goods" && product.isStorable;
+    if (!tracked) {
       setStockLoading(false);
       return;
     }
 
     setStockLoading(true);
-
     try {
       const stock = await getProductStock(product.id);
       setSelectedProductStock(stock);
-
       if (product.trackSerial) {
-        const result = await listProductUnits(product.id, {
-          status: "in_stock",
-          perPage: 50,
-        });
+        const result = await listProductUnits(product.id, { status: "in_stock", perPage: 50 });
         setInStockUnits(result.data);
         setSelectedUnitId(result.data[0]?.id || "");
       }
@@ -381,38 +312,20 @@ export function CreateQuotationPage() {
   }, [selectedProduct, isDropship]);
 
   const selectedAvailableQuantity = useMemo(() => {
-    if (!selectedProduct) {
-      return 0;
-    }
-
-    if (!isSelectedProductInventoryTracked) {
-      return null;
-    }
-
-    if (selectedProduct.trackSerial) {
-      return inStockUnits.length;
-    }
-
+    if (!selectedProduct) return 0;
+    if (!isSelectedProductInventoryTracked) return null;
+    if (selectedProduct.trackSerial) return inStockUnits.length;
     return sumStockQuantity(selectedProductStock);
   }, [selectedProduct, isSelectedProductInventoryTracked, selectedProductStock, inStockUnits.length]);
 
   const remainingForSelectedProduct = useMemo(() => {
-    if (!selectedProduct) {
-      return 0;
-    }
-
-    if (!isSelectedProductInventoryTracked) {
-      return null;
-    }
-
-    return getMaxAllowedQuantity(
-      selectedAvailableQuantity ?? 0,
-      lines,
-      selectedProduct.id,
-    );
+    if (!selectedProduct) return 0;
+    if (!isSelectedProductInventoryTracked) return null;
+    return getMaxAllowedQuantity(selectedAvailableQuantity ?? 0, lines, selectedProduct.id);
   }, [selectedProduct, isSelectedProductInventoryTracked, selectedAvailableQuantity, lines]);
 
-  // Add Product with Serial Number to Line Items
+  const customerIsLocal = values.customer?.isLocal ?? false;
+
   async function handleAddSelectedProduct() {
     if (!selectedProduct) return;
 
@@ -422,32 +335,26 @@ export function CreateQuotationPage() {
       remainingForSelectedProduct !== null &&
       remainingForSelectedProduct <= 0
     ) {
-      setQuantityWarning("No stock available for this product.");
+      setQuantityWarning("No stock left for this product.");
       return;
     }
-
     if (exchangeRateLoading) {
-      setQuantityWarning("Loading exchange rate before adding products...");
+      setQuantityWarning("Loading the exchange rate — try again in a moment.");
       return;
     }
 
     let baseUnitPrice: number;
     let unitCost: number;
-
     try {
       const converted = await convertProductForDocument(selectedProduct);
       baseUnitPrice = converted.unitPrice;
       unitCost = converted.unitCost;
     } catch (err) {
-      setQuantityWarning(
-        err instanceof Error ? err.message : "Failed to convert product price",
-      );
+      setQuantityWarning(err instanceof Error ? err.message : "Failed to convert product price");
       return;
     }
 
-    const unit = isDropship
-      ? undefined
-      : inStockUnits.find((u) => u.id === selectedUnitId);
+    const unit = isDropship ? undefined : inStockUnits.find((u) => u.id === selectedUnitId);
     const supplyRef = dropshipSupplyReference.trim();
     const draftLine: ConfiguredLineItem = {
       id: `line-${Date.now()}`,
@@ -458,22 +365,14 @@ export function CreateQuotationPage() {
       name: selectedProduct.name,
       details: selectedProduct.description,
       sku: selectedProduct.sku || "N/A",
-      quantity: selectedProduct.trackSerial ? 1 : 1,
+      quantity: 1,
       baseUnitPrice,
       unitPrice: baseUnitPrice,
       unitCost,
-      discountPercent:
-        globalDiscountMode === "percent"
-          ? parseFloat(globalDiscountValue) || 0
-          : 0,
-      discountAmount:
-        globalDiscountMode === "amount"
-          ? parseFloat(globalDiscountValue) || 0
-          : 0,
+      discountPercent: globalDiscountMode === "percent" ? parseFloat(globalDiscountValue) || 0 : 0,
+      discountAmount: globalDiscountMode === "amount" ? parseFloat(globalDiscountValue) || 0 : 0,
       taxRatePercent: parseFloat(globalVatPercent) || salesPricing.defaultVatRatePercent || 5,
-      availableQuantity: isSelectedProductInventoryTracked
-        ? selectedAvailableQuantity
-        : null,
+      availableQuantity: isSelectedProductInventoryTracked ? selectedAvailableQuantity : null,
       isStorable: selectedProduct.isStorable,
       productType: selectedProduct.type,
     };
@@ -486,13 +385,9 @@ export function CreateQuotationPage() {
     );
 
     setLines((prev) =>
-      applyGlobalDiscountToLines(
-        [...prev, pricedLine],
-        globalDiscountMode,
-        parseFloat(globalDiscountValue) || 0,
-      ),
+      applyGlobalDiscountToLines([...prev, pricedLine], globalDiscountMode, parseFloat(globalDiscountValue) || 0),
     );
-    setEditingLineId(pricedLine.id);
+    showSuccess(`${selectedProduct.name} added — adjust quantity or price from the line.`);
     setSelectedProduct(null);
     setSelectedUnitId("");
     setSelectedProductStock(null);
@@ -503,42 +398,31 @@ export function CreateQuotationPage() {
     () => currencies.find((currency) => currency.id === values.currencyId),
     [currencies, values.currencyId],
   );
-
   const displayCurrency = selectedCurrency ?? baseCurrency;
   const pricePrefix = currencyInputPrefix(displayCurrency);
+  const currencyCode = displayCurrency?.code ?? "AED";
 
+  // Convert existing lines when the document currency changes
   useEffect(() => {
     const previousCurrencyId = prevCurrencyIdRef.current;
     const nextCurrencyId = values.currencyId;
-
-    if (!nextCurrencyId) {
-      return;
-    }
-
+    if (!nextCurrencyId) return;
     if (!previousCurrencyId || previousCurrencyId === nextCurrencyId) {
       prevCurrencyIdRef.current = nextCurrencyId;
       return;
     }
 
     let cancelled = false;
-
     void getLatestExchangeRate(previousCurrencyId, nextCurrencyId)
       .then(({ rate, configured }) => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         if (!configured) {
           setDocumentCurrencyError(
-            "No exchange rate is configured for this currency change. Add a rate under Settings → Currencies.",
+            "No exchange rate is set up for this currency change. Add one under Settings → Currencies.",
           );
-          setValues((current) => ({
-            ...current,
-            currencyId: previousCurrencyId,
-          }));
+          setValues((current) => ({ ...current, currencyId: previousCurrencyId }));
           return;
         }
-
         setLines((current) =>
           current.length === 0
             ? current
@@ -555,13 +439,8 @@ export function CreateQuotationPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setDocumentCurrencyError(
-            err instanceof Error ? err.message : "Failed to convert line amounts",
-          );
-          setValues((current) => ({
-            ...current,
-            currencyId: previousCurrencyId,
-          }));
+          setDocumentCurrencyError(err instanceof Error ? err.message : "Failed to convert line amounts");
+          setValues((current) => ({ ...current, currencyId: previousCurrencyId }));
         }
       });
 
@@ -576,46 +455,29 @@ export function CreateQuotationPage() {
     }
   }, [baseCurrency, values.currencyId]);
 
-  const customerIsLocal = values.customer?.isLocal ?? false;
-
   const pricingLabel = useMemo(
     () => pricingAdjustmentLabel(customerIsLocal, priceAdjustmentEnabled, salesPricing),
     [customerIsLocal, priceAdjustmentEnabled, salesPricing],
   );
-
-  const pricingHelpText = useMemo(
-    () => pricingAdjustmentHelpText(salesPricing),
-    [salesPricing],
-  );
+  const pricingHelpText = useMemo(() => pricingAdjustmentHelpText(salesPricing), [salesPricing]);
 
   useEffect(() => {
-    if (!values.customer) {
-      setPriceAdjustmentEnabled(false);
-      return;
-    }
-
-    setPriceAdjustmentEnabled(true);
+    setPriceAdjustmentEnabled(Boolean(values.customer));
+    // Re-evaluate only when the customer changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.customer?.id]);
 
   useEffect(() => {
     setLines((current) =>
-      applyPricingToLines<ConfiguredLineItem>(
-        current,
-        customerIsLocal,
-        priceAdjustmentEnabled,
-        salesPricing,
-      ),
+      applyPricingToLines<ConfiguredLineItem>(current, customerIsLocal, priceAdjustmentEnabled, salesPricing),
     );
   }, [customerIsLocal, priceAdjustmentEnabled, salesPricing]);
 
-  // Financial Calculations
   const financials = useMemo(
     () =>
       computeLineFinancialSummary(lines, {
-        deliveryFeeAmount:
-          deliveryFeeMode === "amount" ? deliveryFeeValue : null,
-        deliveryFeePercent:
-          deliveryFeeMode === "percent" ? deliveryFeeValue : null,
+        deliveryFeeAmount: deliveryFeeMode === "amount" ? deliveryFeeValue : null,
+        deliveryFeePercent: deliveryFeeMode === "percent" ? deliveryFeeValue : null,
       }),
     [lines, deliveryFeeMode, deliveryFeeValue],
   );
@@ -628,19 +490,14 @@ export function CreateQuotationPage() {
     netSubtotal,
     deliveryFee,
     totalVat,
-    grandTotal: estimatedGrandTotal,
+    grandTotal,
     totalCost,
     grossProfit,
     profitMarginPercent,
   } = financials;
 
-  const showPricingAdjustment =
-    priceAdjustmentEnabled && Math.abs(pricingAdjustmentTotal) >= 0.005;
-
-  const editingLine = useMemo(
-    () => lines.find((line) => line.id === editingLineId) ?? null,
-    [lines, editingLineId],
-  );
+  const showPricingAdjustment = priceAdjustmentEnabled && Math.abs(pricingAdjustmentTotal) >= 0.005;
+  const editingLine = useMemo(() => lines.find((line) => line.id === editingLineId) ?? null, [lines, editingLineId]);
 
   function saveLine(updated: ConfiguredLineItem) {
     setQuantityWarning(null);
@@ -665,13 +522,7 @@ export function CreateQuotationPage() {
 
   function reorderLines(fromIndex: number, toIndex: number) {
     setLines((prev) => {
-      if (
-        fromIndex === toIndex ||
-        fromIndex < 0 ||
-        toIndex < 0 ||
-        fromIndex >= prev.length ||
-        toIndex >= prev.length
-      ) {
+      if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= prev.length || toIndex >= prev.length) {
         return prev;
       }
       const next = [...prev];
@@ -681,27 +532,28 @@ export function CreateQuotationPage() {
     });
   }
 
-  // Create quotation as draft, then open workspace for send / confirm / invoice
+  function jumpTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   async function handleSaveQuotation() {
     setError(null);
     if (!values.customer) {
-      const message = "Select a customer first.";
+      const message = "Choose a customer first.";
       setError(message);
       showError(message);
-      setSelectedTab(0);
+      jumpTo("cq-customer");
       return;
     }
-
     if (lines.length === 0) {
-      const message = "Add at least one product before saving.";
+      const message = "Add at least one item before saving.";
       setError(message);
       showError(message);
-      setSelectedTab(1);
+      jumpTo("cq-items");
       return;
     }
 
     setSaving(true);
-
     try {
       const quotation = await createQuotation({
         customerId: values.customer.id,
@@ -718,7 +570,6 @@ export function CreateQuotationPage() {
         ...buildDeliveryFeePayload(deliveryFeeMode, deliveryFeeValue),
       });
 
-      // Add each configured line item to backend quotation
       for (const line of lines) {
         await addQuotationLine(quotation.id, {
           productId: line.productId,
@@ -733,7 +584,7 @@ export function CreateQuotationPage() {
         });
       }
 
-      showSuccess(`Quotation ${quotation.number} created as draft.`);
+      showSuccess(`Quotation ${quotation.number} saved as a draft.`);
       router.push(`/dashboard/sales/quotations/${quotation.id}?created=draft`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save quotation";
@@ -743,417 +594,251 @@ export function CreateQuotationPage() {
     }
   }
 
+  const customer = values.customer;
+  const hasCustomer = Boolean(customer);
+  const hasLines = lines.length > 0;
+  const ready = hasCustomer && hasLines;
+  const searching = Boolean(debouncedCatalogSearch);
+  const configuring = selectedProduct;
+  const addDisabled =
+    !configuring ||
+    (isSelectedProductInventoryTracked && remainingForSelectedProduct !== null && remainingForSelectedProduct <= 0) ||
+    (!isDropship && Boolean(configuring?.trackSerial) && (inStockUnits.length === 0 || !selectedUnitId)) ||
+    exchangeRateLoading;
+
+  const catalogHint = productsLoading && products.length === 0
+    ? "Loading products…"
+    : catalogSearch.trim() && catalogSearch.trim() !== debouncedCatalogSearch
+      ? "Searching…"
+      : catalogTotal === 0
+        ? isDropship
+          ? "No saleable products in your catalog."
+          : "No in-stock products found. Turn on dropship to quote items you don't hold."
+        : searching
+          ? `${catalogTotal} match${catalogTotal === 1 ? "" : "es"}${isDropship ? "" : " in stock"}`
+          : `Suggestions · ${catalogTotal} ${isDropship ? "saleable" : "in-stock"} products — search to see all`;
+
   return (
     <AppPage
-      backAction={{ content: "Quotations Directory", url: "/dashboard/sales/quotations" }}
-      primaryAction={{
-        content:
-          selectedTab === 0
-            ? "Next: Select Products & Serials →"
-            : selectedTab === 1
-              ? "Next: Review & Save Draft →"
-              : "Save Quotation (Draft)",
-        loading: saving,
-        onAction: () => {
-          if (selectedTab === 0) setSelectedTab(1);
-          else if (selectedTab === 1) setSelectedTab(2);
-          else void handleSaveQuotation();
-        },
-      }}
-      secondaryActions={[
-        {
-          content: values.internalNotes ? "Internal Notes (Saved)" : "Internal Notes",
-          onAction: () => {
-            setTempInternalNotes(values.internalNotes || "");
-            setInternalNotesModalOpen(true);
-          },
-        },
-        ...(selectedTab > 0
-          ? [
-              {
-                content: `← Back to Step ${selectedTab}`,
-                onAction: () => setSelectedTab((prev) => Math.max(0, prev - 1)),
-              },
-            ]
-          : []),
-        {
-          content: "Cancel",
-          onAction: () => router.push("/dashboard/sales/quotations"),
-        },
-      ]}
-      subtitle="Create a customer quotation with products, serial numbers, pricing, and VAT."
-      title="Create Quotation Studio"
+      backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }}
+      primaryAction={{ content: "Save draft", loading: saving, disabled: !ready, onAction: () => void handleSaveQuotation() }}
+      secondaryActions={[{ content: "Discard", onAction: () => router.push("/dashboard/sales/quotations") }]}
+      subtitle="Pick the customer, add items, check the total — then save it as a draft to send."
+      title="New quotation"
     >
-      <BlockStack gap="500">
-        {/* Step Navigation Bar */}
-        <InlineStack align="space-between" blockAlign="center">
-          <Tabs
-            tabs={pageTabs}
-            selected={selectedTab}
-            onSelect={(idx) => setSelectedTab(idx)}
-          />
-
-          <InlineStack gap="200">
-            {selectedTab > 0 ? (
-              <Button onClick={() => setSelectedTab((prev) => prev - 1)}>
-                ← Back to Step {String(selectedTab)}
-              </Button>
-            ) : null}
-
-            {selectedTab < 2 ? (
-              <Button variant="primary" onClick={() => setSelectedTab((prev) => prev + 1)}>
-                Next Step →
-              </Button>
-            ) : (
-              <Button variant="primary" loading={saving} onClick={() => void handleSaveQuotation()}>
-                Save Quotation (Draft)
-              </Button>
-            )}
-          </InlineStack>
-        </InlineStack>
-
+      <BlockStack gap="400">
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
             {error}
           </Banner>
         ) : null}
-
         {productsError ? (
           <Banner tone="critical" onDismiss={() => setProductsError(null)}>
             {productsError}
           </Banner>
         ) : null}
+        {exchangeRateError ? <Banner tone="warning">{exchangeRateError}</Banner> : null}
 
-        {exchangeRateError ? (
-          <Banner tone="warning">
-            {exchangeRateError}
-          </Banner>
-        ) : null}
-
-        {hasProductConversionRates && !exchangeRateError ? (
-          <Banner tone="info">
-            Product prices are converted into {displayCurrency?.code ?? "quotation"} using
-            your saved exchange rates before line totals are calculated.
-          </Banner>
-        ) : null}
-
-        {/* ── TAB 0: CUSTOMER & SETUP ── */}
-        {selectedTab === 0 ? (
-          <Layout>
-            <Layout.Section>
-              <QuotationHeaderForm
-                currencies={currencies}
-                currenciesError={currenciesError}
-                currenciesLoading={currenciesLoading}
-                errors={{}}
-                onChange={setValues}
-                values={values}
-              />
-            </Layout.Section>
-
-            <Layout.Section variant="oneThird">
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    Setup Summary
-                  </Text>
-                  <div className="quotation-summary-panel__rows">
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Customer Account
-                      </Text>
-                      <Text as="span" variant="bodyMd" fontWeight="semibold">
-                        {values.customer?.name ?? "Not Selected"}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Currency & Tax Rate
-                      </Text>
-                      <Text as="span" variant="bodyMd" fontWeight="semibold">
-                        {selectedCurrency?.code ?? "USD"} (5% VAT)
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Quote Date
-                      </Text>
-                      <Text as="span" variant="bodyMd">
-                        {formatDisplayDate(values.quoteDate)}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Valid Until
-                      </Text>
-                      <Text as="span" variant="bodyMd">
-                        {formatDisplayDate(values.validityDate)}
-                      </Text>
-                    </div>
-                  </div>
-
-                  <Checkbox
-                    checked={priceAdjustmentEnabled}
-                    disabled={!values.customer}
-                    helpText={pricingHelpText}
-                    label="Apply local/non-local pricing adjustment"
-                    onChange={setPriceAdjustmentEnabled}
-                  />
-
-                  <Checkbox
-                    checked={isDropship}
-                    helpText="Pick any catalog product (including out of stock). Posted invoices update accounting only — your warehouse stock is not used."
-                    label="Dropship / broker sale (do not use my inventory)"
-                    onChange={(checked) => {
-                      setIsDropship(checked);
-                      setCatalogPage(1);
-                      setSelectedProduct(null);
-                    }}
-                  />
-
-                  {pricingLabel ? (
-                    <Badge tone="info">{pricingLabel}</Badge>
-                  ) : null}
-                  {isDropship ? (
-                    <Badge tone="attention">Dropship — inventory skipped</Badge>
-                  ) : null}
-
-                  <Button
-                    variant="primary"
-                    fullWidth
-                    onClick={() => setSelectedTab(1)}
-                  >
-                    Next: Select Products & Serials →
+        <div className="cq">
+          {/* ── Main column ── */}
+          <div className="cq-main">
+            <Section
+              aside={
+                hasCustomer ? (
+                  <Button size="slim" variant="plain" onClick={() => patch({ customer: null })}>
+                    Change
                   </Button>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-          </Layout>
-        ) : null}
+                ) : null
+              }
+              done={hasCustomer}
+              hint={hasCustomer ? undefined : "Who is this quotation for?"}
+              id="cq-customer"
+              step={1}
+              title="Customer"
+            >
+              {customer ? (
+                <div className="cq-customer">
+                  <span className="cq-customer__avatar">{initials(customer.name)}</span>
+                  <div className="cq-customer__text">
+                    <strong>{customer.name}</strong>
+                    <small>{customer.email || "No email on file — add one to send the quote by email"}</small>
+                  </div>
+                  <Badge tone={customer.isLocal ? "success" : "info"}>{customer.isLocal ? "Local" : "International"}</Badge>
+                </div>
+              ) : (
+                <CustomerPicker
+                  value={values.customer}
+                  onChange={(next) => {
+                    const partial: Partial<QuotationHeaderValues> = { customer: next };
+                    if (next && !billingTypeManualRef.current) {
+                      partial.billingDocumentType = defaultBillingDocumentTypeForCustomer(next.isLocal);
+                    }
+                    patch(partial);
+                  }}
+                />
+              )}
 
-        {/* ── TAB 1: BACKEND PRODUCTS & SERIAL NUMBER SELECTION ── */}
-        {selectedTab === 1 ? (
-          <Layout>
-            <Layout.Section>
-              <BlockStack gap="500">
-                <Card>
-                  <BlockStack gap="300">
-                    <Checkbox
-                      checked={priceAdjustmentEnabled}
-                      disabled={!values.customer}
-                      helpText="Automatically adjusts unit prices when adding products."
-                      label="Apply local/non-local pricing adjustment"
-                      onChange={setPriceAdjustmentEnabled}
-                    />
-                    {pricingLabel ? <Badge tone="info">{pricingLabel}</Badge> : null}
-                  </BlockStack>
-                </Card>
+              <div className="cq-doctype">
+                <span>Document type</span>
+                <ButtonGroup variant="segmented">
+                  {(
+                    [
+                      { value: "tax_invoice", label: "Tax quotation", hint: "local, with VAT" },
+                      { value: "commercial_invoice", label: "Commercial quotation", hint: "export" },
+                    ] as Array<{ value: BillingDocumentType; label: string; hint: string }>
+                  ).map((option) => (
+                    <Button
+                      key={option.value}
+                      pressed={values.billingDocumentType === option.value}
+                      size="slim"
+                      onClick={() => {
+                        billingTypeManualRef.current = true;
+                        patch({ billingDocumentType: option.value });
+                      }}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </ButtonGroup>
+                <small>
+                  {values.billingDocumentType === "commercial_invoice"
+                    ? "For export buyers — set VAT to 0% if no tax applies."
+                    : "Standard local quote with VAT."}
+                </small>
+              </div>
+            </Section>
 
-                {/* Product & Serial Number Selection Card */}
-                <Card>
-                  <BlockStack gap="400">
-                    <Text as="h2" variant="headingMd">
-                      Choose products
-                    </Text>
-                    <TextField
-                      autoComplete="off"
-                      label="Search product catalog"
-                      labelHidden
-                      onChange={setCatalogSearch}
-                      placeholder="Search by product name, SKU, or barcode..."
-                      value={catalogSearch}
-                    />
+            <Section
+              aside={<Text as="span" tone="subdued" variant="bodySm">{`${lines.length} item${lines.length === 1 ? "" : "s"}`}</Text>}
+              done={hasLines}
+              hint={isDropship ? "Dropship: pick any catalog item — your stock isn't used." : "Search your catalog and add products or services."}
+              id="cq-items"
+              step={2}
+              title="Items"
+            >
+              <BlockStack gap="300">
+                <TextField
+                  autoComplete="off"
+                  clearButton
+                  label="Search products"
+                  labelHidden
+                  placeholder="Search by name, SKU or barcode"
+                  prefix={<Icon source={SearchIcon} />}
+                  suffix={productsLoading ? <Spinner size="small" /> : undefined}
+                  value={catalogSearch}
+                  onChange={setCatalogSearch}
+                  onClearButtonClick={() => setCatalogSearch("")}
+                />
+                <span className="cq-hint">{catalogHint}</span>
 
-                    <Text as="p" tone="subdued" variant="bodySm">
-                      {productsLoading && products.length === 0
-                        ? "Loading products..."
-                        : catalogSearch.trim() &&
-                            catalogSearch.trim() !== debouncedCatalogSearch
-                          ? "Searching full catalog…"
-                          : catalogTotal === 0
-                            ? isDropship
-                              ? "No saleable products found in your catalog."
-                              : "No in-stock saleable products found. Linked components and out-of-stock items are hidden."
-                            : debouncedCatalogSearch
-                              ? isDropship
-                                ? `Showing ${products.length} of ${catalogTotal} matching product${catalogTotal === 1 ? "" : "s"} (dropship — stock not required).${productsLoading ? " Updating…" : ""}`
-                                : `Showing ${products.length} of ${catalogTotal} matching in-stock product${catalogTotal === 1 ? "" : "s"} across your catalog.${productsLoading ? " Updating…" : ""}`
-                              : isDropship
-                                ? `${products.length} suggested product${products.length === 1 ? "" : "s"} from ${catalogTotal} in catalog. Search to browse all saleable items — out of stock is allowed.`
-                                : `${products.length} suggested product${products.length === 1 ? "" : "s"} out of ${catalogTotal} in stock. Search by name, SKU, or barcode to search all ${catalogTotal} — not just these suggestions.`}
-                    </Text>
-                    {products.length > 0 ? (
-                      <ProductCatalogSearchResults>
-                        <ProductCatalogResourceList
-                          products={products}
-                          renderItem={(product) => (
-                          <ResourceItem
-                            id={product.id}
-                            onClick={() => void handleSelectProduct(product)}
-                            accessibilityLabel={`Select ${product.name}`}
-                          >
-                            <InlineStack align="space-between" blockAlign="center">
-                              <BlockStack gap="050">
-                                <InlineStack gap="200" blockAlign="center">
-                                  <Text as="span" fontWeight="bold">
-                                    {product.name}
-                                  </Text>
-                                  {product.type === "service" ? (
-                                    <Badge tone="info">Service</Badge>
-                                  ) : product.trackSerial ? (
-                                    <Badge tone="info">Serialized</Badge>
-                                  ) : null}
-                                </InlineStack>
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  SKU: {product.sku || "N/A"}
-                                  {product.type === "service" || !product.isStorable
-                                    ? ""
-                                    : product.availableQuantity == null
-                                      ? ""
-                                      : ` · Qty on hand: ${product.availableQuantity}`}
-                                </Text>
-                              </BlockStack>
-                              <InlineStack gap="300" blockAlign="center">
-                                <Text as="span" fontWeight="bold">
-                                  {formatProductCatalogPrice(product)}
-                                </Text>
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <Button
-                                    size="slim"
-                                    variant="primary"
-                                    onClick={() => void handleSelectProduct(product)}
-                                  >
-                                    Select Item
-                                  </Button>
-                                </div>
-                              </InlineStack>
-                            </InlineStack>
-                          </ResourceItem>
-                          )}
-                        />
-                      </ProductCatalogSearchResults>
-                    ) : null}
-                    {debouncedCatalogSearch &&
-                    products.length > 0 &&
-                    products.length < catalogTotal ? (
-                      <Button
-                        loading={productsLoading}
-                        onClick={() => setCatalogPage((page) => page + 1)}
-                      >
-                        {`Load more (${catalogTotal - products.length} remaining)`}
-                      </Button>
-                    ) : null}
-                  </BlockStack>
-                </Card>
-
-                {/* Serial Number Selector (If serial-tracked product is selected) */}
-                {selectedProduct ? (
-                  <Card>
-                    <BlockStack gap="400">
-                      <InlineStack align="space-between" blockAlign="center">
-                        <Text as="h3" variant="headingMd">
-                          Configure Item: {selectedProduct.name}
-                        </Text>
-                        <Badge tone="success">
-                          {`${selectedProduct ? formatProductCatalogPrice(selectedProduct) : " "} on quote`}
-                        </Badge>
-                      </InlineStack>
-
-                      {isSelectedProductInventoryTracked ? (
-                        <Text as="p" tone="subdued">
-                          Available: {stockLoading ? "Loading..." : selectedAvailableQuantity}
-                          {!selectedProduct.trackSerial &&
-                          remainingForSelectedProduct !== null &&
-                          selectedAvailableQuantity !== null &&
-                          remainingForSelectedProduct < selectedAvailableQuantity
-                            ? ` (${remainingForSelectedProduct} remaining after lines on this quote)`
-                            : null}
-                        </Text>
-                      ) : (
-                        <Text as="p" tone="subdued">
-                          Service / Non-inventory item (unlimited availability)
-                        </Text>
-                      )}
-
-                      {selectedProduct.trackSerial ? (
-                        isDropship ? (
-                          <TextField
-                            autoComplete="off"
-                            helpText="Optional reference for the quote (supplier serial, PO line, etc.). Does not reserve warehouse stock."
-                            label="Serial / supplier reference (optional)"
-                            onChange={setDropshipSupplyReference}
-                            placeholder="e.g. Supplier S/N TBD"
-                            value={dropshipSupplyReference}
-                          />
-                        ) : (
-                          <BlockStack gap="200">
-                            <Text as="p" fontWeight="semibold">
-                              Choose the stock unit by serial number
-                            </Text>
-                            {stockLoading ? (
-                              <Text as="p" tone="subdued">Loading serial numbers...</Text>
-                            ) : inStockUnits.length === 0 ? (
-                              <Banner tone="warning">No in-stock serial numbers available.</Banner>
-                            ) : (
-                              <Select
-                                label="Available Serial Numbers"
-                                options={inStockUnits.map((u) => ({
-                                  label: `${u.serialNumber} (${u.notes || "In Stock"})`,
-                                  value: u.id,
-                                }))}
-                                value={selectedUnitId}
-                                onChange={setSelectedUnitId}
-                              />
-                            )}
-                          </BlockStack>
-                        )
-                      ) : null}
-
-                      <InlineStack align="end" gap="200">
-                        <Button onClick={() => setSelectedProduct(null)}>Cancel</Button>
-                        <Button
-                          variant="primary"
-                          disabled={
-                            (isSelectedProductInventoryTracked &&
-                              remainingForSelectedProduct !== null &&
-                              remainingForSelectedProduct <= 0) ||
-                            (!isDropship &&
-                              selectedProduct.trackSerial &&
-                              (inStockUnits.length === 0 || !selectedUnitId)) ||
-                            exchangeRateLoading
-                          }
-                          onClick={() => void handleAddSelectedProduct()}
+                {products.length > 0 ? (
+                  <div className={cn("cq-catalog", searching && "is-search")}>
+                    {products.map((product) => {
+                      const active = configuring?.id === product.id;
+                      const qty =
+                        product.type === "service" || !product.isStorable ? null : product.availableQuantity ?? null;
+                      return (
+                        <button
+                          className={cn("cq-product", active && "is-active")}
+                          key={product.id}
+                          type="button"
+                          onClick={() => void handleSelectProduct(product)}
                         >
-                          + Add Line Item to Quote
-                        </Button>
-                      </InlineStack>
-                      {quantityWarning ? (
-                        <Banner tone="warning">{quantityWarning}</Banner>
-                      ) : null}
-                    </BlockStack>
-                  </Card>
+                          <span className="cq-product__icon">
+                            <Icon source={ProductIcon} />
+                          </span>
+                          <span className="cq-product__text">
+                            <strong>{product.name}</strong>
+                            <small>
+                              {product.sku || "No SKU"}
+                              {qty !== null ? ` · ${qty} in stock` : product.type === "service" ? " · Service" : ""}
+                              {product.trackSerial ? " · Serialised" : ""}
+                            </small>
+                          </span>
+                          <span className="cq-product__price">{formatProductCatalogPrice(product)}</span>
+                          <span className="cq-product__add">
+                            <Icon source={active ? CheckIcon : PlusIcon} />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
 
-                {/* Configured Line Items */}
-                <Card>
-                  <BlockStack gap="400">
-                    <BlockStack gap="100">
-                      <Text as="h2" variant="headingMd">
-                        Configured Line Items ({lines.length})
-                      </Text>
-                      <Text as="p" tone="subdued">
-                        Each line is shown as a summary card. Use Edit to set
-                        quantity, pricing, discount, VAT, shipping fee, and
-                        review profit.
-                      </Text>
-                    </BlockStack>
+                {searching && products.length > 0 && products.length < catalogTotal ? (
+                  <Button loading={productsLoading} variant="plain" onClick={() => setCatalogPage((p) => p + 1)}>
+                    {`Show more (${catalogTotal - products.length} more)`}
+                  </Button>
+                ) : null}
 
-                    {quantityWarning ? (
-                      <Banner tone="warning" onDismiss={() => setQuantityWarning(null)}>
-                        {quantityWarning}
-                      </Banner>
+                {configuring ? (
+                  <div className="cq-config">
+                    <div className="cq-config__head">
+                      <div>
+                        <strong>{configuring.name}</strong>
+                        <small>
+                          {formatProductCatalogPrice(configuring)}
+                          {isSelectedProductInventoryTracked
+                            ? ` · ${stockLoading ? "checking stock…" : `${selectedAvailableQuantity ?? 0} available`}${
+                                !configuring.trackSerial &&
+                                remainingForSelectedProduct !== null &&
+                                selectedAvailableQuantity !== null &&
+                                remainingForSelectedProduct < selectedAvailableQuantity
+                                  ? ` (${remainingForSelectedProduct} left after this quote)`
+                                  : ""
+                              }`
+                            : " · not stock-tracked"}
+                        </small>
+                      </div>
+                      <Button
+                        accessibilityLabel="Cancel"
+                        icon={XIcon}
+                        size="slim"
+                        variant="tertiary"
+                        onClick={() => setSelectedProduct(null)}
+                      />
+                    </div>
+
+                    {configuring.trackSerial ? (
+                      isDropship ? (
+                        <TextField
+                          autoComplete="off"
+                          helpText="Optional — supplier serial or PO line. Doesn't reserve stock."
+                          label="Serial / supplier reference"
+                          placeholder="e.g. Supplier S/N to follow"
+                          value={dropshipSupplyReference}
+                          onChange={setDropshipSupplyReference}
+                        />
+                      ) : stockLoading ? (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          Loading serial numbers…
+                        </Text>
+                      ) : inStockUnits.length === 0 ? (
+                        <Banner tone="warning">No serial numbers in stock for this product.</Banner>
+                      ) : (
+                        <Select
+                          label="Serial number"
+                          options={inStockUnits.map((u) => ({ label: `${u.serialNumber}${u.notes ? ` — ${u.notes}` : ""}`, value: u.id }))}
+                          value={selectedUnitId}
+                          onChange={setSelectedUnitId}
+                        />
+                      )
                     ) : null}
 
+                    {quantityWarning ? <Banner tone="warning">{quantityWarning}</Banner> : null}
+
+                    <InlineStack align="end" gap="200">
+                      <Button onClick={() => setSelectedProduct(null)}>Cancel</Button>
+                      <Button disabled={addDisabled} icon={PlusIcon} variant="primary" onClick={() => void handleAddSelectedProduct()}>
+                        Add to quote
+                      </Button>
+                    </InlineStack>
+                  </div>
+                ) : null}
+
+                {hasLines ? (
+                  <div className="cq-lines">
+                    <div className="cq-lines__label">On this quote</div>
                     <ConfiguredLineItemsList
                       formatAmount={fmt}
                       lines={lines}
@@ -1161,413 +846,270 @@ export function CreateQuotationPage() {
                       onRemove={removeLine}
                       onReorder={reorderLines}
                     />
-
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Button onClick={() => setSelectedTab(0)}>
-                        ← Back to Customer Setup
-                      </Button>
-                      <Button variant="primary" onClick={() => setSelectedTab(2)}>
-                        Next: Review & Save Draft →
-                      </Button>
-                    </InlineStack>
-                  </BlockStack>
-                </Card>
+                  </div>
+                ) : (
+                  <div className="cq-empty">
+                    <Icon source={ProductIcon} tone="subdued" />
+                    <span>Nothing added yet — pick a product above.</span>
+                  </div>
+                )}
               </BlockStack>
-            </Layout.Section>
+            </Section>
 
-            <Layout.Section variant="oneThird">
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    Price breakdown
-                  </Text>
+            <Section
+              hint="Shown on the quotation the customer receives."
+              id="cq-terms"
+              step={3}
+              title="Terms & notes"
+            >
+              <BlockStack gap="400">
+                <DocumentNotesField
+                  autoComplete="off"
+                  label="Notes"
+                  labelHidden
+                  multiline={4}
+                  placeholder="Payment terms, delivery time, warranty…"
+                  value={values.notes}
+                  onChange={(notes) => patch({ notes })}
+                />
 
-                  <BlockStack gap="300">
-                    <Select
-                      label="Global Commercial Discount"
-                      options={[
-                        { label: "Percent (%)", value: "percent" },
-                        { label: "Fixed amount", value: "amount" },
-                      ]}
-                      value={globalDiscountMode}
-                      onChange={(value) =>
-                        applyGlobalDiscount(
-                          value as DiscountMode,
-                          globalDiscountValue,
-                        )
-                      }
-                      helpText="Percent applies to each line; a fixed amount is distributed once across the quotation"
-                    />
-                    <TextField
-                      autoComplete="off"
-                      label={
-                        globalDiscountMode === "percent"
-                          ? "Discount percent"
-                          : "Discount amount"
-                      }
-                      type="number"
-                      value={globalDiscountValue}
-                      onChange={(value) =>
-                        applyGlobalDiscount(globalDiscountMode, value)
-                      }
-                      prefix={
-                        globalDiscountMode === "percent"
-                          ? "%"
-                          : (displayCurrency?.code ?? "AED")
-                      }
-                      placeholder="0"
-                    />
-                    <TextField
-                      autoComplete="off"
-                      label="Shipping Fee"
-                      type="number"
-                      value={deliveryFeeValue}
-                      onChange={(val) => {
-                        setDeliveryFeeMode(val ? "amount" : "none");
-                        setDeliveryFeeValue(val);
-                      }}
-                      prefix={displayCurrency?.code ?? "AED"}
-                      placeholder="0.00"
-                      helpText="Shipping fee for entire quotation"
-                    />
-                    <Select
-                      label="Global VAT / Tax Rate"
-                      options={[
-                        { label: "5% Standard VAT (GCC)", value: "5" },
-                        { label: "0% Zero-Rated / Exempt", value: "0" },
-                        { label: "15% VAT", value: "15" },
-                      ]}
-                      value={globalVatPercent}
-                      onChange={applyGlobalVat}
-                      helpText="Applies tax rate across all quotation lines"
-                    />
-                  </BlockStack>
+                <div className="cq-refs">
+                  <button className="cq-refs__toggle" type="button" onClick={() => setShowReferences((v) => !v)}>
+                    {showReferences ? "Hide references" : "Add references"}
+                    <small>
+                      {[values.customerReference && "customer PO", values.internalReference && "internal", values.paymentReference && "payment"]
+                        .filter(Boolean)
+                        .join(", ") || "customer PO, internal or payment reference"}
+                    </small>
+                  </button>
+                  {showReferences ? (
+                    <div className="cq-refs__grid">
+                      <TextField
+                        autoComplete="off"
+                        label="Customer reference / PO"
+                        placeholder="PO number, project code…"
+                        value={values.customerReference}
+                        onChange={(customerReference) => patch({ customerReference })}
+                      />
+                      <TextField
+                        autoComplete="off"
+                        label="Internal reference"
+                        placeholder="Your tracking ID"
+                        value={values.internalReference}
+                        onChange={(internalReference) => patch({ internalReference })}
+                      />
+                      <TextField
+                        autoComplete="off"
+                        label="Payment reference"
+                        placeholder="Shown on invoices and receipts"
+                        value={values.paymentReference}
+                        onChange={(paymentReference) => patch({ paymentReference })}
+                      />
+                    </div>
+                  ) : null}
+                </div>
 
-                  <Divider />
-
-                  <div className="quotation-summary-panel__rows">
-                    {showPricingAdjustment ? (
-                      <>
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            Catalog subtotal
-                          </Text>
-                          <Text as="span" fontWeight="semibold">
-                            {fmt(catalogSubtotal)}
-                          </Text>
-                        </div>
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            {pricingLabel ?? "Pricing adjustment"}
-                          </Text>
-                          <Text
-                            as="span"
-                            tone={pricingAdjustmentTotal > 0 ? "success" : undefined}
-                          >
-                            {pricingAdjustmentTotal > 0 ? "-" : "+"}
-                            {fmt(Math.abs(pricingAdjustmentTotal))}
-                          </Text>
-                        </div>
-                      </>
-                    ) : null}
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {showPricingAdjustment ? "Adjusted subtotal" : "Line subtotal"}
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        {fmt(rawSubtotal)}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Line discounts
-                      </Text>
-                      <Text as="span" tone="success">
-                        -{fmt(totalDiscount)}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Net before tax
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        {fmt(netSubtotal)}
-                      </Text>
-                    </div>
-                    {deliveryFee > 0 ? (
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued" variant="bodySm">
-                          Shipping fee
-                          {deliveryFeeMode === "percent" && deliveryFeeValue
-                            ? ` (${deliveryFeeValue}%)`
-                            : ""}
-                        </Text>
-                        <Text as="span" fontWeight="semibold">
-                          +{fmt(deliveryFee)}
-                        </Text>
-                      </div>
-                    ) : null}
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        VAT / tax
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        +{fmt(totalVat)}
-                      </Text>
-                    </div>
+                <div className="cq-private">
+                  <div className="cq-private__head">
+                    <Icon source={LockIcon} tone="subdued" />
+                    <span>Team notes — never shown to the customer</span>
                   </div>
-
-                  <ProfitSummaryPanel
-                    formatAmount={fmt}
-                    grossProfit={grossProfit}
-                    profitMarginPercent={profitMarginPercent}
-                    totalCost={totalCost}
+                  <TextField
+                    autoComplete="off"
+                    label="Team notes"
+                    labelHidden
+                    multiline={2}
+                    placeholder="e.g. Special price approved by Sara."
+                    value={values.internalNotes}
+                    onChange={(internalNotes) => patch({ internalNotes })}
                   />
+                </div>
+              </BlockStack>
+            </Section>
+          </div>
 
-                  <Divider />
+          {/* ── Summary column ── */}
+          <aside className="cq-side">
+            <div className="cq-summary">
+              <div className="cq-summary__head">
+                <span>Quote total</span>
+                <strong>{fmt(grandTotal)}</strong>
+                <small>
+                  {lines.length ? `${lines.length} item${lines.length === 1 ? "" : "s"} · incl. ${fmt(totalVat)} tax` : "Add items to see the total"}
+                </small>
+              </div>
 
-                  <div className="quotation-summary-panel__total">
-                    <InlineStack align="space-between">
-                      <Text as="span" tone="subdued">
-                        Grand Total
-                      </Text>
-                      <Text as="span" variant="headingLg" fontWeight="bold">
-                        {fmt(estimatedGrandTotal)}
-                      </Text>
-                    </InlineStack>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    fullWidth
-                    onClick={() => setSelectedTab(2)}
-                  >
-                    Next: Summary & Confirm →
-                  </Button>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-          </Layout>
-        ) : null}
-
-        {/* ── TAB 2: FINANCIAL SUMMARY & CONFIRMATION ── */}
-        {selectedTab === 2 ? (
-          <Layout>
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="500">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <BlockStack gap="100">
-                      <Text as="h1" variant="headingLg">
-                        Quotation Preview
-                      </Text>
-                      <Text as="p" tone="subdued">
-                        Customer: {values.customer?.name ?? "Frank / Subsea Ltd"} • Date: {formatDisplayDate(values.quoteDate)}
-                      </Text>
-                    </BlockStack>
-                    <Badge tone="info">Draft preview</Badge>
-                  </InlineStack>
-
-                  <Banner tone="info">
-                    <p>
-                      Saving creates a <strong>draft quotation</strong>. Next
-                      steps: send or preview PDF for the customer, confirm when
-                      approved, then create an invoice from the confirmed sales
-                      order.
-                    </p>
-                  </Banner>
-
-                  <Divider />
-
-                  {/* Line items summary table */}
-                  <div className="frogmen-recent-table-wrapper">
-                    <table className="frogmen-recent-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: "35%" }}>Equipment Line Item</th>
-                          <th style={{ width: "20%" }}>Serial Number</th>
-                          <th style={{ width: "8%", textAlign: "right" }}>Qty</th>
-                          <th style={{ width: "15%", textAlign: "right" }}>Unit Price ({displayCurrency?.code ?? " "})</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>Discount</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>VAT (%)</th>
-                          <th style={{ width: "12%", textAlign: "right" }}>Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lines.map((item) => {
-                          const lineTotal = computeLineTotal(item);
-                          const hasCatalogDifference =
-                            Math.abs(item.baseUnitPrice - item.unitPrice) >= 0.005;
-
-                          return (
-                            <tr key={item.id}>
-                              <td className="frogmen-font-bold">
-                                <LineItemDescription
-                                  details={item.details}
-                                  productId={item.productId}
-                                  title={item.name}
-                                />
-                              </td>
-                              <td>
-                                {item.serialNumber ? (
-                                  <Badge tone="info">{item.serialNumber}</Badge>
-                                ) : (
-                                  <Text as="span" tone="subdued"> </Text>
-                                )}
-                              </td>
-                              <td style={{ textAlign: "right" }}>{formatQuantity(item.quantity)}</td>
-                              <td style={{ textAlign: "right" }}>
-                                <BlockStack gap="050">
-                                  <Text as="span">{fmt(item.unitPrice)}</Text>
-                                  {hasCatalogDifference ? (
-                                    <Text as="span" tone="subdued" variant="bodySm">
-                                      Catalog {fmt(item.baseUnitPrice)}
-                                    </Text>
-                                  ) : null}
-                                </BlockStack>
-                              </td>
-                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">
-                                {formatDiscountLabel(
-                                  item.discountAmount,
-                                  item.discountPercent,
-                                  displayCurrency?.code,
-                                )}
-                              </td>
-                              <td style={{ textAlign: "right" }} className="frogmen-text-muted">{item.taxRatePercent}%</td>
-                              <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                                {fmt(lineTotal)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Button onClick={() => setSelectedTab(1)}>
-                      ← Back to Products & Serials
-                    </Button>
-                    <Button variant="primary" loading={saving} onClick={() => void handleSaveQuotation()}>
-                      Save Quotation (Draft)
-                    </Button>
-                  </InlineStack>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-
-            <Layout.Section variant="oneThird">
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    Final Financial Summary
-                  </Text>
-
-                  <div className="quotation-summary-panel__rows">
-                    {showPricingAdjustment ? (
-                      <>
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            Catalog subtotal
-                          </Text>
-                          <Text as="span" fontWeight="semibold">
-                            {fmt(catalogSubtotal)}
-                          </Text>
-                        </div>
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued" variant="bodySm">
-                            {pricingLabel ?? "Pricing adjustment"}
-                          </Text>
-                          <Text
-                            as="span"
-                            tone={pricingAdjustmentTotal > 0 ? "success" : undefined}
-                          >
-                            {pricingAdjustmentTotal > 0 ? "-" : "+"}
-                            {fmt(Math.abs(pricingAdjustmentTotal))}
-                          </Text>
-                        </div>
-                      </>
-                    ) : null}
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {showPricingAdjustment ? "Adjusted subtotal" : "Line subtotal"}
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        {fmt(rawSubtotal)}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Line discounts
-                      </Text>
-                      <Text as="span" tone="success">
-                        -{fmt(totalDiscount)}
-                      </Text>
-                    </div>
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        Net before tax
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        {fmt(netSubtotal)}
-                      </Text>
-                    </div>
-                    {deliveryFee > 0 ? (
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued" variant="bodySm">
-                          Shipping fee
-                          {deliveryFeeMode === "percent" && deliveryFeeValue
-                            ? ` (${deliveryFeeValue}%)`
-                            : ""}
-                        </Text>
-                        <Text as="span" fontWeight="semibold">
-                          +{fmt(deliveryFee)}
-                        </Text>
-                      </div>
-                    ) : null}
-                    <div className="quotation-summary-row">
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        VAT / tax
-                      </Text>
-                      <Text as="span" fontWeight="semibold">
-                        +{fmt(totalVat)}
-                      </Text>
-                    </div>
-                  </div>
-
-                  <ProfitSummaryPanel
-                    formatAmount={fmt}
-                    grossProfit={grossProfit}
-                    profitMarginPercent={profitMarginPercent}
-                    totalCost={totalCost}
+              <div className="cq-summary__block">
+                <CurrencyPicker
+                  currencies={currencies}
+                  loading={currenciesLoading}
+                  value={values.currencyId}
+                  onChange={(currencyId) => patch({ currencyId })}
+                />
+                <div className="cq-row-fields is-top">
+                  <TextField
+                    autoComplete="off"
+                    label="Quote date"
+                    type="date"
+                    value={values.quoteDate}
+                    onChange={(quoteDate) => patch({ quoteDate })}
                   />
+                  <ValidityPeriodPicker
+                    preset={values.validityPreset}
+                    quoteDate={values.quoteDate}
+                    validityDate={values.validityDate}
+                    onChange={({ preset, validityDate }) => patch({ validityPreset: preset, validityDate })}
+                  />
+                </div>
+                {hasProductConversionRates && !exchangeRateError ? (
+                  <small className="cq-note">Catalog prices are converted to {currencyCode} with your saved exchange rates.</small>
+                ) : null}
+              </div>
 
-                  <Divider />
+              <div className="cq-summary__block">
+                <span className="cq-label">Pricing</span>
+                <div className="cq-discount">
+                  <TextField
+                    autoComplete="off"
+                    connectedRight={
+                      <ButtonGroup variant="segmented">
+                        <Button pressed={globalDiscountMode === "percent"} onClick={() => applyGlobalDiscount("percent", globalDiscountValue)}>
+                          %
+                        </Button>
+                        <Button pressed={globalDiscountMode === "amount"} onClick={() => applyGlobalDiscount("amount", globalDiscountValue)}>
+                          {currencyCode}
+                        </Button>
+                      </ButtonGroup>
+                    }
+                    label="Discount"
+                    min={0}
+                    type="number"
+                    value={globalDiscountValue}
+                    onChange={(value) => applyGlobalDiscount(globalDiscountMode, value)}
+                  />
+                </div>
+                <div className="cq-row-fields">
+                  <TextField
+                    autoComplete="off"
+                    label="Shipping"
+                    min={0}
+                    placeholder="0.00"
+                    prefix={currencyCode}
+                    type="number"
+                    value={deliveryFeeMode === "percent" ? "" : deliveryFeeValue}
+                    onChange={(val) => {
+                      setDeliveryFeeMode(val ? "amount" : "none");
+                      setDeliveryFeeValue(val);
+                    }}
+                  />
+                  <Select
+                    label="VAT"
+                    options={[
+                      { label: "5% standard", value: "5" },
+                      { label: "0% zero-rated", value: "0" },
+                      { label: "15%", value: "15" },
+                    ]}
+                    value={globalVatPercent}
+                    onChange={applyGlobalVat}
+                  />
+                </div>
+                <Checkbox
+                  checked={priceAdjustmentEnabled}
+                  disabled={!hasCustomer}
+                  helpText={hasCustomer ? pricingLabel ?? pricingHelpText : "Choose a customer first."}
+                  label="Local / international price adjustment"
+                  onChange={setPriceAdjustmentEnabled}
+                />
+                <Checkbox
+                  checked={isDropship}
+                  helpText="Quote items you don't hold. Invoices won't touch your stock."
+                  label="Dropship / broker sale"
+                  onChange={(checked) => {
+                    setIsDropship(checked);
+                    setCatalogPage(1);
+                    setSelectedProduct(null);
+                  }}
+                />
+              </div>
 
-                  <div className="quotation-summary-panel__total">
-                    <InlineStack align="space-between">
-                      <Text as="span" tone="subdued">
-                        Grand Total
-                      </Text>
-                      <Text as="span" variant="headingLg" fontWeight="bold">
-                        {fmt(estimatedGrandTotal)}
-                      </Text>
-                    </InlineStack>
+              <dl className="cq-totals">
+                {showPricingAdjustment ? (
+                  <>
+                    <div>
+                      <dt>Catalog prices</dt>
+                      <dd>{fmt(catalogSubtotal)}</dd>
+                    </div>
+                    <div className={pricingAdjustmentTotal > 0 ? "is-good" : undefined}>
+                      <dt>{pricingLabel ?? "Price adjustment"}</dt>
+                      <dd>
+                        {pricingAdjustmentTotal > 0 ? "−" : "+"}
+                        {fmt(Math.abs(pricingAdjustmentTotal))}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+                <div>
+                  <dt>Subtotal</dt>
+                  <dd>{fmt(rawSubtotal)}</dd>
+                </div>
+                {totalDiscount > 0 ? (
+                  <div className="is-good">
+                    <dt>Discount</dt>
+                    <dd>−{fmt(totalDiscount)}</dd>
                   </div>
+                ) : null}
+                <div>
+                  <dt>Net before tax</dt>
+                  <dd>{fmt(netSubtotal)}</dd>
+                </div>
+                {deliveryFee > 0 ? (
+                  <div>
+                    <dt>Shipping</dt>
+                    <dd>+{fmt(deliveryFee)}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>VAT</dt>
+                  <dd>+{fmt(totalVat)}</dd>
+                </div>
+                <div className="is-total">
+                  <dt>Total</dt>
+                  <dd>{fmt(grandTotal)}</dd>
+                </div>
+              </dl>
 
-                  <Button
-                    variant="primary"
-                    fullWidth
-                    loading={saving}
-                    onClick={() => void handleSaveQuotation()}
-                  >
-                    Save Quotation (Draft)
-                  </Button>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-          </Layout>
-        ) : null}
+              {hasLines ? (
+                <div className={cn("cq-profit", grossProfit < 0 && "is-loss")}>
+                  <div>
+                    <span>
+                      <Icon source={LockIcon} tone="subdued" /> Your margin
+                    </span>
+                    <strong>{formatMarginPercent(profitMarginPercent)}</strong>
+                  </div>
+                  <small>
+                    {fmt(grossProfit)} profit on {fmt(totalCost)} cost
+                  </small>
+                </div>
+              ) : null}
+
+              <ul className="cq-checks">
+                <li className={hasCustomer ? "is-ok" : undefined}>
+                  <span>{hasCustomer ? <Icon source={CheckIcon} /> : <Icon source={PersonIcon} />}</span>
+                  {hasCustomer ? `For ${customer?.name}` : "Choose a customer"}
+                </li>
+                <li className={hasLines ? "is-ok" : undefined}>
+                  <span>{hasLines ? <Icon source={CheckIcon} /> : <Icon source={ProductIcon} />}</span>
+                  {hasLines ? `${lines.length} item${lines.length === 1 ? "" : "s"} added` : "Add at least one item"}
+                </li>
+              </ul>
+
+              <Button fullWidth disabled={!ready} loading={saving} size="large" variant="primary" onClick={() => void handleSaveQuotation()}>
+                Save draft
+              </Button>
+              <small className="cq-note is-center">You can preview, send and get it signed after saving.</small>
+            </div>
+          </aside>
+        </div>
       </BlockStack>
 
       <EditConfiguredLineModal
@@ -1585,43 +1127,6 @@ export function CreateQuotationPage() {
         onClose={() => setEditingLineId(null)}
         onSave={saveLine}
       />
-
-      {/* Internal Notes Modal */}
-      <Modal
-        open={internalNotesModalOpen}
-        onClose={() => setInternalNotesModalOpen(false)}
-        title="Internal Team Notes"
-        primaryAction={{
-          content: "Save internal notes",
-          onAction: () => {
-            setValues((prev) => ({ ...prev, internalNotes: tempInternalNotes }));
-            setInternalNotesModalOpen(false);
-          },
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setInternalNotesModalOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <FormLayout>
-            <Text as="p" tone="subdued">
-              Internal team notes are preserved across quotes and converted invoices. They are visible only to your staff and will never appear on customer prints or PDFs.
-            </Text>
-            <TextField
-              autoComplete="off"
-              label="Internal Notes"
-              labelHidden
-              multiline={8}
-              onChange={setTempInternalNotes}
-              placeholder="Enter internal details, special pricing approvals, or delivery instructions for team members..."
-              value={tempInternalNotes}
-            />
-          </FormLayout>
-        </Modal.Section>
-      </Modal>
     </AppPage>
   );
 }

@@ -34,6 +34,7 @@ import {
 import {
   RequireActiveOrg,
   Session,
+  AllowAnonymous,
   type UserSession,
 } from "@thallesp/nestjs-better-auth";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -44,6 +45,16 @@ const TRANSPARENT_1X1_GIF = Buffer.from(
   "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
   "base64",
 );
+
+/** Only follow absolute http(s) links, so the tracker can't be used as an open redirect to other schemes. */
+function safeRedirect(url: string | null | undefined) {
+  try {
+    const parsed = new URL(url ?? "");
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "/";
+  } catch {
+    return "/";
+  }
+}
 
 @Controller("v1/email-marketing")
 export class EmailMarketingController {
@@ -238,6 +249,8 @@ export class EmailMarketingController {
   // PUBLIC TRACKING & WEBHOOKS
   // ==========================================
 
+  // Hit by email clients and Resend, which have no session.
+  @AllowAnonymous()
   @Get("track/open/:token")
   @Header("Content-Type", "image/gif")
   @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
@@ -250,6 +263,8 @@ export class EmailMarketingController {
     res.end(TRANSPARENT_1X1_GIF);
   }
 
+  // Hit by email clients and Resend, which have no session.
+  @AllowAnonymous()
   @Get("track/click/:token")
   async trackClick(
     @Param("token") token: string,
@@ -261,12 +276,14 @@ export class EmailMarketingController {
         token,
         targetUrl,
       );
-      res.redirect(destination || "/");
+      res.redirect(safeRedirect(destination));
     } catch {
-      res.redirect(targetUrl || "/");
+      res.redirect("/");
     }
   }
 
+  // Hit by email clients and Resend, which have no session.
+  @AllowAnonymous()
   @Post("unsubscribe")
   async unsubscribe(
     @Body(new ZodValidationPipe(unsubscribeSchema)) input: UnsubscribeInput,
@@ -277,6 +294,8 @@ export class EmailMarketingController {
     );
   }
 
+  // Hit by email clients and Resend, which have no session.
+  @AllowAnonymous()
   @Post("webhooks/resend")
   async resendWebhook(@Body() payload: any) {
     return this.emailMarketingService.handleResendWebhook(payload);

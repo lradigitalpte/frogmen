@@ -38,6 +38,15 @@ const VALID_STATUSES: ExpenseClaimStatus[] = [
 ];
 
 const reviewerUser = alias(users, "expense_claim_reviewer");
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertIsoDate(value: unknown, label = "Expense date"): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new BadRequestException(`${label} must be a valid date (YYYY-MM-DD)`);
+  }
+  return value;
+}
 const reimburserUser = alias(users, "expense_claim_reimburser");
 
 @Injectable()
@@ -121,6 +130,9 @@ export class ExpenseClaimsService {
   }
 
   async getById(organizationId: string, id: string) {
+    if (!UUID_RE.test(id)) {
+      throw new NotFoundException("Expense claim not found");
+    }
     const rows = await this.queryClaims(organizationId, { id });
     const claim = rows[0];
     if (!claim) {
@@ -158,7 +170,8 @@ export class ExpenseClaimsService {
       categoryId?: string;
     },
   ) {
-    const description = input.description.trim();
+    const description = (input.description ?? "").trim();
+    const expenseDate = assertIsoDate(input.expenseDate);
     if (!description) {
       throw new BadRequestException("Description is required");
     }
@@ -187,7 +200,7 @@ export class ExpenseClaimsService {
         description,
         reference: input.reference?.trim() || null,
         amount: String(amount),
-        expenseDate: input.expenseDate,
+        expenseDate,
         status: "draft",
       })
       .returning();
@@ -227,23 +240,27 @@ export class ExpenseClaimsService {
       throw new BadRequestException("Amount must be greater than zero");
     }
 
-    if (input.categoryId !== undefined && input.categoryId) {
+    if (input.categoryId) {
       await this.validateCategory(organizationId, input.categoryId);
     }
+    const expenseDate =
+      input.expenseDate !== undefined
+        ? assertIsoDate(input.expenseDate)
+        : existing.expenseDate;
 
     await this.db
       .update(expenseClaims)
       .set({
         description,
         amount: String(amount),
-        expenseDate: input.expenseDate ?? existing.expenseDate,
+        expenseDate,
         reference:
           input.reference !== undefined
             ? input.reference?.trim() || null
             : existing.reference,
         categoryId:
           input.categoryId !== undefined
-            ? input.categoryId ?? null
+            ? input.categoryId || null
             : existing.categoryId,
         updatedAt: new Date(),
       })
@@ -283,23 +300,29 @@ export class ExpenseClaimsService {
     if (existing.submittedByUserId !== userId) {
       throw new ForbiddenException("You can only cancel your own claims");
     }
-    if (existing.status !== "submitted") {
+    if (existing.status !== "submitted" && existing.status !== "rejected") {
       throw new BadRequestException(
-        "Only submitted claims awaiting review can be cancelled",
+        "Only claims awaiting review or rejected claims can be moved back to draft",
       );
     }
 
-    await this.db
+    // A rejected claim keeps its reviewer note so the employee can see what to fix.
+    const revising = existing.status === "rejected";
+    const [moved] = await this.db
       .update(expenseClaims)
       .set({
         status: "draft",
         submittedAt: null,
-        reviewedAt: null,
-        reviewedByUserId: null,
-        rejectionReason: null,
+        ...(revising
+          ? {}
+          : { reviewedAt: null, reviewedByUserId: null, rejectionReason: null }),
         updatedAt: new Date(),
       })
-      .where(eq(expenseClaims.id, id));
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, existing.status)))
+      .returning({ id: expenseClaims.id });
+    if (!moved) {
+      throw new BadRequestException("This claim was just updated by someone else. Refresh and try again.");
+    }
 
     return this.getById(organizationId, id);
   }
@@ -321,7 +344,7 @@ export class ExpenseClaimsService {
         submittedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(expenseClaims.id, id));
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, "draft")));
 
     return this.getById(organizationId, id);
   }
@@ -346,7 +369,7 @@ export class ExpenseClaimsService {
         rejectionReason: null,
         updatedAt: new Date(),
       })
-      .where(eq(expenseClaims.id, id));
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, "submitted")));
 
     return this.getById(organizationId, id);
   }
@@ -375,7 +398,7 @@ export class ExpenseClaimsService {
         rejectionReason: reason.trim(),
         updatedAt: new Date(),
       })
-      .where(eq(expenseClaims.id, id));
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, "submitted")));
 
     return this.getById(organizationId, id);
   }
@@ -402,7 +425,7 @@ export class ExpenseClaimsService {
     }
 
     const requiresBank =
-      paymentMethod !== "cash" && paymentMethod !== "cheque";
+      paymentMethod !== "cash";
     if (requiresBank && !input.bankAccountId) {
       throw new BadRequestException("Bank account is required for this payment method");
     }
@@ -499,6 +522,9 @@ export class ExpenseClaimsService {
   }
 
   private async getClaimRow(organizationId: string, id: string) {
+    if (!UUID_RE.test(id)) {
+      throw new NotFoundException("Expense claim not found");
+    }
     const [row] = await this.db
       .select()
       .from(expenseClaims)

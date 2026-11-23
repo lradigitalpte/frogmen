@@ -831,7 +831,7 @@ export class AccountingService {
   }
 
   private paymentJournalCode(method?: string | null) {
-    if (method === "cash" || method === "cheque") {
+    if (method === "cash") {
       return "CASH";
     }
 
@@ -842,7 +842,7 @@ export class AccountingService {
     organizationId: string,
     input: { method?: string | null; bankAccountId?: string | null },
   ) {
-    if (input.method === "cash" || input.method === "cheque") {
+    if (input.method === "cash") {
       const cashAccount = await this.provisioner.getAccountByCode(
         organizationId,
         "101501",

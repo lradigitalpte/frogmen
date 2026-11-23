@@ -822,7 +822,7 @@ export class InvoicesService {
     );
 
     const method = input.method ?? "bank_transfer";
-    const isCashMethod = method === "cash" || method === "cheque";
+    const isCashMethod = method === "cash";
     let bankAccountId: string | null = null;
 
     if (!isCashMethod) {

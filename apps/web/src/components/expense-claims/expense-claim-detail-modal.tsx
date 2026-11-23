@@ -35,6 +35,10 @@ interface ExpenseClaimDetailModalProps {
   onReimburse?: (claim: ExpenseClaim) => void;
   onWithdraw?: (claim: ExpenseClaim) => void;
   onDelete?: (claim: ExpenseClaim) => void;
+  /** Employee actions (mode "mine"). */
+  onEdit?: (claim: ExpenseClaim) => void;
+  onSubmit?: (claim: ExpenseClaim) => void;
+  onRevise?: (claim: ExpenseClaim) => void;
 }
 
 function DetailRow({
@@ -63,6 +67,9 @@ export function ExpenseClaimDetailModal({
   onReimburse,
   onWithdraw,
   onDelete,
+  onEdit,
+  onSubmit,
+  onRevise,
 }: ExpenseClaimDetailModalProps) {
   const { formatBaseMoney } = useOrgCurrency();
   const [receiptPreviewFailed, setReceiptPreviewFailed] = useState(false);
@@ -90,10 +97,25 @@ export function ExpenseClaimDetailModal({
             loading: actionLoading,
             onAction: () => onReimburse(claim),
           }
-        : undefined;
+        : mode === "mine" && claim.status === "draft" && onSubmit
+          ? {
+              content: "Submit for approval",
+              loading: actionLoading,
+              onAction: () => onSubmit(claim),
+            }
+          : mode === "mine" && claim.status === "rejected" && onRevise
+            ? {
+                content: "Revise & resubmit",
+                loading: actionLoading,
+                onAction: () => onRevise(claim),
+              }
+            : undefined;
 
   const secondaryActions = [
     { content: "Close", onAction: onClose },
+    ...(mode === "mine" && claim.status === "draft" && onEdit
+      ? [{ content: "Edit", disabled: actionLoading, onAction: () => onEdit(claim) }]
+      : []),
     ...(mode === "mine" && claim.status === "submitted" && onWithdraw
       ? [
           {
@@ -147,6 +169,14 @@ export function ExpenseClaimDetailModal({
             </Text>
           </InlineStack>
 
+          {claim.rejectionReason && (claim.status === "rejected" || claim.status === "draft") ? (
+            <Banner
+              tone={claim.status === "rejected" ? "critical" : "warning"}
+              title={claim.status === "rejected" ? "Rejected by finance" : "Previously rejected"}
+            >
+              {claim.rejectionReason}
+            </Banner>
+          ) : null}
           {claim.status === "approved" ? (
             <Banner tone="warning">
               Approved — awaiting reimbursement. Not on Profit &amp; Loss until

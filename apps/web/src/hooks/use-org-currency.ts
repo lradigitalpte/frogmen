@@ -23,10 +23,25 @@ export function useOrgCurrency() {
     setLoading(true);
     setError(null);
 
+    // The API briefly returns 5xx while it restarts; retry a couple of times
+    // before showing an error and leaving the currency pickers empty.
+    const withRetry = async <T,>(load: () => Promise<T>): Promise<T> => {
+      let lastError: unknown;
+      for (const wait of [0, 1000, 2500, 5000]) {
+        if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+        try {
+          return await load();
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError;
+    };
+
     try {
       const [company, currencyRows, exchangeRates] = await Promise.all([
-        getCompanySettings(),
-        listCurrencies(),
+        withRetry(getCompanySettings),
+        withRetry(listCurrencies),
         listExchangeRates().catch(() => []),
       ]);
 

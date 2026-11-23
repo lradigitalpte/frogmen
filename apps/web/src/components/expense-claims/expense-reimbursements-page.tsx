@@ -1,22 +1,9 @@
 "use client";
 
-import {
-  Badge,
-  Banner,
-  BlockStack,
-  Button,
-  ButtonGroup,
-  Card,
-  IndexTable,
-  InlineStack,
-  Link,
-  Modal,
-  Tabs,
-  Text,
-  TextField,
-} from "@shopify/polaris";
-import { Banknote, CheckCircle2, Clock } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Banner, BlockStack, Button, Icon, Modal, Pagination, Select, SkeletonBodyText, Text, TextField } from "@shopify/polaris";
+import { ReceiptIcon } from "@shopify/polaris-icons";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExpenseClaimDetailModal } from "@/components/expense-claims/expense-claim-detail-modal";
 import {
   ExpenseClaimStatusBadge,
@@ -24,7 +11,7 @@ import {
 } from "@/components/expense-claims/expense-claim-utils";
 import { ReimburseClaimModal } from "@/components/expense-claims/reimburse-claim-modal";
 import { AppPage } from "@/components/layout/page";
-import { KpiCard } from "@/components/ui/kpi-card";
+import { cn } from "@/lib/utils";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import {
   approveExpenseClaim,
@@ -60,6 +47,22 @@ function emptyMessageForTab(tabIndex: number) {
   }
 }
 
+function initials(name: string) {
+  return name
+    .split(/[s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
+function dateParts(iso: string) {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+  return { day: String(d.getDate()), month: d.toLocaleDateString(undefined, { month: "short" }) };
+}
+
+const PAGE_SIZES = [10, 25, 50];
+
 export function ExpenseReimbursementsPage() {
   const { formatBaseMoney } = useOrgCurrency();
   const [loading, setLoading] = useState(true);
@@ -71,7 +74,14 @@ export function ExpenseReimbursementsPage() {
     reimbursedThisMonth: 0,
     submittedCount: 0,
   });
-  const [selectedTab, setSelectedTab] = useState(0);
+  const [selectedTab, setTabState] = useState(0);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PAGE_SIZES[0]);
+  const setSelectedTab = (tab: number) => {
+    setTabState(tab);
+    setPage(1);
+  };
+  const tabChosenRef = useRef(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectingClaim, setRejectingClaim] = useState<ExpenseClaim | null>(null);
@@ -90,6 +100,12 @@ export function ExpenseReimbursementsPage() {
     try {
       const data = await listExpenseClaims();
       setAllClaims(data.claims);
+      if (!tabChosenRef.current) {
+        tabChosenRef.current = true;
+        const hasSubmitted = data.claims.some((c) => c.status === "submitted");
+        const hasApproved = data.claims.some((c) => c.status === "approved");
+        setTabState(hasSubmitted ? 0 : hasApproved ? APPROVED_TAB : data.claims.length ? 4 : 0);
+      }
       setSummary(data.summary);
       setError(null);
     } catch (err) {
@@ -105,9 +121,18 @@ export function ExpenseReimbursementsPage() {
 
   const filteredClaims = useMemo(() => {
     const status = STATUS_TABS[selectedTab]?.status;
-    if (!status) return allClaims;
-    return allClaims.filter((claim) => claim.status === status);
+    const list = status ? allClaims.filter((claim) => claim.status === status) : [...allClaims];
+    // Newest first: by expense date, then by when it was created.
+    return list.sort(
+      (a, b) =>
+        b.expenseDate.localeCompare(a.expenseDate) || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
+    );
   }, [allClaims, selectedTab]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredClaims.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const pageClaims = filteredClaims.slice((safePage - 1) * perPage, safePage * perPage);
+  const filteredTotal = filteredClaims.reduce((sum, c) => sum + c.amount, 0);
 
   function openDetail(claim: ExpenseClaim) {
     setDetailClaim(claim);
@@ -173,113 +198,32 @@ export function ExpenseReimbursementsPage() {
     }
   }
 
-  const rows = filteredClaims.map((claim, index) => (
-    <IndexTable.Row id={claim.id} key={claim.id} position={index}>
-      <IndexTable.Cell>
-        <div className="expense-reimbursements-table__number">
-          <Button variant="plain" onClick={() => openDetail(claim)}>
-            {claim.number}
-          </Button>
-        </div>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <span className="expense-reimbursements-table__nowrap">
-          {formatExpenseClaimDate(claim.expenseDate)}
-        </span>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <div className="expense-reimbursements-table__employee">
-          <Text as="span" fontWeight="semibold" truncate>
-            {claim.submitterName}
-          </Text>
-          <Text as="span" tone="subdued" variant="bodySm" truncate>
-            {claim.submitterEmail}
-          </Text>
-        </div>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Text as="span" tone="subdued" truncate>
-          {claim.categoryName ?? "—"}
-        </Text>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <div className="expense-reimbursements-table__description" title={claim.description}>
-          <Text as="span" truncate>
-            {claim.description}
-          </Text>
-        </div>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Text as="span" alignment="end" numeric>
-          {formatBaseMoney(claim.amount)}
-        </Text>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <ExpenseClaimStatusBadge status={claim.status} />
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        {claim.hasReceipt ? (
-          <Badge tone="success">Attached</Badge>
-        ) : (
-          <Text as="span" tone="subdued">None</Text>
-        )}
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <div className="expense-reimbursements-table__actions">
-          {claim.status === "submitted" ? (
-            <ButtonGroup>
-              <Button
-                size="slim"
-                variant="primary"
-                loading={actionId === claim.id}
-                onClick={() => promptApprove(claim)}
-              >
-                Approve
-              </Button>
-              <Button
-                size="slim"
-                tone="critical"
-                onClick={() => handleRejectFromDetail(claim)}
-              >
-                Reject
-              </Button>
-            </ButtonGroup>
-          ) : null}
-          {claim.status === "approved" ? (
-            <Button
-              size="slim"
-              variant="primary"
-              onClick={() => handleReimburseFromDetail(claim)}
-            >
-              Reimburse
-            </Button>
-          ) : null}
-          {claim.status !== "submitted" && claim.status !== "approved" ? (
-            <Button size="slim" onClick={() => openDetail(claim)}>
-              View
-            </Button>
-          ) : null}
-        </div>
-      </IndexTable.Cell>
-    </IndexTable.Row>
-  ));
+  const stage = (status: ExpenseClaimStatus) => {
+    const list = allClaims.filter((c) => c.status === status);
+    return { count: list.length, total: list.reduce((sum, c) => sum + c.amount, 0) };
+  };
+  const submittedStage = stage("submitted");
+  const approvedStage = stage("approved");
+  const reimbursedStage = stage("reimbursed");
+  const rejectedStage = stage("rejected");
+  const first = loading && allClaims.length === 0;
+
+  const FLOW: Array<{ tab: number; label: string; hint: string; data: { count: number; total: number }; tone: string }> = [
+    { tab: 0, label: "Submitted", hint: "Waiting for your review", data: submittedStage, tone: "is-review" },
+    { tab: APPROVED_TAB, label: "Approved", hint: "Ready to pay back", data: approvedStage, tone: "is-pay" },
+    { tab: REIMBURSED_TAB, label: "Reimbursed", hint: "Paid and posted", data: reimbursedStage, tone: "is-done" },
+  ];
 
   return (
     <AppPage
-      title="Expense reimbursements"
-      subtitle="Review staff out-of-pocket claims, approve, and record reimbursement."
       secondaryActions={[
-        {
-          content: "Expenses & petty cash",
-          url: "/dashboard/accounting/expenses",
-        },
-        {
-          content: "Profit & Loss",
-          url: "/dashboard/accounting/profit-loss",
-        },
+        { content: "Expenses & petty cash", url: "/dashboard/accounting/expenses" },
+        { content: "My claims", url: "/dashboard/profile/expense-claims" },
       ]}
+      subtitle="Staff pay out of pocket, you approve, then pay them back — and it posts to your books."
+      title="Expense reimbursements"
     >
-      <BlockStack gap="500">
+      <div className="ex">
         {success ? (
           <Banner tone="success" onDismiss={() => setSuccess(null)}>
             {success}
@@ -291,127 +235,195 @@ export function ExpenseReimbursementsPage() {
           </Banner>
         ) : null}
 
-        <Banner tone="info">
-          Claims stay in each tab for audit — they do not disappear after
-          approval. <strong>Approve</strong> marks ready to pay.{" "}
-          <strong>Reimburse</strong> posts to Operating Expenses (600000), appears
-          on{" "}
-          <Link url="/dashboard/accounting/profit-loss">Profit &amp; Loss</Link>
-          , and on{" "}
-          <Link url="/dashboard/accounting/expenses">Expenses &amp; Petty Cash</Link>.
-        </Banner>
+        {/* Hero */}
+        <section className="pl-hero">
+          <div className="pl-hero__main">
+            <span className="pl-hero__label">Owed to your team</span>
+            <strong className="pl-hero__value">{first ? "…" : formatBaseMoney(summary.outstandingApprovedTotal)}</strong>
+            <span className="pl-hero__period">
+              {approvedStage.count
+                ? `${approvedStage.count} approved claim${approvedStage.count === 1 ? "" : "s"} ready to pay`
+                : "Nothing waiting to be paid"}
+            </span>
+            {approvedStage.count ? (
+              <div className="er-hero__cta">
+                <Button onClick={() => setSelectedTab(APPROVED_TAB)}>Pay approved claims</Button>
+              </div>
+            ) : null}
+          </div>
+          <div className="pl-hero__tiles">
+            <button className={cn("ac-tile is-link", submittedStage.count > 0 && "is-alert-soft")} type="button" onClick={() => setSelectedTab(0)}>
+              <span>Awaiting review</span>
+              <strong>{submittedStage.count}</strong>
+              <small>{submittedStage.count ? formatBaseMoney(submittedStage.total) : "All caught up"}</small>
+            </button>
+            <button className="ac-tile is-link" type="button" onClick={() => setSelectedTab(REIMBURSED_TAB)}>
+              <span>Reimbursed this month</span>
+              <strong>{formatBaseMoney(summary.reimbursedThisMonth)}</strong>
+              <small>Posted to Operating Expenses</small>
+            </button>
+            <div className="ac-tile">
+              <span>Rejected</span>
+              <strong>{rejectedStage.count}</strong>
+              <small>{rejectedStage.count ? formatBaseMoney(rejectedStage.total) : "None"}</small>
+            </div>
+          </div>
+        </section>
 
-        {summary.outstandingApprovedTotal > 0 ? (
-          <Banner tone="warning">
-            {formatBaseMoney(summary.outstandingApprovedTotal)} approved and
-            awaiting reimbursement. Open the{" "}
-            <Button
-              variant="plain"
-              onClick={() => setSelectedTab(APPROVED_TAB)}
+        {/* Flow */}
+        <div className="er-flow">
+          {FLOW.map((step, i) => (
+            <button
+              className={cn("er-step", step.tone, selectedTab === step.tab && "is-active")}
+              key={step.label}
+              type="button"
+              onClick={() => setSelectedTab(step.tab)}
             >
-              Approved (to pay)
-            </Button>{" "}
-            tab and click Reimburse to post to your books.
-          </Banner>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <KpiCard
-            icon={<Clock className="size-5" />}
-            label="Submitted"
-            value={String(summary.submittedCount)}
-            hint="Awaiting review"
-            tone="default"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<Banknote className="size-5" />}
-            label="Approved — outstanding"
-            value={formatBaseMoney(summary.outstandingApprovedTotal)}
-            hint="To reimburse"
-            tone="success"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<CheckCircle2 className="size-5" />}
-            label="Reimbursed this month"
-            value={formatBaseMoney(summary.reimbursedThisMonth)}
-            hint="Posted to books"
-            tone="default"
-            loading={loading}
-          />
+              <span className="er-step__num">{i + 1}</span>
+              <span className="er-step__text">
+                <strong>
+                  {step.label} <em>{step.data.count}</em>
+                </strong>
+                <small>
+                  {step.hint}
+                  {step.data.count ? ` · ${formatBaseMoney(step.data.total)}` : ""}
+                </small>
+              </span>
+            </button>
+          ))}
+          <div className="er-flow__extra">
+            <button className={cn("iv-filter", selectedTab === 3 && "is-active")} type="button" onClick={() => setSelectedTab(3)}>
+              Rejected <span>{rejectedStage.count}</span>
+            </button>
+            <button className={cn("iv-filter", selectedTab === 4 && "is-active")} type="button" onClick={() => setSelectedTab(4)}>
+              All <span>{allClaims.length}</span>
+            </button>
+          </div>
         </div>
 
-        <Card>
-          <BlockStack gap="400">
-            <Tabs
-              tabs={STATUS_TABS.map(({ id, content }) => ({ id, content }))}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-            />
-
-            {loading ? (
-              <Text as="p" tone="subdued">Loading claims...</Text>
-            ) : !filteredClaims.length ? (
-              <BlockStack gap="300">
-                <Text as="p" tone="subdued">
-                  {emptyMessageForTab(selectedTab)}
-                </Text>
-                {selectedTab === 0 && allClaims.length === 0 ? (
-                  <>
-                    <BlockStack gap="200">
-                      <Text as="p" variant="bodySm">
-                        <strong>1.</strong> Profile →{" "}
-                        <Link url="/dashboard/profile/expense-claims">
-                          My expense claims
-                        </Link>
-                        {" "}→ New claim → Submit
-                      </Text>
-                      <Text as="p" variant="bodySm">
-                        <strong>2.</strong> Submitted tab → Approve or Reject
-                      </Text>
-                      <Text as="p" variant="bodySm">
-                        <strong>3.</strong> Approved tab → Reimburse (posts to P&L)
-                      </Text>
-                    </BlockStack>
-                    <Button url="/dashboard/profile/expense-claims">
-                      Go to My expense claims
-                    </Button>
-                  </>
-                ) : selectedTab === 0 && summary.outstandingApprovedTotal > 0 ? (
-                  <Button onClick={() => setSelectedTab(APPROVED_TAB)}>
-                    View {formatBaseMoney(summary.outstandingApprovedTotal)} approved — to pay
-                  </Button>
-                ) : selectedTab !== 4 ? (
-                  <Button onClick={() => setSelectedTab(4)}>
-                    View all records
-                  </Button>
-                ) : null}
-              </BlockStack>
-            ) : (
-              <div className="accounting-report-table expense-reimbursements-table">
-                <IndexTable
-                  selectable={false}
-                  itemCount={filteredClaims.length}
-                  headings={[
-                    { title: "Number" },
-                    { title: "Date" },
-                    { title: "Employee" },
-                    { title: "Category" },
-                    { title: "Description" },
-                    { title: "Amount", alignment: "end" },
-                    { title: "Status" },
-                    { title: "Receipt" },
-                    { title: "Actions", alignment: "end" },
-                  ]}
-                >
-                  {rows}
-                </IndexTable>
+        {/* List */}
+        <section className="ex-surface">
+          {first ? (
+            <div className="ex-pad">
+              <SkeletonBodyText lines={6} />
+            </div>
+          ) : filteredClaims.length === 0 ? (
+            <div className="ex-empty">
+              <span className="ex-empty__icon">
+                <Icon source={ReceiptIcon} />
+              </span>
+              <strong>{allClaims.length === 0 ? "No claims yet" : "Nothing here"}</strong>
+              <p>{emptyMessageForTab(selectedTab)}</p>
+              {allClaims.length === 0 ? (
+                <Button url="/dashboard/profile/expense-claims" variant="primary">
+                  Submit a claim
+                </Button>
+              ) : selectedTab !== APPROVED_TAB && approvedStage.count ? (
+                <Button onClick={() => setSelectedTab(APPROVED_TAB)}>
+                  {`Pay ${formatBaseMoney(approvedStage.total)} in approved claims`}
+                </Button>
+              ) : selectedTab !== 4 ? (
+                <Button onClick={() => setSelectedTab(4)}>View all claims</Button>
+              ) : null}
+            </div>
+          ) : (
+            <ul className="ex-list">
+              {pageClaims.map((claim) => {
+                const { day, month } = dateParts(claim.expenseDate);
+                const busy = actionId === claim.id;
+                return (
+                  <li className="ex-row er-row" key={claim.id}>
+                    <span className="ex-date" title={formatExpenseClaimDate(claim.expenseDate)}>
+                      <b>{day}</b>
+                      <small>{month}</small>
+                    </span>
+                    <span className="er-person">
+                      <span className="ci-recent__avatar">{initials(claim.submitterName || claim.submitterEmail)}</span>
+                      <span>
+                        <strong>{claim.submitterName || "—"}</strong>
+                        <small>{claim.submitterEmail}</small>
+                      </span>
+                    </span>
+                    <button className="ex-main" type="button" onClick={() => openDetail(claim)}>
+                      <strong>{claim.description}</strong>
+                      <small>
+                        <span className="ex-num">{claim.number}</span>
+                        {claim.categoryName && claim.categoryName !== claim.description ? (
+                          <span className="ex-cat">{claim.categoryName}</span>
+                        ) : null}
+                        {claim.hasReceipt ? <span>Receipt attached</span> : <span className="er-warn">No receipt</span>}
+                      </small>
+                    </button>
+                    <span className="er-status">
+                      <ExpenseClaimStatusBadge status={claim.status} />
+                    </span>
+                    <span className="ex-amount">{formatBaseMoney(claim.amount)}</span>
+                    <span className="er-actions">
+                      {claim.status === "submitted" ? (
+                        <>
+                          <Button loading={busy} size="slim" variant="primary" onClick={() => promptApprove(claim)}>
+                            Approve
+                          </Button>
+                          <Button size="slim" tone="critical" variant="tertiary" onClick={() => handleRejectFromDetail(claim)}>
+                            Reject
+                          </Button>
+                        </>
+                      ) : claim.status === "approved" ? (
+                        <Button size="slim" variant="primary" onClick={() => handleReimburseFromDetail(claim)}>
+                          Pay back
+                        </Button>
+                      ) : (
+                        <Button size="slim" variant="tertiary" onClick={() => openDetail(claim)}>
+                          View
+                        </Button>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {filteredClaims.length > 0 ? (
+            <div className="iv-pager">
+              <span>
+                Showing{" "}
+                <strong>
+                  {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, filteredClaims.length)}
+                </strong>{" "}
+                of <strong>{filteredClaims.length}</strong> claim{filteredClaims.length === 1 ? "" : "s"} · total{" "}
+                <strong>{formatBaseMoney(filteredTotal)}</strong>
+              </span>
+              <div className="iv-pager__controls">
+                <div className="ex-perpage">
+                  <Select
+                    label="Rows per page"
+                    labelInline
+                    options={PAGE_SIZES.map((n) => ({ label: String(n), value: String(n) }))}
+                    value={String(perPage)}
+                    onChange={(v) => {
+                      setPerPage(Number(v));
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <Pagination
+                  hasNext={safePage < totalPages}
+                  hasPrevious={safePage > 1}
+                  label={`${safePage} / ${totalPages}`}
+                  onNext={() => setPage(safePage + 1)}
+                  onPrevious={() => setPage(safePage - 1)}
+                />
               </div>
-            )}
-          </BlockStack>
-        </Card>
-      </BlockStack>
+            </div>
+          ) : null}
+        </section>
+
+        <p className="pl-foot">
+          Approving doesn&apos;t touch your books. Paying back posts the amount to Operating Expenses (600000) and it shows up
+          on <Link href="/dashboard/accounting/expenses">Expenses &amp; Petty Cash</Link> and{" "}
+          <Link href="/dashboard/accounting/profit-loss">Profit &amp; Loss</Link>. Every claim stays on record for audit.
+        </p>
+      </div>
 
       <ExpenseClaimDetailModal
         open={detailOpen}

@@ -67,6 +67,11 @@ export function mergeProductTags(
   return merged;
 }
 
+/** Tags the app sets automatically from product settings (Goods, For sale, Serialized…). */
+export function isClassificationTag(tag: string): boolean {
+  return CLASSIFICATION_TAG_LABELS.has(tag.trim().toLowerCase());
+}
+
 export function splitCustomTags(tags: string[]): string[] {
   return tags.filter((tag) => !CLASSIFICATION_TAG_LABELS.has(tag.trim().toLowerCase()));
 }

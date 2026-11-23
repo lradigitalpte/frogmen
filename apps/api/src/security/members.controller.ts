@@ -3,6 +3,7 @@ import { RequireActiveOrg } from "@thallesp/nestjs-better-auth";
 import { CurrentSecurity } from "./current-security.decorator";
 import { MembersService } from "./members.service";
 import { RequirePermission } from "./require-permission.decorator";
+import { ROLE_PERMISSIONS, ROLES } from "./permissions";
 import type { SecurityContext } from "./security-context";
 
 @Controller("v1/members")
@@ -14,6 +15,19 @@ export class MembersController {
   @Get()
   list(@CurrentSecurity() context: SecurityContext) {
     return this.membersService.list(context.organizationId);
+  }
+
+  /** The fixed role → permission table, so the UI shows exactly what the API enforces. */
+  @Get("roles")
+  roles() {
+    return ROLES.map((role) => ({ role, permissions: ROLE_PERMISSIONS[role] }));
+  }
+
+  /** Names for "assign to" pickers — any member, not just admins. */
+  @Get("directory")
+  @RequirePermission("organization.read")
+  directory(@CurrentSecurity() context: SecurityContext) {
+    return this.membersService.directory(context.organizationId);
   }
 
   @Get("invitations")
@@ -28,6 +42,11 @@ export class MembersController {
     @Body() body: Parameters<MembersService["update"]>[2],
   ) {
     return this.membersService.update(context, id, body);
+  }
+
+  @Delete(":id")
+  remove(@CurrentSecurity() context: SecurityContext, @Param("id") id: string) {
+    return this.membersService.remove(context, id);
   }
 
   @Post("invitations")

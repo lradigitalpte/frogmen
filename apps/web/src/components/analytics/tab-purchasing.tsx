@@ -1,262 +1,169 @@
 "use client";
 
-import { useOrgCurrency } from "@/hooks/use-org-currency";
-import { formatAlertMoney } from "@/lib/alerts-api";
-import {
-  monthLabel,
-  pctChange,
-  type AnalyticsSectionData,
-  type PurchasingStats,
-} from "@/lib/analytics-api";
-import { KpiCard } from "@/components/ui/kpi-card";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { ArrowDownRight, ArrowUpRight, BarChart3, Building2, PackageCheck, ShoppingCart, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
+  ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import { useOrgCurrency } from "@/hooks/use-org-currency";
+import { formatAlertMoney } from "@/lib/alerts-api";
+import { pctChange, type AnalyticsSectionData, type PurchasingStats } from "@/lib/analytics-api";
+import {
+  BreakdownCard,
+  ChartCard,
+  ChartRow,
+  ChartTooltip,
+  MetricCard,
+  MetricGrid,
+  RankingTable,
+  compactNumber,
+  shortMonth,
+  useChartTheme,
+} from "./analytics-ui";
 
-interface TabPurchasingProps {
-  data: AnalyticsSectionData<PurchasingStats>;
-}
-
-const RECEIPT_COLORS: Record<string, string> = {
-  none: "#94a3b8",
-  to_receive: "#f59e0b",
-  partial: "#3b82f6",
-  received: "#10b981",
+const RECEIPT_LABELS: Record<string, string> = {
+  none: "Not started",
+  to_receive: "To receive",
+  partial: "Partially received",
+  received: "Fully received",
 };
 
-export function TabPurchasing({ data }: TabPurchasingProps) {
+export function TabPurchasing({ data }: { data: AnalyticsSectionData<PurchasingStats> }) {
+  const router = useRouter();
+  const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
-  const formatMoney = (amt: number) => formatAlertMoney(amt, baseCurrencyCode);
-
+  const money = (amount: number) => formatAlertMoney(amount, baseCurrencyCode);
   const cur = data.current;
   const prev = data.compare;
 
-  const spendDiff = pctChange(cur.totalSpend, prev.totalSpend);
-  const posDiff = pctChange(cur.totalPOs, prev.totalPOs);
-  const avgPoDiff = pctChange(cur.avgPoValue, prev.avgPoValue);
+  const receiptColors: Record<string, string> = {
+    none: theme.series.neutral,
+    to_receive: theme.series.secondary,
+    partial: theme.series.info,
+    received: theme.series.primary,
+  };
 
-  const monthlyChartData = cur.byMonth.map((m) => ({
-    name: monthLabel(m.month),
+  const chartData = cur.byMonth.map((m) => ({
+    name: shortMonth(m.month),
     Spend: m.spend,
-    POs: m.count,
-  }));
-
-  const pieData = Object.entries(cur.receiptBreakdown).map(([status, count]) => ({
-    name: status === "to_receive" ? "To Receive" : status.charAt(0).toUpperCase() + status.slice(1),
-    value: count,
-    color: RECEIPT_COLORS[status] || "#64748b",
+    "Purchase orders": m.count,
   }));
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          icon={<Wallet className="size-5" />}
-          label="Total Purchasing Spend"
-          value={formatMoney(cur.totalSpend)}
-          hint={
-            spendDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {spendDiff <= 0 ? (
-                  <ArrowDownRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowUpRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={spendDiff <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {spendDiff >= 0 ? `+${spendDiff}%` : `${spendDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Confirmed purchase orders"
-            )
-          }
-          tone="default"
+    <div className="an-stack">
+      <MetricGrid>
+        <MetricCard
+          highlight
+          label="Purchasing spend"
+          value={money(cur.totalSpend)}
+          delta={pctChange(cur.totalSpend, prev.totalSpend)}
+          hint="Confirmed purchase orders"
+          lowerIsBetter
         />
-
-        <KpiCard
-          icon={<ShoppingCart className="size-5" />}
-          label="Confirmed POs"
+        <MetricCard
+          label="Purchase orders"
           value={String(cur.totalPOs)}
-          hint={
-            posDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {posDiff >= 0 ? (
-                  <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={posDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {posDiff >= 0 ? `+${posDiff}%` : `${posDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Orders in period"
-            )
-          }
-          tone="default"
+          delta={pctChange(cur.totalPOs, prev.totalPOs)}
+          hint="Confirmed in this period"
         />
-
-        <KpiCard
-          icon={<Building2 className="size-5" />}
-          label="Avg Purchase Order"
-          value={formatMoney(cur.avgPoValue)}
-          hint={
-            avgPoDiff !== null ? (
-              <span className="flex items-center gap-1">
-                {avgPoDiff >= 0 ? (
-                  <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-                )}
-                <span className={avgPoDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                  {avgPoDiff >= 0 ? `+${avgPoDiff}%` : `${avgPoDiff}%`}
-                </span>{" "}
-                vs prev period
-              </span>
-            ) : (
-              "Avg spend per PO"
-            )
-          }
-          tone="default"
+        <MetricCard
+          label="Average PO value"
+          value={money(cur.avgPoValue)}
+          delta={pctChange(cur.avgPoValue, prev.avgPoValue)}
+          hint="Per purchase order"
+          lowerIsBetter
         />
-
-        <KpiCard
-          icon={<PackageCheck className="size-5" />}
-          label="Pending Receipts"
+        <MetricCard
+          label="Pending receipts"
           value={String(cur.pendingReceipts)}
-          hint="POs awaiting goods receipt"
-          tone={cur.pendingReceipts > 0 ? "warning" : "success"}
+          delta={null}
+          hint="Orders awaiting goods"
         />
-      </div>
+      </MetricGrid>
 
-      {/* Charts Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Monthly Spend Chart */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-base">
-              <span>Monthly Purchasing Spend</span>
-              <BarChart3 className="size-4 text-muted-foreground" />
-            </CardTitle>
-            <CardDescription>Monthly spend timeline</CardDescription>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyChartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="#888888"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) =>
-                    baseCurrencyCode
-                      ? `${baseCurrencyCode} ${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
-                      : `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
-                  }
-                />
-                <Tooltip formatter={(val: any) => [formatMoney(Number(val) || 0), "Spend"]} />
-                <Bar dataKey="Spend" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Goods Receipt Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Goods Receipt Status</CardTitle>
-            <CardDescription>Delivery status of POs</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center">
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-2 flex flex-wrap justify-center gap-3 text-xs">
-              {pieData.map((item) => (
-                <div key={item.name} className="flex items-center gap-1.5">
-                  <span className="size-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="font-medium">{item.name}</span>
-                  <span className="text-muted-foreground">({item.value})</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Top Vendors Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Top Vendors by Spend</CardTitle>
-          <CardDescription>Suppliers receiving the largest purchase orders</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  <th className="px-6 py-3">Vendor</th>
-                  <th className="px-4 py-3 text-center">POs Issued</th>
-                  <th className="px-6 py-3 text-right">Total Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cur.topVendors.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
-                      No confirmed purchase orders in this time range.
-                    </td>
-                  </tr>
-                ) : (
-                  cur.topVendors.map((vend) => (
-                    <tr key={vend.vendorId} className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/30">
-                      <td className="px-6 py-3.5 font-semibold text-primary">{vend.vendorName}</td>
-                      <td className="px-4 py-3.5 text-center">
-                        <StatusBadge variant="info">{vend.count}</StatusBadge>
-                      </td>
-                      <td className="px-6 py-3.5 text-right font-medium">{formatMoney(vend.spend)}</td>
-                    </tr>
-                  ))
+      <ChartRow>
+        <ChartCard
+          title="Spend by month"
+          description="Purchase order spend, with the number of orders placed"
+          legend={[
+            { label: "Spend", color: theme.series.info },
+            { label: "Purchase orders", color: theme.series.secondary },
+          ]}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+              <CartesianGrid stroke={theme.grid} strokeDasharray="4 4" vertical={false} />
+              <XAxis dataKey="name" stroke={theme.axis} fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis
+                yAxisId="value"
+                stroke={theme.axis}
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                width={48}
+                tickFormatter={compactNumber}
+              />
+              <YAxis yAxisId="count" orientation="right" hide allowDecimals={false} />
+              <Tooltip
+                cursor={{ fill: theme.cursor }}
+                content={({ active, payload, label }) => (
+                  <ChartTooltip
+                    active={active}
+                    label={label}
+                    payload={payload?.map((p) => ({ name: p.name, value: p.value as number, color: p.color }))}
+                    format={(v) => (v % 1 === 0 && v < 1000 ? String(v) : money(v))}
+                  />
                 )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+              />
+              <Bar yAxisId="value" dataKey="Spend" fill={theme.series.info} radius={[6, 6, 2, 2]} maxBarSize={44} />
+              <Line
+                yAxisId="count"
+                type="monotone"
+                dataKey="Purchase orders"
+                stroke={theme.series.secondary}
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: theme.series.secondary, strokeWidth: 0 }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <BreakdownCard
+          title="Goods receipt status"
+          description="Purchase orders by delivery progress"
+          unit="orders"
+          items={Object.entries(cur.receiptBreakdown).map(([status, count]) => ({
+            key: status,
+            label: RECEIPT_LABELS[status] ?? status,
+            count,
+            color: receiptColors[status] ?? theme.series.neutral,
+          }))}
+        />
+      </ChartRow>
+
+      <RankingTable
+        title="Top vendors by spend"
+        description="Suppliers receiving the largest purchase orders in this period"
+        nameLabel="Vendor"
+        countLabel="Orders"
+        valueLabel="Spend"
+        emptyText="No purchase orders in this period."
+        formatValue={money}
+        barColor={theme.series.info}
+        onRowClick={(row) => router.push(`/dashboard/purchasing/vendors/${row.id}`)}
+        rows={cur.topVendors.map((v) => ({
+          id: v.vendorId,
+          name: v.vendorName,
+          count: v.count,
+          value: v.spend,
+        }))}
+      />
     </div>
   );
 }

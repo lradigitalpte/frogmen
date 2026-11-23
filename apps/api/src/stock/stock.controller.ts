@@ -28,6 +28,8 @@ export class StockController {
       productId: query.productId,
       warehouseId: query.warehouseId,
       search: query.search,
+      status: query.status,
+      sort: query.sort,
       page: query.page ? Number(query.page) : undefined,
       perPage: query.perPage ? Number(query.perPage) : undefined,
     });

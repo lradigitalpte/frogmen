@@ -8,11 +8,21 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   ilike,
+  inArray,
+  isNull,
+  ne,
+  sql,
   type SQL,
 } from "drizzle-orm";
-import { warrantyPolicies, type Database } from "@frog1/db";
+import {
+  products,
+  warrantyPolicies,
+  warrantyRegistrations,
+  type Database,
+} from "@frog1/db";
 import type {
   CreateWarrantyPolicyDto,
   ListWarrantyPoliciesQuery,
@@ -30,6 +40,61 @@ export class WarrantyPoliciesService {
 
   private normalizeName(name: string) {
     return name.trim().replace(/\s+/g, " ");
+  }
+
+  private async assertUniqueName(organizationId: string, name: string, exceptId?: string) {
+    const filters: SQL[] = [
+      eq(warrantyPolicies.organizationId, organizationId),
+      sql`lower(${warrantyPolicies.name}) = lower(${name})`,
+    ];
+    if (exceptId) filters.push(ne(warrantyPolicies.id, exceptId));
+    const [existing] = await this.db
+      .select({ id: warrantyPolicies.id })
+      .from(warrantyPolicies)
+      .where(and(...filters))
+      .limit(1);
+    if (existing) {
+      throw new BadRequestException(`A policy called "${name}" already exists`);
+    }
+  }
+
+  /** How many registrations and products use each policy. */
+  private async usageFor(organizationId: string, ids: string[]) {
+    const usage = new Map<string, { registrations: number; activeRegistrations: number; products: number }>();
+    if (ids.length === 0) return usage;
+    const regs = await this.db
+      .select({
+        policyId: warrantyRegistrations.policyId,
+        total: count(),
+        active: sql<number>`count(*) filter (where ${warrantyRegistrations.status} not in ('voided', 'pending_delivery') and ${warrantyRegistrations.endsAt} >= (now() at time zone 'utc')::date)`,
+      })
+      .from(warrantyRegistrations)
+      .where(and(eq(warrantyRegistrations.organizationId, organizationId), inArray(warrantyRegistrations.policyId, ids)))
+      .groupBy(warrantyRegistrations.policyId);
+    const prods = await this.db
+      .select({ policyId: products.defaultWarrantyPolicyId, total: count() })
+      .from(products)
+      .where(
+        and(
+          eq(products.organizationId, organizationId),
+          isNull(products.deletedAt),
+          inArray(products.defaultWarrantyPolicyId, ids),
+        ),
+      )
+      .groupBy(products.defaultWarrantyPolicyId);
+    for (const id of ids) usage.set(id, { registrations: 0, activeRegistrations: 0, products: 0 });
+    for (const r of regs) {
+      const u = usage.get(r.policyId);
+      if (u) {
+        u.registrations = Number(r.total);
+        u.activeRegistrations = Number(r.active);
+      }
+    }
+    for (const r of prods) {
+      const u = r.policyId ? usage.get(r.policyId) : undefined;
+      if (u) u.products = Number(r.total);
+    }
+    return usage;
   }
 
   async list(organizationId: string, query: ListWarrantyPoliciesQuery) {
@@ -53,7 +118,7 @@ export class WarrantyPoliciesService {
       .select()
       .from(warrantyPolicies)
       .where(whereClause)
-      .orderBy(asc(warrantyPolicies.name))
+      .orderBy(desc(warrantyPolicies.isActive), asc(warrantyPolicies.name))
       .limit(perPage)
       .offset(offset);
 
@@ -72,7 +137,7 @@ export class WarrantyPoliciesService {
         .select()
         .from(warrantyPolicies)
         .where(whereClause)
-        .orderBy(asc(warrantyPolicies.name))
+        .orderBy(desc(warrantyPolicies.isActive), asc(warrantyPolicies.name))
         .limit(perPage)
         .offset(offset);
       total = Number(
@@ -85,8 +150,13 @@ export class WarrantyPoliciesService {
       );
     }
 
+    const usage = await this.usageFor(organizationId, rows.map((r) => r.id));
+
     return {
-      data: rows,
+      data: rows.map((row) => ({
+        ...row,
+        usage: usage.get(row.id) ?? { registrations: 0, activeRegistrations: 0, products: 0 },
+      })),
       meta: {
         page,
         perPage,
@@ -121,6 +191,8 @@ export class WarrantyPoliciesService {
     if (!name) {
       throw new BadRequestException("Policy name is required");
     }
+
+    await this.assertUniqueName(organizationId, name);
 
     const durationMonths = dto.durationMonths ?? 12;
 
@@ -158,6 +230,7 @@ export class WarrantyPoliciesService {
       if (!name) {
         throw new BadRequestException("Policy name is required");
       }
+      await this.assertUniqueName(organizationId, name, id);
       updates.name = name;
     }
 

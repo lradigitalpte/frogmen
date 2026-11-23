@@ -4,6 +4,7 @@ export interface ListWarrantiesQuery {
   productId?: string;
   productUnitId?: string;
   expiringSoon?: boolean | string;
+  sort?: "recent" | "ending_soon" | "ending_late";
   page?: number;
   perPage?: number;
 }

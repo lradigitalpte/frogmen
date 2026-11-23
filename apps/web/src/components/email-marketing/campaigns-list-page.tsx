@@ -1,35 +1,27 @@
 "use client";
 
 import {
+  ActionList,
   Badge,
   Banner,
+  BlockStack,
   Button,
-  ButtonGroup,
-  Card,
-  EmptyState,
-  Filters,
-  IndexTable,
-  Layout,
+  Icon,
   Modal,
   Pagination,
+  Popover,
   Select,
+  SkeletonBodyText,
+  Tabs,
   Text,
-  useIndexResourceState,
+  TextField,
 } from "@shopify/polaris";
-import { formatAppDate, formatAppDateTime } from "@/lib/format-date";
-import {
-  CheckIcon,
-  DeleteIcon,
-  EditIcon,
-  EmailIcon,
-  PlusIcon,
-  SendIcon,
-  ViewIcon,
-} from "@shopify/polaris-icons";
+import { MenuHorizontalIcon, PlusIcon, SearchIcon, TextBlockIcon } from "@shopify/polaris-icons";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage } from "@/components/layout/page";
-import { KpiCard } from "@/components/ui/kpi-card";
+import { formatAppDate } from "@/lib/format-date";
+import { cn } from "@/lib/utils";
 import {
   deleteEmailCampaign,
   getEmailCampaigns,
@@ -37,41 +29,63 @@ import {
   type EmailCampaign,
   type ListCampaignsResponse,
 } from "@/lib/email-marketing-api";
+import { SYSTEM_PRESET_TEMPLATES } from "@frog1/shared";
 
-function getStatusBadge(status: EmailCampaign["status"]) {
-  switch (status) {
-    case "sent":
-      return <Badge tone="success">Sent</Badge>;
-    case "partially_sent":
-      return <Badge tone="warning">Partially Sent</Badge>;
-    case "sending":
-      return <Badge tone="attention">Sending…</Badge>;
-    case "scheduled":
-      return <Badge tone="info">Scheduled</Badge>;
-    case "failed":
-      return <Badge tone="critical">Failed</Badge>;
-    case "cancelled":
-      return <Badge>Cancelled</Badge>;
-    case "draft":
-    default:
-      return <Badge tone="info">Draft</Badge>;
-  }
+type StatusFilter = "" | "draft" | "scheduled" | "sent" | "failed";
+
+const STATUS_TABS: Array<{ id: StatusFilter; content: string }> = [
+  { id: "", content: "All" },
+  { id: "draft", content: "Drafts" },
+  { id: "scheduled", content: "Scheduled" },
+  { id: "sent", content: "Sent" },
+  { id: "failed", content: "Failed" },
+];
+
+const STATUS_META: Record<
+  EmailCampaign["status"],
+  { label: string; tone?: "success" | "warning" | "attention" | "info" | "critical" }
+> = {
+  draft: { label: "Draft" },
+  scheduled: { label: "Scheduled", tone: "info" },
+  sending: { label: "Sending…", tone: "attention" },
+  sent: { label: "Sent", tone: "success" },
+  partially_sent: { label: "Partly sent", tone: "warning" },
+  failed: { label: "Failed", tone: "critical" },
+  cancelled: { label: "Cancelled" },
+};
+
+const AUDIENCE_LABELS: Record<string, string> = {
+  all: "Customers & leads",
+  segment: "Customers & leads",
+  contacts: "Customers",
+  leads: "Leads",
+  custom: "Hand-picked",
+};
+
+const STARTERS = SYSTEM_PRESET_TEMPLATES.slice(0, 3);
+
+function pct(part: number, whole: number) {
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 }
 
-function getAudienceBadge(type: EmailCampaign["targetAudienceType"]) {
-  switch (type) {
-    case "contacts":
-      return <Badge tone="info">Contacts Only</Badge>;
-    case "leads":
-      return <Badge tone="attention">Leads Only</Badge>;
-    case "segment":
-      return <Badge tone="warning">Filtered Segment</Badge>;
-    case "custom":
-      return <Badge>Custom Selection</Badge>;
-    case "all":
-    default:
-      return <Badge tone="success">All Contacts & Leads</Badge>;
-  }
+/** Tiny drawing of the email: colour header, subject, a few lines and a button. */
+function MailThumb({ color, subject, headerStyle }: { color: string; subject: string; headerStyle?: string }) {
+  return (
+    <span className={cn("ecl-thumb", headerStyle === "minimal" && "is-minimal", headerStyle === "centered" && "is-centered")} style={{ ["--mail-color" as string]: color }}>
+      <span className="ecl-thumb__mail">
+        <span className="ecl-thumb__head">
+          <i />
+          <b>{subject}</b>
+        </span>
+        <span className="ecl-thumb__body">
+          <s />
+          <s />
+          <s />
+          <em />
+        </span>
+      </span>
+    </span>
+  );
 }
 
 export function CampaignsListPage() {
@@ -79,464 +93,369 @@ export function CampaignsListPage() {
   const [data, setData] = useState<ListCampaignsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // Filters & Pagination
   const [search, setSearch] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState<string>("");
-  const [selectedAudience, setSelectedAudience] = useState<string>("");
+  const [tab, setTab] = useState(0);
+  const [audience, setAudience] = useState("");
   const [page, setPage] = useState(1);
 
-  // Modal actions
-  const [sendModalCampaign, setSendModalCampaign] = useState<EmailCampaign | null>(null);
-  const [deleteModalCampaign, setDeleteModalCampaign] = useState<EmailCampaign | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<EmailCampaign | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<EmailCampaign | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const status = STATUS_TABS[tab].id;
 
   const fetchCampaigns = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await getEmailCampaigns({
-        page,
-        perPage: 15,
-        search: search || undefined,
-        status: selectedStatus ? (selectedStatus as any) : undefined,
-        audienceType: selectedAudience ? (selectedAudience as any) : undefined,
-      });
-      setData(res);
-    } catch (err: any) {
-      setError(err.message || "Failed to load marketing campaigns");
+      setData(
+        await getEmailCampaigns({
+          page,
+          perPage: 12,
+          search: search || undefined,
+          status: status || undefined,
+          audienceType: (audience || undefined) as never,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load campaigns");
     } finally {
       setLoading(false);
     }
-  }, [page, search, selectedStatus, selectedAudience]);
+  }, [page, search, status, audience]);
 
   useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+    const handle = setTimeout(() => void fetchCampaigns(), search ? 250 : 0);
+    return () => clearTimeout(handle);
+  }, [fetchCampaigns, search]);
 
-  const handleConfirmSend = async () => {
-    if (!sendModalCampaign) return;
+  async function confirmSend() {
+    if (!sendTarget) return;
     try {
       setActionLoading(true);
-      await sendEmailCampaign(sendModalCampaign.id);
-      setSuccessBanner(`Campaign "${sendModalCampaign.name}" has been launched!`);
-      setSendModalCampaign(null);
-      fetchCampaigns();
-    } catch (err: any) {
-      setError(err.message || "Failed to dispatch campaign");
+      await sendEmailCampaign(sendTarget.id);
+      setNotice(`"${sendTarget.name}" is on its way.`);
+      setSendTarget(null);
+      void fetchCampaigns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send campaign");
     } finally {
       setActionLoading(false);
     }
-  };
+  }
 
-  const handleConfirmDelete = async () => {
-    if (!deleteModalCampaign) return;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
       setActionLoading(true);
-      await deleteEmailCampaign(deleteModalCampaign.id);
-      setSuccessBanner(`Campaign "${deleteModalCampaign.name}" deleted.`);
-      setDeleteModalCampaign(null);
-      fetchCampaigns();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete campaign");
+      await deleteEmailCampaign(deleteTarget.id);
+      setNotice(`"${deleteTarget.name}" deleted.`);
+      setDeleteTarget(null);
+      void fetchCampaigns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete campaign");
     } finally {
       setActionLoading(false);
     }
-  };
+  }
 
-  const resourceName = {
-    singular: "campaign",
-    plural: "campaigns",
-  };
-
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState((data?.items as any) || []);
+  function openCampaign(campaign: EmailCampaign) {
+    const editable = campaign.status === "draft" || campaign.status === "scheduled";
+    router.push(`/dashboard/marketing/campaigns/${campaign.id}${editable ? "/edit" : ""}`);
+  }
 
   const stats = data?.overviewStats;
-  const deliveryRate =
-    stats && stats.totalSent > 0
-      ? `${Math.round((stats.totalDelivered / stats.totalSent) * 100)}%`
-      : "—";
-  const openRate =
-    stats && stats.totalDelivered > 0
-      ? `${Math.round((stats.totalOpened / stats.totalDelivered) * 100)}%`
-      : "—";
-  const clickRate =
-    stats && stats.totalOpened > 0
-      ? `${Math.round((stats.totalClicked / stats.totalOpened) * 100)}%`
-      : "—";
+  const items = data?.items ?? [];
+  const filtered = Boolean(search || status || audience);
+  const firstRun = !loading && !filtered && (stats?.totalCampaigns ?? 0) === 0;
 
-  const rowMarkup = data?.items.map((campaign, index) => {
-    const formattedDate = campaign.sentAt
-      ? formatAppDateTime(campaign.sentAt)
-      : campaign.scheduledAt
-        ? `Scheduled: ${formatAppDate(campaign.scheduledAt)}`
-        : "Draft";
-
-    const canSend = campaign.status === "draft" || campaign.status === "failed";
-    const canEdit = campaign.status === "draft" || campaign.status === "scheduled";
-
-    return (
-      <IndexTable.Row
-        id={campaign.id}
-        key={campaign.id}
-        position={index}
-        selected={selectedResources.includes(campaign.id)}
-      >
-        <IndexTable.Cell>
-          <div>
-            <Button
-              variant="plain"
-              onClick={() =>
-                router.push(`/dashboard/marketing/campaigns/${campaign.id}`)
-              }
-            >
-              {campaign.name}
-            </Button>
-            <div style={{ color: "#64748b", fontSize: "13px", marginTop: "2px" }}>
-              {campaign.subject}
-            </div>
-          </div>
-        </IndexTable.Cell>
-
-        <IndexTable.Cell>{getAudienceBadge(campaign.targetAudienceType)}</IndexTable.Cell>
-
-        <IndexTable.Cell>{getStatusBadge(campaign.status)}</IndexTable.Cell>
-
-        <IndexTable.Cell>
-          <Text variant="bodySm" as="span" tone="subdued">
-            {formattedDate}
-          </Text>
-        </IndexTable.Cell>
-
-        <IndexTable.Cell>
-          <Text variant="bodyMd" as="span" fontWeight="medium">
-            {campaign.totalRecipients || "—"}
-          </Text>
-        </IndexTable.Cell>
-
-        <IndexTable.Cell>
-          {campaign.sentCount > 0 ? (
-            <div style={{ fontSize: "12px", lineHeight: "1.4" }}>
-              <div>
-                <strong>{campaign.deliveredCount}</strong> del. (
-                {Math.round((campaign.deliveredCount / campaign.sentCount) * 100)}%)
-              </div>
-              <div style={{ color: "#047857" }}>
-                <strong>{campaign.openedCount}</strong> opened (
-                {campaign.deliveredCount > 0
-                  ? Math.round((campaign.openedCount / campaign.deliveredCount) * 100)
-                  : 0}
-                %)
-              </div>
-            </div>
-          ) : (
-            <span style={{ color: "#94a3b8" }}>—</span>
-          )}
-        </IndexTable.Cell>
-
-        <IndexTable.Cell>
-          <ButtonGroup variant="segmented">
-            <Button
-              size="slim"
-              icon={ViewIcon}
-              onClick={() =>
-                router.push(`/dashboard/marketing/campaigns/${campaign.id}`)
-              }
-            >
-              View
-            </Button>
-            {canEdit && (
-              <Button
-                size="slim"
-                icon={EditIcon}
-                onClick={() =>
-                  router.push(`/dashboard/marketing/campaigns/${campaign.id}/edit`)
-                }
-              >
-                Edit
-              </Button>
-            )}
-            {canSend && (
-              <Button
-                size="slim"
-                icon={SendIcon}
-                onClick={() => setSendModalCampaign(campaign)}
-              >
-                Send
-              </Button>
-            )}
-            <Button
-              size="slim"
-              tone="critical"
-              icon={DeleteIcon}
-              onClick={() => setDeleteModalCampaign(campaign)}
-            />
-          </ButtonGroup>
-        </IndexTable.Cell>
-      </IndexTable.Row>
-    );
-  });
+  const metrics = [
+    { label: "Emails sent", value: (stats?.totalSent ?? 0).toLocaleString(), hint: `${stats?.totalCampaigns ?? 0} campaigns` },
+    { label: "Delivered", value: pct(stats?.totalDelivered ?? 0, stats?.totalSent ?? 0), hint: `${stats?.totalDelivered ?? 0} reached the inbox` },
+    { label: "Opened", value: pct(stats?.totalOpened ?? 0, stats?.totalDelivered ?? 0), hint: `${stats?.totalOpened ?? 0} unique opens` },
+    { label: "Clicked", value: pct(stats?.totalClicked ?? 0, stats?.totalOpened ?? 0), hint: `${stats?.totalClicked ?? 0} clicks` },
+  ];
 
   return (
     <AppPage
-      title="Email Marketing"
-      subtitle="Broadcast targeted email campaigns to contacts and leads with real-time delivery and engagement analytics."
+      title="Email campaigns"
+      subtitle="Newsletters, offers and follow-ups for your customers and leads."
       primaryAction={{
-        content: "Create Campaign",
+        content: "New campaign",
         icon: PlusIcon,
         onAction: () => router.push("/dashboard/marketing/campaigns/new"),
       }}
       secondaryActions={[
         {
-          content: "Email Templates",
-          icon: EmailIcon,
+          content: "Templates",
+          icon: TextBlockIcon,
           onAction: () => router.push("/dashboard/marketing/templates"),
         },
       ]}
     >
-      <Layout>
-        {successBanner && (
-          <Layout.Section>
-            <Banner
-              title={successBanner}
-              tone="success"
-              onDismiss={() => setSuccessBanner(null)}
-            />
-          </Layout.Section>
-        )}
+      <BlockStack gap="500">
+        {notice ? (
+          <Banner tone="success" onDismiss={() => setNotice(null)}>
+            {notice}
+          </Banner>
+        ) : null}
+        {error ? (
+          <Banner tone="critical" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        ) : null}
 
-        {error && (
-          <Layout.Section>
-            <Banner
-              title="Error"
-              tone="critical"
-              onDismiss={() => setError(null)}
-            >
-              <p>{error}</p>
-            </Banner>
-          </Layout.Section>
-        )}
-
-        {/* KPI Metrics Header */}
-        <Layout.Section>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              label="Total Sent"
-              value={stats ? String(stats.totalSent) : "0"}
-              hint={`${stats?.totalCampaigns || 0} total campaigns`}
-              icon={<SendIcon />}
-              tone="default"
-              loading={loading}
-            />
-            <KpiCard
-              label="Delivered Rate"
-              value={deliveryRate}
-              hint={`${stats?.totalDelivered || 0} emails delivered`}
-              icon={<CheckIcon />}
-              tone="success"
-              loading={loading}
-            />
-            <KpiCard
-              label="Open Rate"
-              value={openRate}
-              hint={`${stats?.totalOpened || 0} unique opens`}
-              icon={<EmailIcon />}
-              tone="success"
-              loading={loading}
-            />
-            <KpiCard
-              label="Click-Through Rate"
-              value={clickRate}
-              hint={`${stats?.totalClicked || 0} total clicks`}
-              icon={<ViewIcon />}
-              tone="default"
-              loading={loading}
-            />
-          </div>
-        </Layout.Section>
-
-        {/* Campaigns Table Card */}
-        <Layout.Section>
-          <Card padding="0">
-            <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #e2e8f0" }}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-1 flex-wrap items-center gap-3">
-                  <div style={{ minWidth: "260px", flex: 1 }}>
-                    <Filters
-                      queryValue={search}
-                      filters={[]}
-                      onQueryChange={(val) => {
-                        setSearch(val);
-                        setPage(1);
-                      }}
-                      onQueryClear={() => {
-                        setSearch("");
-                        setPage(1);
-                      }}
-                      onClearAll={() => {
-                        setSearch("");
-                        setSelectedStatus("");
-                        setSelectedAudience("");
-                        setPage(1);
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ minWidth: "160px" }}>
-                    <Select
-                      label="Status"
-                      labelHidden
-                      options={[
-                        { label: "All Statuses", value: "" },
-                        { label: "Draft", value: "draft" },
-                        { label: "Sending", value: "sending" },
-                        { label: "Sent", value: "sent" },
-                        { label: "Scheduled", value: "scheduled" },
-                        { label: "Failed", value: "failed" },
-                      ]}
-                      value={selectedStatus}
-                      onChange={(val) => {
-                        setSelectedStatus(val);
-                        setPage(1);
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ minWidth: "180px" }}>
-                    <Select
-                      label="Audience"
-                      labelHidden
-                      options={[
-                        { label: "All Audiences", value: "" },
-                        { label: "Contacts Only", value: "contacts" },
-                        { label: "Leads Only", value: "leads" },
-                        { label: "Segment", value: "segment" },
-                      ]}
-                      value={selectedAudience}
-                      onChange={(val) => {
-                        setSelectedAudience(val);
-                        setPage(1);
-                      }}
-                    />
-                  </div>
+        {firstRun ? (
+          <section className="ecl-first">
+            <div className="ecl-first__head">
+              <Text as="h2" variant="headingLg">
+                Start your first campaign
+              </Text>
+              <Text as="p" tone="subdued">
+                Pick a starting point — you can change every word, colour and button afterwards.
+              </Text>
+            </div>
+            <div className="ecl-grid">
+              <button
+                className="ecl-card ecl-card--new"
+                type="button"
+                onClick={() => router.push("/dashboard/marketing/campaigns/new?template=blank")}
+              >
+                <span className="ecl-card__plus">
+                  <Icon source={PlusIcon} />
+                </span>
+                <strong>Blank email</strong>
+                <small>Start with an empty message</small>
+              </button>
+              {STARTERS.map((preset) => (
+                <button
+                  className="ecl-card"
+                  key={preset.id}
+                  type="button"
+                  onClick={() => router.push(`/dashboard/marketing/campaigns/new?template=${preset.id}`)}
+                >
+                  <MailThumb
+                    color={preset.designConfig.primaryColor || "#047857"}
+                    headerStyle={preset.designConfig.headerStyle}
+                    subject={preset.subject.replace(/\{\{[^}]+\}\}/g, "you")}
+                  />
+                  <span className="ecl-card__body">
+                    <strong>{preset.name}</strong>
+                    <small>{preset.description}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <>
+            <div className="ecl-metrics">
+              {metrics.map((metric) => (
+                <div className="ecl-metric" key={metric.label}>
+                  <span>{metric.label}</span>
+                  <strong>{loading && !data ? "…" : metric.value}</strong>
+                  <small>{metric.hint}</small>
                 </div>
+              ))}
+            </div>
+
+            <div className="ecl-bar">
+              <Tabs
+                selected={tab}
+                tabs={STATUS_TABS.map((t) => ({ id: t.id || "all", content: t.content }))}
+                onSelect={(index) => {
+                  setTab(index);
+                  setPage(1);
+                }}
+              />
+              <div className="ecl-bar__filters">
+                <div className="ecl-bar__search">
+                  <TextField
+                    autoComplete="off"
+                    clearButton
+                    label="Search campaigns"
+                    labelHidden
+                    placeholder="Search campaigns"
+                    prefix={<Icon source={SearchIcon} />}
+                    value={search}
+                    onChange={(value) => {
+                      setSearch(value);
+                      setPage(1);
+                    }}
+                    onClearButtonClick={() => setSearch("")}
+                  />
+                </div>
+                <Select
+                  label="Audience"
+                  labelHidden
+                  options={[
+                    { label: "Any audience", value: "" },
+                    { label: "Customers & leads", value: "all" },
+                    { label: "Customers", value: "contacts" },
+                    { label: "Leads", value: "leads" },
+                  ]}
+                  value={audience}
+                  onChange={(value) => {
+                    setAudience(value);
+                    setPage(1);
+                  }}
+                />
               </div>
             </div>
 
-            {data?.items.length === 0 && !loading ? (
-              <EmptyState
-                heading="No marketing campaigns found"
-                action={{
-                  content: "Create First Campaign",
-                  onAction: () => router.push("/dashboard/marketing/campaigns/new"),
-                }}
-                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-              >
-                <p>
-                  Create personalized email campaigns targeting your contacts, leads, or custom customer segments.
-                </p>
-              </EmptyState>
+            {loading && !data ? (
+              <SkeletonBodyText lines={8} />
+            ) : items.length === 0 ? (
+              <div className="ecl-none">
+                <Text as="p" fontWeight="semibold">
+                  No campaigns here
+                </Text>
+                <Text as="p" tone="subdued">
+                  Try another tab or search term.
+                </Text>
+              </div>
             ) : (
-              <IndexTable
-                resourceName={resourceName}
-                itemCount={data?.total || 0}
-                selectedItemsCount={
-                  allResourcesSelected ? "All" : selectedResources.length
-                }
-                onSelectionChange={handleSelectionChange}
-                headings={[
-                  { title: "Campaign" },
-                  { title: "Audience" },
-                  { title: "Status" },
-                  { title: "Date" },
-                  { title: "Recipients" },
-                  { title: "Performance" },
-                  { title: "Actions" },
-                ]}
-                loading={loading}
-              >
-                {rowMarkup}
-              </IndexTable>
-            )}
+              <div className={cn("ecl-grid", loading && "is-loading")}>
+                <button
+                  className="ecl-card ecl-card--new"
+                  type="button"
+                  onClick={() => router.push("/dashboard/marketing/campaigns/new")}
+                >
+                  <span className="ecl-card__plus">
+                    <Icon source={PlusIcon} />
+                  </span>
+                  <strong>New campaign</strong>
+                  <small>Start from a template or blank</small>
+                </button>
 
-            {data && data.totalPages > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  padding: "16px",
-                  borderTop: "1px solid #e2e8f0",
-                }}
-              >
-                <Pagination
-                  hasPrevious={page > 1}
-                  onPrevious={() => setPage((p) => Math.max(p - 1, 1))}
-                  hasNext={page < data.totalPages}
-                  onNext={() => setPage((p) => Math.min(p + 1, data.totalPages))}
-                />
+                {items.map((campaign) => {
+                  const meta = STATUS_META[campaign.status] ?? STATUS_META.draft;
+                  const canSend = campaign.status === "draft" || campaign.status === "failed";
+                  const canEdit = campaign.status === "draft" || campaign.status === "scheduled";
+                  const sent = campaign.sentCount > 0;
+                  return (
+                    <article className="ecl-card" key={campaign.id}>
+                      <button className="ecl-card__open" type="button" onClick={() => openCampaign(campaign)}>
+                        <MailThumb
+                          color={campaign.designConfig?.primaryColor || "#047857"}
+                          headerStyle={campaign.designConfig?.headerStyle}
+                          subject={campaign.subject || "No subject yet"}
+                        />
+                        <span className="ecl-card__body">
+                          <span className="ecl-card__title">
+                            <strong>{campaign.name}</strong>
+                            <Badge size="small" tone={meta.tone}>
+                              {meta.label}
+                            </Badge>
+                          </span>
+                          <small>
+                            {AUDIENCE_LABELS[campaign.targetAudienceType] ?? "Customers & leads"} ·{" "}
+                            {campaign.sentAt
+                              ? `sent ${formatAppDate(campaign.sentAt)}`
+                              : campaign.scheduledAt
+                                ? `for ${formatAppDate(campaign.scheduledAt)}`
+                                : `edited ${formatAppDate(campaign.updatedAt)}`}
+                          </small>
+                        </span>
+                        <span className="ecl-card__stats">
+                          <span>
+                            <b>{campaign.totalRecipients || "—"}</b>
+                            <i>Recipients</i>
+                          </span>
+                          <span>
+                            <b>{sent ? pct(campaign.openedCount, campaign.deliveredCount) : "—"}</b>
+                            <i>Opened</i>
+                          </span>
+                          <span>
+                            <b>{sent ? pct(campaign.clickedCount, campaign.openedCount) : "—"}</b>
+                            <i>Clicked</i>
+                          </span>
+                        </span>
+                      </button>
+                      <div className="ecl-card__menu">
+                        <Popover
+                          active={openMenu === campaign.id}
+                          activator={
+                            <Button
+                              accessibilityLabel={`Actions for ${campaign.name}`}
+                              icon={MenuHorizontalIcon}
+                              size="slim"
+                              onClick={() => setOpenMenu((current) => (current === campaign.id ? null : campaign.id))}
+                            />
+                          }
+                          preferredAlignment="right"
+                          onClose={() => setOpenMenu(null)}
+                        >
+                          <ActionList
+                            actionRole="menuitem"
+                            onActionAnyItem={() => setOpenMenu(null)}
+                            sections={[
+                              {
+                                items: [
+                                  ...(canEdit
+                                    ? [{ content: "Edit", onAction: () => router.push(`/dashboard/marketing/campaigns/${campaign.id}/edit`) }]
+                                    : []),
+                                  {
+                                    content: sent ? "View report" : "View details",
+                                    onAction: () => router.push(`/dashboard/marketing/campaigns/${campaign.id}`),
+                                  },
+                                  ...(canSend ? [{ content: "Send now", onAction: () => setSendTarget(campaign) }] : []),
+                                ],
+                              },
+                              { items: [{ content: "Delete", destructive: true, onAction: () => setDeleteTarget(campaign) }] },
+                            ]}
+                          />
+                        </Popover>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
-          </Card>
-        </Layout.Section>
-      </Layout>
 
-      {/* Send Confirmation Modal */}
+            {data && data.totalPages > 1 ? (
+              <div className="ecl-pager">
+                <Pagination
+                  hasNext={page < data.totalPages}
+                  hasPrevious={page > 1}
+                  label={`Page ${page} of ${data.totalPages}`}
+                  onNext={() => setPage((p) => Math.min(p + 1, data.totalPages))}
+                  onPrevious={() => setPage((p) => Math.max(p - 1, 1))}
+                />
+              </div>
+            ) : null}
+          </>
+        )}
+      </BlockStack>
+
       <Modal
-        open={Boolean(sendModalCampaign)}
-        onClose={() => setSendModalCampaign(null)}
-        title={`Send Campaign "${sendModalCampaign?.name}"`}
-        primaryAction={{
-          content: "Dispatch Now via Resend",
-          loading: actionLoading,
-          onAction: handleConfirmSend,
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            disabled: actionLoading,
-            onAction: () => setSendModalCampaign(null),
-          },
-        ]}
+        open={Boolean(sendTarget)}
+        primaryAction={{ content: "Send now", loading: actionLoading, onAction: confirmSend }}
+        secondaryActions={[{ content: "Cancel", disabled: actionLoading, onAction: () => setSendTarget(null) }]}
+        title="Send this campaign?"
+        onClose={() => setSendTarget(null)}
       >
         <Modal.Section>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <p>
-              Are you sure you want to send <strong>{sendModalCampaign?.name}</strong> to your target audience?
-            </p>
-            <Banner tone="info">
-              <p>
-                Emails will be personalized with contact/lead merge tags and dispatched via Resend. Delivery, opens, and clicks will be tracked in real-time.
-              </p>
-            </Banner>
-          </div>
+          <Text as="p">
+            <strong>{sendTarget?.name}</strong> will be emailed to its audience
+            {sendTarget?.totalRecipients ? ` (${sendTarget.totalRecipients} recipients)` : ""} straight away.
+            This can&apos;t be undone.
+          </Text>
         </Modal.Section>
       </Modal>
 
-      {/* Delete Confirmation Modal */}
       <Modal
-        open={Boolean(deleteModalCampaign)}
-        onClose={() => setDeleteModalCampaign(null)}
-        title={`Delete Campaign "${deleteModalCampaign?.name}"`}
-        primaryAction={{
-          content: "Delete",
-          destructive: true,
-          loading: actionLoading,
-          onAction: handleConfirmDelete,
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            disabled: actionLoading,
-            onAction: () => setDeleteModalCampaign(null),
-          },
-        ]}
+        open={Boolean(deleteTarget)}
+        primaryAction={{ content: "Delete campaign", destructive: true, loading: actionLoading, onAction: confirmDelete }}
+        secondaryActions={[{ content: "Cancel", disabled: actionLoading, onAction: () => setDeleteTarget(null) }]}
+        title={`Delete "${deleteTarget?.name ?? ""}"?`}
+        onClose={() => setDeleteTarget(null)}
       >
         <Modal.Section>
-          <p>
-            Are you sure you want to delete this campaign? This action cannot be undone.
-          </p>
+          <Text as="p">The campaign and its report will be removed. This can&apos;t be undone.</Text>
         </Modal.Section>
       </Modal>
     </AppPage>

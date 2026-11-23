@@ -36,6 +36,24 @@ export const mainNavItems: NavItem[] = [
     label: "Analytics",
     url: "/dashboard/analytics",
     icon: "OrderIcon",
+    children: [
+      {
+        label: "Quotations pipeline",
+        url: "/dashboard/analytics/quotations",
+      },
+      {
+        label: "Sales & revenue",
+        url: "/dashboard/analytics/sales",
+      },
+      {
+        label: "Invoices & cash",
+        url: "/dashboard/analytics/invoices",
+      },
+      {
+        label: "Purchasing & cost",
+        url: "/dashboard/analytics/purchasing",
+      },
+    ],
   },
   {
     label: "Contacts",
@@ -138,6 +156,14 @@ export const mainNavItems: NavItem[] = [
       {
         label: "Warehouses",
         url: "/dashboard/inventory/warehouses",
+      },
+      {
+        label: "Categories",
+        url: "/dashboard/inventory/product-categories",
+      },
+      {
+        label: "Tags",
+        url: "/dashboard/inventory/product-tags",
       },
     ],
   },

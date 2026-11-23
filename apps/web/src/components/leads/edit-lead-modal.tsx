@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { updateLead } from "@/lib/leads-api";
-import { listMembers, type OrganizationMember } from "@/lib/security-api";
+import { listMemberDirectory as listMembers, type OrganizationMember } from "@/lib/security-api";
 import type { Lead, LeadPriority, LeadSource, LeadStage } from "@/types/lead";
 import {
   Building2,
@@ -55,7 +55,7 @@ export function EditLeadModal({
   onLeadUpdated,
 }: EditLeadModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [members, setMembers] = useState<Array<Pick<OrganizationMember, "id" | "name" | "email">>>([]);
 
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
@@ -69,6 +69,8 @@ export function EditLeadModal({
   const [estimatedValue, setEstimatedValue] = useState("25000");
   const [assignedToName, setAssignedToName] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -96,14 +98,18 @@ export function EditLeadModal({
 
   if (!open || !lead || !mounted) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim() || !company.trim()) {
+    if (!name.trim() || !company.trim() || saving) {
       return;
     }
 
-    const updated = updateLead(lead.id, {
+    setSaving(true);
+    setSaveError(null);
+    let updated: Lead;
+    try {
+      updated = await updateLead(lead.id, {
       name: name.trim(),
       company: company.trim(),
       email: email.trim(),
@@ -116,12 +122,16 @@ export function EditLeadModal({
       estimatedValue: parseFloat(estimatedValue) || 0,
       assignedToName: assignedToName === "none" ? "" : assignedToName.trim(),
       notes: notes.trim() || undefined,
-    });
-
-    if (updated) {
-      onLeadUpdated(updated);
-      onOpenChange(false);
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save changes");
+      setSaving(false);
+      return;
     }
+
+    setSaving(false);
+    onLeadUpdated(updated);
+    onOpenChange(false);
   };
 
   const drawerContent = (
@@ -376,16 +386,20 @@ export function EditLeadModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-muted/20 shrink-0">
+            {saveError ? (
+              <p className="mr-auto text-xs font-medium text-destructive">{saveError}</p>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               size="sm"
+              disabled={saving}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm">
-              <Check className="h-4 w-4 mr-1.5" /> Update Lead Details
+            <Button type="submit" size="sm" disabled={saving}>
+              <Check className="h-4 w-4 mr-1.5" /> {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </form>

@@ -59,6 +59,11 @@ export class RovProjectsController {
     return this.projectsService.list(this.orgId(session), query);
   }
 
+  @Get("overview")
+  overview(@Session() session: UserSession) {
+    return this.projectsService.overview(this.orgId(session));
+  }
+
   @Get(":projectId")
   getById(@Session() session: UserSession, @Param("projectId") projectId: string) {
     return this.projectsService.getById(this.orgId(session), projectId);

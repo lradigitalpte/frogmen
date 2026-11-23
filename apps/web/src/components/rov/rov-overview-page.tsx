@@ -1,96 +1,53 @@
 "use client";
 
-import {
-  Badge,
-  BlockStack,
-  Button,
-  Card,
-  IndexTable,
-  Text,
-} from "@shopify/polaris";
-import {
-  Anchor,
-  ClipboardList,
-  FileText,
-  FolderKanban,
-  MapPin,
-  Share2,
-  Waves,
-} from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Badge, Button, Icon, SkeletonBodyText } from "@shopify/polaris";
+import { ImageIcon, NoteIcon, PlusIcon } from "@shopify/polaris-icons";
+import NextLink from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { AppPage } from "@/components/layout/page";
-import { KpiCard } from "@/components/ui/kpi-card";
-import { listReports, listRovProjects } from "@/lib/rov-api";
-import type { RovProject, RovProjectStatus } from "@/types/rov";
+import { formatAppDate } from "@/lib/format-date";
+import { getRovOverview, rovAssetUrl } from "@/lib/rov-api";
+import { cn } from "@/lib/utils";
+import { ROV_STATUS as STATUS, ROV_STEPS as STEPS, rovJobProgress as progress } from "@/components/rov/rov-progress";
+import type { InspectionSeverity, RovOverview } from "@/types/rov";
 
-const WORKFLOW_STEPS = [
-  {
-    step: 1,
-    title: "Create project",
-    description: "Set client, site location, and inspection schedule.",
-    href: "/dashboard/rov/projects/new",
-  },
-  {
-    step: 2,
-    title: "Add structures",
-    description: "Upload engineering diagrams and surface photos per pile or section.",
-    href: "/dashboard/rov/projects",
-  },
-  {
-    step: 3,
-    title: "Upload media",
-    description: "Attach ROV video and images to each structure via S3.",
-    href: "/dashboard/rov/projects",
-  },
-  {
-    step: 4,
-    title: "Annotate findings",
-    description: "Place severity-coded pins on diagrams and link media to each observation.",
-    href: "/dashboard/rov/projects",
-  },
-  {
-    step: 5,
-    title: "Share report",
-    description: "Generate a client-facing link with interactive map and optional PDF.",
-    href: "/dashboard/rov/reports",
-  },
+const SEVERITY: Record<InspectionSeverity, { label: string; tone: "critical" | "warning" | "info" }> = {
+  major: { label: "Major", tone: "critical" },
+  moderate: { label: "Moderate", tone: "warning" },
+  minor: { label: "Minor", tone: "info" },
+};
+
+const WORKFLOW = [
+  { title: "Create project", text: "Client, site and dates" },
+  { title: "Add structures", text: "Diagram and photo per pile or section" },
+  { title: "Upload media", text: "ROV video and stills" },
+  { title: "Annotate findings", text: "Severity pins on the diagram" },
+  { title: "Share report", text: "Client link and optional PDF" },
 ];
 
-function statusTone(
-  status: RovProjectStatus,
-): "success" | "warning" | "info" | undefined {
-  if (status === "completed") return "success";
-  if (status === "in_progress") return "warning";
-  if (status === "archived") return "info";
-  return undefined;
+function plural(n: number, word: string) {
+  return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 }
 
-function formatStatus(status: RovProjectStatus) {
-  return status.replace(/_/g, " ");
+function dateRange(start: string | null, end: string | null) {
+  if (start && end) return `${formatAppDate(start)} – ${formatAppDate(end)}`;
+  if (start) return `From ${formatAppDate(start)}`;
+  if (end) return `Due ${formatAppDate(end)}`;
+  return "No dates set";
 }
 
 export function RovOverviewPage() {
-  const router = useRouter();
+  const [data, setData] = useState<RovOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [projects, setProjects] = useState<RovProject[]>([]);
-  const [sharedReports, setSharedReports] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const [projectsResult, reports] = await Promise.all([
-        listRovProjects({ perPage: 200 }),
-        listReports(),
-      ]);
-      setProjects(projectsResult.data);
-      setSharedReports(
-        reports.filter((report) => report.status === "shared" || report.sharedLinkHash)
-          .length,
-      );
-    } catch {
-      setProjects([]);
-      setSharedReports(0);
+      setData(await getRovOverview());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load the ROV overview");
     } finally {
       setLoading(false);
     }
@@ -100,263 +57,279 @@ export function RovOverviewPage() {
     void load();
   }, [load]);
 
-  const stats = useMemo(() => {
-    const inProgress = projects.filter((p) => p.status === "in_progress").length;
-    const completed = projects.filter((p) => p.status === "completed").length;
-    const draft = projects.filter((p) => p.status === "draft").length;
-    return {
-      total: projects.length,
-      inProgress,
-      completed,
-      draft,
-    };
-  }, [projects]);
-
-  const recentProjects = useMemo(
-    () =>
-      [...projects]
-        .sort(
-          (a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-        )
-        .slice(0, 5),
-    [projects],
-  );
+  const p = data?.projects;
+  const f = data?.findings;
+  const m = data?.media;
+  const r = data?.reports;
+  const open = (p?.draft ?? 0) + (p?.inProgress ?? 0);
+  const flow = Math.max(1, (p?.draft ?? 0) + (p?.inProgress ?? 0) + (p?.completed ?? 0));
+  const severityTotal = Math.max(1, (f?.major ?? 0) + (f?.moderate ?? 0) + (f?.minor ?? 0));
+  const first = loading && !data;
 
   return (
     <AppPage
-      title="ROV Inspection"
-      subtitle="Plan underwater inspections, capture findings on site diagrams, and deliver shareable client reports."
-      primaryAction={{
-        content: "New project",
-        onAction: () => router.push("/dashboard/rov/projects/new"),
-      }}
+      fullWidth
+      primaryAction={{ content: "New project", url: "/dashboard/rov/projects/new" }}
       secondaryActions={[
-        {
-          content: "All projects",
-          onAction: () => router.push("/dashboard/rov/projects"),
-        },
-        {
-          content: "Reports",
-          onAction: () => router.push("/dashboard/rov/reports"),
-        },
+        { content: "All projects", url: "/dashboard/rov/projects" },
+        { content: "Reports", url: "/dashboard/rov/reports" },
       ]}
+      subtitle="Underwater and visual inspections, from dive footage to client reports."
+      title="ROV inspection"
     >
-      <div className="rov-overview">
-        <div className="rov-overview__hero">
-          <div className="rov-overview__hero-copy">
-            <span className="rov-overview__eyebrow">
-              <Waves className="size-3.5" />
-              Inspection workspace
-            </span>
-            <h2 className="rov-overview__hero-title">
-              From dive footage to client-ready reports
-            </h2>
-            <p className="rov-overview__hero-text">
-              Manage ROV jobs end to end   structures, annotated diagrams, linked
-              media, and password-free share links for your clients.
-            </p>
+      <div className="pl rov-ov">
+        {error ? (
+          <div className="ac-error">
+            {error}{" "}
+            <button className="st-link" type="button" onClick={() => void load()}>
+              Try again
+            </button>
           </div>
-          <div className="rov-overview__hero-actions">
-            <Button
-              variant="primary"
-              onClick={() => router.push("/dashboard/rov/projects/new")}
-            >
-              New inspection project
-            </Button>
-            <Button onClick={() => router.push("/dashboard/rov/projects")}>
-              Browse projects
-            </Button>
+        ) : null}
+
+        <section className={cn("pl-hero", loading && data && "is-loading")}>
+          <div className="pl-hero__main">
+            <span className="pl-hero__label">Open inspection jobs</span>
+            <strong className="pl-hero__value">{first ? "…" : open}</strong>
+            <span className="pl-hero__period">
+              {first
+                ? "Loading…"
+                : p && p.total === 0
+                  ? "Create a project to plan your first dive"
+                  : `${p?.inProgress ?? 0} in progress · ${p?.draft ?? 0} draft · ${p?.completed ?? 0} completed`}
+            </span>
           </div>
-        </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            icon={<FolderKanban className="size-5" />}
-            label="Projects"
-            value={String(stats.total)}
-            hint={`${stats.draft} draft · ${stats.inProgress} active`}
-            loading={loading}
-          />
-          <KpiCard
-            icon={<Anchor className="size-5" />}
-            label="In progress"
-            value={String(stats.inProgress)}
-            hint="Inspections currently underway"
-            tone={stats.inProgress > 0 ? "default" : "muted"}
-            loading={loading}
-          />
-          <KpiCard
-            icon={<MapPin className="size-5" />}
-            label="Completed"
-            value={String(stats.completed)}
-            hint="Finished inspection jobs"
-            tone="success"
-            loading={loading}
-          />
-          <KpiCard
-            icon={<Share2 className="size-5" />}
-            label="Shared reports"
-            value={String(sharedReports)}
-            hint="Client links published"
-            tone={sharedReports > 0 ? "success" : "muted"}
-            loading={loading}
-          />
-        </div>
+          <div className="pl-hero__tiles">
+            <NextLink className={cn("ac-tile is-link", (f?.major ?? 0) > 0 && "is-alert")} href="/dashboard/rov/projects">
+              <span>Findings</span>
+              <strong>{f?.total ?? 0}</strong>
+              <small>{(f?.major ?? 0) > 0 ? `${f?.major} major` : f?.total ? "No major findings" : "None logged yet"}</small>
+            </NextLink>
+            <div className="ac-tile">
+              <span>Media captured</span>
+              <strong>{m?.total ?? 0}</strong>
+              <small>
+                {m?.total ? `${plural(m.video, "video")} · ${plural(m.image, "image")}` : "Nothing uploaded yet"}
+              </small>
+            </div>
+            <NextLink className="ac-tile is-link" href="/dashboard/rov/reports">
+              <span>Client links</span>
+              <strong>{r?.liveLinks ?? 0}</strong>
+              <small>
+                {r?.total ? `${plural(r.total, "report")} · ${r.draft} draft` : "No reports yet"}
+              </small>
+            </NextLink>
+          </div>
 
-        <div className="rov-overview__quick-grid">
-          <button
-            type="button"
-            className="rov-overview__quick-card"
-            onClick={() => router.push("/dashboard/rov/projects/new")}
-          >
-            <span className="rov-overview__quick-icon rov-overview__quick-icon--primary">
-              <FolderKanban className="size-5" />
-            </span>
-            <span className="rov-overview__quick-title">Start a project</span>
-            <span className="rov-overview__quick-text">
-              Create a job, assign a client, and set the site location.
-            </span>
-          </button>
-          <button
-            type="button"
-            className="rov-overview__quick-card"
-            onClick={() => router.push("/dashboard/rov/projects")}
-          >
-            <span className="rov-overview__quick-icon">
-              <ClipboardList className="size-5" />
-            </span>
-            <span className="rov-overview__quick-title">Inspection projects</span>
-            <span className="rov-overview__quick-text">
-              Open structures, media, annotations, and per-project reports.
-            </span>
-          </button>
-          <button
-            type="button"
-            className="rov-overview__quick-card"
-            onClick={() => router.push("/dashboard/rov/reports")}
-          >
-            <span className="rov-overview__quick-icon">
-              <FileText className="size-5" />
-            </span>
-            <span className="rov-overview__quick-title">Report hub</span>
-            <span className="rov-overview__quick-text">
-              Review generated reports and copy share links for clients.
-            </span>
-          </button>
-        </div>
+          {p && p.total - p.archived > 0 ? (
+            <div className="pl-hero__bar">
+              <div className="st-split">
+                <b className="is-ok" style={{ width: `${(p.completed / flow) * 100}%` }} />
+                <b className="is-low" style={{ width: `${(p.inProgress / flow) * 100}%` }} />
+                <b className="is-muted" style={{ width: `${(p.draft / flow) * 100}%` }} />
+              </div>
+              <div className="pl-hero__legend">
+                <span>
+                  <i className="st-dot is-ok" /> Completed {p.completed}
+                </span>
+                <span>
+                  <i className="st-dot is-low" /> In progress {p.inProgress}
+                </span>
+                <span>
+                  <i className="st-dot is-muted" /> Draft {p.draft}
+                </span>
+                <span>{plural(data?.structures.total ?? 0, "structure")} inspected</span>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
-        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card>
-            <BlockStack gap="400">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  Recent projects
-                </Text>
-                <Text as="p" tone="subdued">
-                  Jump back into your latest inspection work.
-                </Text>
-              </BlockStack>
+        <div className="rov-ov__grid">
+          <section className="ex-surface">
+            <header className="rov-ov__head">
+              <div>
+                <h2>Active jobs</h2>
+                <p>Most recently updated, with the next step for each.</p>
+              </div>
+              <Button url="/dashboard/rov/projects" variant="plain">
+                All projects
+              </Button>
+            </header>
 
-              {recentProjects.length === 0 && !loading ? (
-                <div className="rov-overview__empty">
-                  <Text as="p" tone="subdued">
-                    No projects yet. Create your first ROV inspection to get started.
-                  </Text>
-                  <Button
-                    onClick={() => router.push("/dashboard/rov/projects/new")}
-                  >
-                    Create project
-                  </Button>
-                </div>
-              ) : (
-                <IndexTable
-                  resourceName={{ singular: "project", plural: "projects" }}
-                  itemCount={recentProjects.length}
-                  headings={[
-                    { title: "Project" },
-                    { title: "Client" },
-                    { title: "Status" },
-                    { title: "Structures" },
-                  ]}
-                  loading={loading}
-                  selectable={false}
-                >
-                  {recentProjects.map((project, index) => (
-                    <IndexTable.Row
-                      id={project.id}
-                      key={project.id}
-                      position={index}
-                      onClick={() =>
-                        router.push(`/dashboard/rov/projects/${project.id}`)
-                      }
-                    >
-                      <IndexTable.Cell>
-                        <BlockStack gap="050">
-                          <Text as="span" fontWeight="semibold">
-                            {project.name}
-                          </Text>
-                          {project.location ? (
-                            <Text as="span" tone="subdued" variant="bodySm">
-                              {project.location}
-                            </Text>
+            {first ? (
+              <div className="ex-pad">
+                <SkeletonBodyText lines={6} />
+              </div>
+            ) : !data || data.recentProjects.length === 0 ? (
+              <div className="ex-empty">
+                <span className="ex-empty__icon">
+                  <Icon source={PlusIcon} />
+                </span>
+                <strong>No active jobs</strong>
+                <p>Create a project, assign the client and set the site location.</p>
+                <Button url="/dashboard/rov/projects/new" variant="primary">
+                  New project
+                </Button>
+              </div>
+            ) : (
+              <ul className={cn("ex-list", loading && "st-dim")}>
+                {data.recentProjects.map((project) => {
+                  const pr = progress(project);
+                  const thumb = rovAssetUrl(project.planViewPath);
+                  const status = STATUS[project.status];
+                  return (
+                    <li className="rov-ov__job" key={project.id}>
+                      <NextLink className="rov-ov__thumb" href={`/dashboard/rov/projects/${project.id}`}>
+                        {thumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img alt="" src={thumb} />
+                        ) : (
+                          <Icon source={ImageIcon} />
+                        )}
+                      </NextLink>
+
+                      <div className="rov-ov__job-main">
+                        <div className="rov-ov__job-title">
+                          <NextLink href={`/dashboard/rov/projects/${project.id}`}>{project.name}</NextLink>
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                        </div>
+                        <small>
+                          {[project.customerName, project.location].filter(Boolean).join(" · ") || "No client or site yet"}
+                          {" · "}
+                          {dateRange(project.startDate, project.endDate)}
+                        </small>
+                        <div className="rov-ov__steps" aria-label={`${pr.step} of ${STEPS.length} steps done`}>
+                          {STEPS.map((label, i) => (
+                            <span className={cn(pr.done[i] && "is-on")} key={label} title={label}>
+                              <b />
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rov-ov__counts">
+                        <span>
+                          <strong>{project.structureCount}</strong> structure{project.structureCount === 1 ? "" : "s"}
+                        </span>
+                        <span>
+                          <strong>{project.mediaCount}</strong> media file{project.mediaCount === 1 ? "" : "s"}
+                        </span>
+                        <span>
+                          <strong>{project.findingCount}</strong> finding{project.findingCount === 1 ? "" : "s"}
+                          {project.majorCount > 0 ? (
+                            <>
+                              {" "}
+                              <Badge tone="critical">{`${project.majorCount} major`}</Badge>
+                            </>
                           ) : null}
-                        </BlockStack>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {project.customerName ?? " "}
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Badge tone={statusTone(project.status)}>
-                          {formatStatus(project.status)}
-                        </Badge>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        {project.structureCount ?? 0}
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
-              )}
-            </BlockStack>
-          </Card>
+                        </span>
+                      </div>
 
-          <Card>
-            <BlockStack gap="400">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  Inspection workflow
-                </Text>
-                <Text as="p" tone="subdued">
-                  Follow these steps for every ROV job.
-                </Text>
-              </BlockStack>
+                      <div className="rov-ov__action">
+                        <Button
+                          size="slim"
+                          url={pr.next.url}
+                          variant={pr.next.label === "Open" ? undefined : "primary"}
+                        >
+                          {pr.next.label}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
-              <div className="rov-overview__workflow">
-                {WORKFLOW_STEPS.map((item) => (
-                  <button
-                    key={item.step}
-                    type="button"
-                    className="rov-overview__workflow-step"
-                    onClick={() => router.push(item.href)}
-                  >
-                    <span className="rov-overview__workflow-index">
-                      {item.step}
-                    </span>
-                    <span className="rov-overview__workflow-body">
-                      <span className="rov-overview__workflow-title">
-                        {item.title}
-                      </span>
-                      <span className="rov-overview__workflow-desc">
-                        {item.description}
-                      </span>
-                    </span>
-                  </button>
+          <section className="ex-surface rov-ov__side">
+            <header className="rov-ov__head">
+              <div>
+                <h2>Findings</h2>
+                <p>Across all live projects.</p>
+              </div>
+            </header>
+
+            <div className="rov-ov__sev">
+              <div className="rov-ov__sev-bar">
+                <b className="is-major" style={{ width: `${((f?.major ?? 0) / severityTotal) * 100}%` }} />
+                <b className="is-moderate" style={{ width: `${((f?.moderate ?? 0) / severityTotal) * 100}%` }} />
+                <b className="is-minor" style={{ width: `${((f?.minor ?? 0) / severityTotal) * 100}%` }} />
+              </div>
+              <div className="rov-ov__sev-grid">
+                {(["major", "moderate", "minor"] as const).map((key) => (
+                  <div key={key}>
+                    <i className={`rov-ov__dot is-${key}`} />
+                    <span>{SEVERITY[key].label}</span>
+                    <strong>{f?.[key] ?? 0}</strong>
+                  </div>
                 ))}
               </div>
-            </BlockStack>
-          </Card>
+            </div>
+
+            <h3 className="rov-ov__sub">Latest findings</h3>
+            {first ? (
+              <div className="ex-pad">
+                <SkeletonBodyText lines={4} />
+              </div>
+            ) : !data || data.recentFindings.length === 0 ? (
+              <p className="rov-ov__none">
+                No findings yet. Open a project&apos;s Observations tab and drop pins on a structure diagram.
+              </p>
+            ) : (
+              <ul className="rov-ov__findings">
+                {data.recentFindings.map((finding) => {
+                  const sev = finding.severity ? SEVERITY[finding.severity] : null;
+                  const label = finding.label && finding.label !== finding.observationId ? finding.label : null;
+                  const title =
+                    finding.findingType ||
+                    label ||
+                    finding.description?.split(/[\r\n]/)[0] ||
+                    (finding.observationId ? null : finding.pointNumber ? `Point ${finding.pointNumber}` : "Finding");
+                  return (
+                    <li key={finding.id}>
+                      <NextLink href={`/dashboard/rov/projects/${finding.projectId}?tab=observations`}>
+                        <i className={cn("rov-ov__dot", finding.severity ? `is-${finding.severity}` : "is-none")} />
+                        <span>
+                          <strong>
+                            {[finding.observationId, title].filter(Boolean).join(" · ")}
+                          </strong>
+                          <small>
+                            {finding.structureName} · {finding.projectName}
+                          </small>
+                        </span>
+                        <span className="rov-ov__finding-meta">
+                          {sev ? <Badge tone={sev.tone}>{sev.label}</Badge> : <Badge>Unrated</Badge>}
+                          <small>{formatAppDate(finding.createdAt)}</small>
+                        </span>
+                      </NextLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {m && m.unlinked > 0 ? (
+              <p className="rov-ov__hint">
+                <Icon source={NoteIcon} tone="subdued" />
+                {plural(m.unlinked, "media file")} not linked to a finding yet.
+              </p>
+            ) : null}
+          </section>
         </div>
+
+        <section className="rov-ov__flow" aria-label="Inspection workflow">
+          {WORKFLOW.map((step, i) => (
+            <div key={step.title}>
+              <b>{i + 1}</b>
+              <span>
+                <strong>{step.title}</strong>
+                <small>{step.text}</small>
+              </span>
+            </div>
+          ))}
+        </section>
       </div>
     </AppPage>
   );

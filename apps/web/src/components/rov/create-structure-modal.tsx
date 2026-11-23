@@ -1,221 +1,166 @@
 "use client";
 
-import {
-  Banner,
-  BlockStack,
-  Box,
-  Divider,
-  FormLayout,
-  Modal,
-  Text,
-  TextField,
-} from "@shopify/polaris";
-import { useCallback, useState } from "react";
+import { Banner, Form, Modal } from "@shopify/polaris";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createStructure,
   uploadStructureDiagram,
   uploadStructurePhoto,
 } from "@/lib/rov-api";
-import { RovLocalImagePicker } from "./rov-local-image-picker";
+import type { ProjectStructure } from "@/types/rov";
+import {
+  nextStructureSort,
+  StructureFormFields,
+  StructureSavingNote,
+  suggestNextStructureName,
+  validateStructureForm,
+  type StructureFormErrors,
+  type StructureFormValues,
+} from "./structure-form-fields";
 
 interface CreateStructureModalProps {
   open: boolean;
   projectId: string;
+  structures?: ProjectStructure[];
   onClose: () => void;
   onCreated: () => void;
 }
 
+const EMPTY: StructureFormValues = { name: "", sort: "0", description: "", photoFile: null, diagramFile: null };
+
 export function CreateStructureModal({
   open,
   projectId,
+  structures = [],
   onClose,
   onCreated,
 }: CreateStructureModalProps) {
-  const [name, setName] = useState("");
-  const [sort, setSort] = useState("0");
-  const [description, setDescription] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [diagramFile, setDiagramFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const nextSort = nextStructureSort(structures);
+  const suggestion = useMemo(() => suggestNextStructureName(structures), [structures]);
 
-  const resetForm = useCallback(() => {
-    setName("");
-    setSort("0");
-    setDescription("");
-    setPhotoFile(null);
-    setDiagramFile(null);
-    setError(null);
+  const [values, setValues] = useState<StructureFormValues>({ ...EMPTY, sort: String(nextSort) });
+  const [sortTouched, setSortTouched] = useState(false);
+  const [errors, setErrors] = useState<StructureFormErrors>({});
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string[]>([]);
+  const saving = stage !== null;
+
+  // Keep the default order in step with the list (it refreshes after each create).
+  useEffect(() => {
+    if (!sortTouched) setValues((v) => ({ ...v, sort: String(nextSort) }));
+  }, [nextSort, sortTouched]);
+
+  const set = useCallback(<K extends keyof StructureFormValues>(key: K, value: StructureFormValues[K]) => {
+    if (key === "sort") setSortTouched(true);
+    setValues((v) => ({ ...v, [key]: value }));
+    if (key === "name" || key === "sort") setErrors((e) => ({ ...e, [key]: undefined }));
   }, []);
 
+  const reset = useCallback(() => {
+    setValues({ ...EMPTY, sort: String(nextSort) });
+    setSortTouched(false);
+    setErrors({});
+    setError(null);
+  }, [nextSort]);
+
   const handleClose = useCallback(() => {
-    resetForm();
+    if (saving) return;
+    reset();
+    setAdded([]);
     onClose();
-  }, [onClose, resetForm]);
+  }, [onClose, reset, saving]);
 
   const submit = useCallback(
     async (createAnother: boolean) => {
-      if (!name.trim()) {
-        setError("Structure name is required");
-        return;
-      }
+      if (saving) return;
+      const found = validateStructureForm(values, structures);
+      setErrors(found);
+      if (found.name || found.sort) return;
 
-      const sortValue = Number.parseInt(sort, 10);
-      if (Number.isNaN(sortValue) || sortValue < 0) {
-        setError("Display order must be 0 or greater");
-        return;
-      }
-
-      setSaving(true);
+      const name = values.name.trim();
       setError(null);
-
       try {
+        setStage(`Creating ${name}…`);
         const structure = await createStructure(projectId, {
-          name: name.trim(),
-          description: description.trim() || undefined,
-          sort: sortValue,
+          name,
+          description: values.description.trim() || undefined,
+          sort: Number.parseInt(values.sort, 10),
         });
-
-        if (photoFile) {
-          await uploadStructurePhoto(projectId, structure.id, photoFile);
+        if (values.photoFile) {
+          setStage("Uploading surface photo…");
+          await uploadStructurePhoto(projectId, structure.id, values.photoFile);
         }
-        if (diagramFile) {
-          await uploadStructureDiagram(projectId, structure.id, diagramFile);
+        if (values.diagramFile) {
+          setStage("Uploading diagram…");
+          await uploadStructureDiagram(projectId, structure.id, values.diagramFile);
         }
-
         onCreated();
-
         if (createAnother) {
-          resetForm();
-          return;
+          setAdded((list) => [...list, name]);
+          setValues({ ...EMPTY, sort: String(Number.parseInt(values.sort, 10) + 1) });
+          setSortTouched(false);
+          setErrors({});
+        } else {
+          setStage(null);
+          reset();
+          setAdded([]);
+          onClose();
         }
-
-        handleClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create structure");
+        setError(err instanceof Error ? err.message : "Could not create the structure");
       } finally {
-        setSaving(false);
+        setStage(null);
       }
     },
-    [
-      description,
-      diagramFile,
-      handleClose,
-      name,
-      onCreated,
-      photoFile,
-      projectId,
-      resetForm,
-      sort,
-    ],
+    [onClose, onCreated, projectId, reset, saving, structures, values],
+  );
+
+  const notice = (
+    <>
+      {error ? (
+        <Banner tone="critical" onDismiss={() => setError(null)}>
+          {error}
+        </Banner>
+      ) : null}
+      {added.length > 0 && !error ? (
+        <Banner tone="success" onDismiss={() => setAdded([])}>
+          {added.length === 1
+            ? `${added[0]} added. Fill in the next one, or close when you're done.`
+            : `${added.length} structures added (${added.join(", ")}). Fill in the next one, or close when you're done.`}
+        </Banner>
+      ) : null}
+      <StructureSavingNote stage={stage} />
+    </>
   );
 
   return (
     <Modal
       open={open}
       onClose={handleClose}
-      title="Create project structure"
+      title="Add structure"
       size="large"
       primaryAction={{
-        content: "Create",
+        content: "Add structure",
         loading: saving,
         onAction: () => void submit(false),
       }}
       secondaryActions={[
-        {
-          content: "Create & create another",
-          loading: saving,
-          onAction: () => void submit(true),
-        },
-        {
-          content: "Cancel",
-          onAction: handleClose,
-        },
+        { content: "Add & start another", disabled: saving, onAction: () => void submit(true) },
+        { content: added.length > 0 ? "Done" : "Cancel", disabled: saving, onAction: handleClose },
       ]}
     >
       <Modal.Section>
-        <BlockStack gap="500">
-          {error ? (
-            <Banner tone="critical" onDismiss={() => setError(null)}>
-              {error}
-            </Banner>
-          ) : null}
-
-          <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">
-              Structure details
-            </Text>
-            <FormLayout>
-              <FormLayout.Group>
-                <TextField
-                  label="Structure name"
-                  value={name}
-                  onChange={setName}
-                  autoComplete="off"
-                  placeholder="e.g. PILE_1, Dolphin_West, Mooring_Pile_2"
-                  requiredIndicator
-                />
-                <TextField
-                  label="Display order"
-                  type="number"
-                  value={sort}
-                  onChange={setSort}
-                  autoComplete="off"
-                  helpText="Lower number = displayed first."
-                  min={0}
-                />
-              </FormLayout.Group>
-
-              <TextField
-                label="Description"
-                value={description}
-                onChange={setDescription}
-                multiline={3}
-                autoComplete="off"
-                placeholder="Optional notes about this pile, pontoon, or section"
-              />
-            </FormLayout>
-          </BlockStack>
-
-          <Divider />
-
-          <BlockStack gap="300">
-            <BlockStack gap="100">
-              <Text as="h3" variant="headingSm">
-                Images
-              </Text>
-              <Text as="p" tone="subdued" variant="bodySm">
-                Optional   you can also add or replace these after creating the
-                structure.
-              </Text>
-            </BlockStack>
-
-            <Box
-              background="bg-surface-secondary"
-              borderColor="border"
-              borderWidth="025"
-              borderRadius="300"
-              padding="400"
-            >
-              <div className="rov-structure-modal__upload-grid">
-                <RovLocalImagePicker
-                  label="Surface photo"
-                  helpText="Above-water photo shown in the inspection gallery."
-                  file={photoFile}
-                  onChange={setPhotoFile}
-                  disabled={saving}
-                />
-                <RovLocalImagePicker
-                  label="Annotatable diagram"
-                  helpText="Engineering drawing where inspection pins are plotted."
-                  file={diagramFile}
-                  onChange={setDiagramFile}
-                  disabled={saving}
-                />
-              </div>
-            </Box>
-          </BlockStack>
-        </BlockStack>
+        <Form onSubmit={() => void submit(false)} implicitSubmit>
+          <StructureFormFields
+            values={values}
+            errors={errors}
+            disabled={saving}
+            suggestion={suggestion}
+            onChange={set}
+            notice={notice}
+          />
+        </Form>
       </Modal.Section>
     </Modal>
   );

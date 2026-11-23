@@ -83,8 +83,10 @@ export function PurchaseOrderHeaderForm({
                 <TextField
                   autoComplete="off"
                   disabled={disabled}
+                  error={errors?.expectedDate}
                   helpText="When you expect goods to arrive"
                   label="Expected delivery"
+                  min={values.orderDate || undefined}
                   onChange={(expectedDate) => patch({ expectedDate })}
                   placeholder="Optional"
                   type="date"

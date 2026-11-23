@@ -92,8 +92,8 @@ export function EditCustomerPage({ customerId }: EditCustomerPageProps) {
           onAction: () => router.push(`/dashboard/customers/${customerId}`),
         },
       ]}
-      subtitle="Update contact details, photo, and address."
-      title="Edit contact"
+      subtitle="Update contact details, photo and address."
+      title="Edit customer"
     >
       <BlockStack gap="400">
         {error ? (

@@ -12,9 +12,11 @@ import {
   eq,
   gte,
   ilike,
+  inArray,
   isNull,
   lte,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -58,7 +60,8 @@ import { calculateLineAmounts } from "../sales/sales-calculations";
 
 export interface ListPurchaseOrdersQuery {
   state?: "draft" | "confirmed" | "cancelled";
-  receiptStatus?: "none" | "to_receive" | "partial" | "received";
+  /** "outstanding" = confirmed and still waiting on goods (to_receive or partial). */
+  receiptStatus?: "none" | "to_receive" | "partial" | "received" | "outstanding";
   vendorId?: string;
   search?: string;
   dateFrom?: string;
@@ -170,10 +173,6 @@ export class PurchaseOrdersService {
       isNull(purchaseOrders.deletedAt),
     ];
 
-    if (query.state) filters.push(eq(purchaseOrders.state, query.state));
-    if (query.receiptStatus) {
-      filters.push(eq(purchaseOrders.receiptStatus, query.receiptStatus));
-    }
     if (query.vendorId) filters.push(eq(purchaseOrders.vendorId, query.vendorId));
     if (query.dateFrom) filters.push(gte(purchaseOrders.orderDate, query.dateFrom));
     if (query.dateTo) filters.push(lte(purchaseOrders.orderDate, query.dateTo));
@@ -185,8 +184,21 @@ export class PurchaseOrdersService {
           ilike(purchaseOrders.number, term),
           ilike(purchaseOrders.vendorReference, term),
           ilike(purchaseOrders.internalReference, term),
+          ilike(vendors.name, term),
         )!,
       );
+    }
+
+    // Counts per status use everything except the status filters, so the tabs stay stable.
+    const baseWhere = and(...filters);
+    const po = purchaseOrders;
+    const outstandingSql = sql`${po.state} = 'confirmed' and ${po.receiptStatus} in ('to_receive', 'partial')`;
+
+    if (query.state) filters.push(eq(po.state, query.state));
+    if (query.receiptStatus === "outstanding") {
+      filters.push(outstandingSql);
+    } else if (query.receiptStatus) {
+      filters.push(eq(po.receiptStatus, query.receiptStatus));
     }
 
     const whereClause = and(...filters);
@@ -218,10 +230,30 @@ export class PurchaseOrdersService {
       this.db
         .select({ total: count() })
         .from(purchaseOrders)
+        .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
         .where(whereClause),
     ]);
 
     const total = Number(totalResult[0]?.total ?? 0);
+
+    const [summaryRow] = await this.db
+      .select({
+        all: count(),
+        draft: sql<number>`count(*) filter (where ${po.state} = 'draft')`,
+        confirmed: sql<number>`count(*) filter (where ${po.state} = 'confirmed')`,
+        cancelled: sql<number>`count(*) filter (where ${po.state} = 'cancelled')`,
+        outstanding: sql<number>`count(*) filter (where ${outstandingSql})`,
+        partial: sql<number>`count(*) filter (where ${po.state} = 'confirmed' and ${po.receiptStatus} = 'partial')`,
+        received: sql<number>`count(*) filter (where ${po.receiptStatus} = 'received' and ${po.state} <> 'cancelled')`,
+        overdue: sql<number>`count(*) filter (where ${outstandingSql} and ${po.expectedDate} < current_date)`,
+      })
+      .from(purchaseOrders)
+      .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
+      .where(baseWhere);
+
+    const summary = Object.fromEntries(
+      Object.entries(summaryRow ?? {}).map(([key, value]) => [key, Number(value ?? 0)]),
+    ) as Record<"all" | "draft" | "confirmed" | "cancelled" | "outstanding" | "partial" | "received" | "overdue", number>;
 
     return {
       data: rows.map((row) => ({
@@ -235,6 +267,7 @@ export class PurchaseOrdersService {
         total,
         totalPages: Math.ceil(total / perPage) || 1,
       },
+      summary,
     };
   }
 
@@ -943,18 +976,55 @@ export class PurchaseOrdersService {
     return this.getReceiptById(organizationId, receipt.id);
   }
 
-  async listReceipts(organizationId: string, query: { page?: number; perPage?: number }) {
+  async listReceipts(
+    organizationId: string,
+    query: {
+      page?: number;
+      perPage?: number;
+      state?: "draft" | "done" | "cancelled";
+      search?: string;
+      sort?: "newest" | "receipt_date" | "number";
+      purchaseOrderId?: string;
+    },
+  ) {
     const page = Math.max(query.page ?? 1, 1);
     const perPage = Math.min(Math.max(query.perPage ?? 16, 1), 100);
     const offset = (page - 1) * perPage;
 
-    const whereClause = eq(goodsReceipts.organizationId, organizationId);
+    const base: SQL[] = [eq(goodsReceipts.organizationId, organizationId)];
+    if (query.purchaseOrderId) {
+      base.push(eq(goodsReceipts.purchaseOrderId, query.purchaseOrderId));
+    }
+    const term = query.search?.trim();
+    if (term) {
+      const like = `%${term}%`;
+      base.push(
+        or(
+          ilike(goodsReceipts.number, like),
+          ilike(purchaseOrders.number, like),
+          ilike(vendors.name, like),
+          ilike(purchaseOrders.vendorReference, like),
+        )!,
+      );
+    }
+    const filtered = [...base];
+    if (query.state) filtered.push(eq(goodsReceipts.state, query.state));
+    const whereClause = and(...filtered);
 
-    const [rows, totalResult] = await Promise.all([
+    const orderBy =
+      query.sort === "receipt_date"
+        ? [desc(goodsReceipts.receiptDate), desc(goodsReceipts.createdAt)]
+        : query.sort === "number"
+          ? [desc(goodsReceipts.number)]
+          : [desc(goodsReceipts.createdAt)];
+
+    const [rows, totalResult, summaryResult] = await Promise.all([
       this.db
         .select({
           receipt: goodsReceipts,
           purchaseOrderNumber: purchaseOrders.number,
+          purchaseOrderReceiptStatus: purchaseOrders.receiptStatus,
+          vendorId: purchaseOrders.vendorId,
           vendorName: vendors.name,
         })
         .from(goodsReceipts)
@@ -964,28 +1034,100 @@ export class PurchaseOrdersService {
         )
         .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
         .where(whereClause)
-        .orderBy(desc(goodsReceipts.createdAt))
+        .orderBy(...orderBy)
         .limit(perPage)
         .offset(offset),
       this.db
         .select({ total: count() })
         .from(goodsReceipts)
+        .innerJoin(
+          purchaseOrders,
+          eq(goodsReceipts.purchaseOrderId, purchaseOrders.id),
+        )
+        .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
         .where(whereClause),
+      this.db
+        .select({
+          all: sql<number>`count(*)`,
+          draft: sql<number>`count(*) filter (where ${goodsReceipts.state} = 'draft')`,
+          done: sql<number>`count(*) filter (where ${goodsReceipts.state} = 'done')`,
+          cancelled: sql<number>`count(*) filter (where ${goodsReceipts.state} = 'cancelled')`,
+          doneThisMonth: sql<number>`count(*) filter (where ${goodsReceipts.state} = 'done' and ${goodsReceipts.receiptDate} >= date_trunc('month', current_date)::date)`,
+        })
+        .from(goodsReceipts)
+        .innerJoin(
+          purchaseOrders,
+          eq(goodsReceipts.purchaseOrderId, purchaseOrders.id),
+        )
+        .innerJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
+        .where(and(...base)),
     ]);
 
+    const ids = rows.map((row) => row.receipt.id);
+    const lineStats = ids.length
+      ? await this.db
+          .select({
+            goodsReceiptId: goodsReceiptLines.goodsReceiptId,
+            lineCount: sql<number>`count(*)`,
+            quantity: sql<string>`coalesce(sum(${goodsReceiptLines.quantity}), 0)::text`,
+            serialCount: sql<number>`coalesce(sum(jsonb_array_length(coalesce(${goodsReceiptLines.serialNumbers}, '[]'::jsonb))), 0)`,
+            warehouseNames: sql<string[]>`array_remove(array_agg(distinct ${warehouses.name}), null)`,
+            productNames: sql<string[]>`(array_agg(${products.name} order by ${goodsReceiptLines.lineNumber}))[1:2]`,
+          })
+          .from(goodsReceiptLines)
+          .leftJoin(warehouses, eq(goodsReceiptLines.warehouseId, warehouses.id))
+          .leftJoin(products, eq(goodsReceiptLines.productId, products.id))
+          .where(inArray(goodsReceiptLines.goodsReceiptId, ids))
+          .groupBy(goodsReceiptLines.goodsReceiptId)
+      : [];
+    const statsById = new Map(lineStats.map((row) => [row.goodsReceiptId, row]));
+
+    const [units] = await this.db
+      .select({
+        quantity: sql<string>`coalesce(sum(${goodsReceiptLines.quantity}), 0)::text`,
+      })
+      .from(goodsReceiptLines)
+      .innerJoin(goodsReceipts, eq(goodsReceiptLines.goodsReceiptId, goodsReceipts.id))
+      .where(
+        and(
+          eq(goodsReceipts.organizationId, organizationId),
+          eq(goodsReceipts.state, "done"),
+          sql`${goodsReceipts.receiptDate} >= date_trunc('month', current_date)::date`,
+        ),
+      );
+
     const total = Number(totalResult[0]?.total ?? 0);
+    const s = summaryResult[0];
 
     return {
-      data: rows.map((row) => ({
-        ...row.receipt,
-        purchaseOrderNumber: row.purchaseOrderNumber,
-        vendorName: row.vendorName,
-      })),
+      data: rows.map((row) => {
+        const stats = statsById.get(row.receipt.id);
+        return {
+          ...row.receipt,
+          purchaseOrderNumber: row.purchaseOrderNumber,
+          purchaseOrderReceiptStatus: row.purchaseOrderReceiptStatus,
+          vendorId: row.vendorId,
+          vendorName: row.vendorName,
+          lineCount: Number(stats?.lineCount ?? 0),
+          totalQuantity: stats?.quantity ?? "0",
+          serialCount: Number(stats?.serialCount ?? 0),
+          warehouseNames: stats?.warehouseNames ?? [],
+          productNames: (stats?.productNames ?? []).filter(Boolean),
+        };
+      }),
       meta: {
         page,
         perPage,
         total,
         totalPages: Math.ceil(total / perPage) || 1,
+      },
+      summary: {
+        all: Number(s?.all ?? 0),
+        draft: Number(s?.draft ?? 0),
+        done: Number(s?.done ?? 0),
+        cancelled: Number(s?.cancelled ?? 0),
+        doneThisMonth: Number(s?.doneThisMonth ?? 0),
+        unitsThisMonth: units?.quantity ?? "0",
       },
     };
   }

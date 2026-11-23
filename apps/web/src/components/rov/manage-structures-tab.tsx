@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { deleteStructure } from "@/lib/rov-api";
+import { cn } from "@/lib/utils";
 import type { ProjectStructure, RovProject } from "@/types/rov";
 import { CreateStructureModal } from "./create-structure-modal";
 import { EditStructureModal } from "./edit-structure-modal";
@@ -26,53 +27,109 @@ interface ManageStructuresTabProps {
 
 function StructureCard({
   structure,
+  index,
   onEdit,
   onDelete,
   onAnnotate,
 }: {
   structure: ProjectStructure;
+  index: number;
   onEdit: (structure: ProjectStructure) => void;
   onDelete: (structure: ProjectStructure) => void;
   onAnnotate: (structure: ProjectStructure) => void;
 }) {
   const hasDiagram = Boolean(structure.diagramPath);
+  const findings = structure.findingCount ?? 0;
+  const majors = structure.majorCount ?? 0;
+  const moderates = structure.moderateCount ?? 0;
+  const minors = structure.minorCount ?? 0;
+  const media = structure.mediaCount ?? 0;
 
   return (
-    <div className="rov-structure-card">
-      <button type="button" className="rov-structure-card__media" onClick={() => onEdit(structure)}>
-        <RovStructureImage path={structure.photoPath} alt={structure.name} className="rov-structure-card__photo" emptyClassName="rov-structure-card__photo rov-structure-card__photo--empty" emptyLabel="Add photo" />
+    <article className="rov-sc">
+      <button type="button" className="rov-sc__photo" onClick={() => onEdit(structure)} aria-label={`Edit ${structure.name} photo`}>
+        <RovStructureImage
+          path={structure.photoPath}
+          alt={structure.name}
+          className="rov-sc__img"
+          emptyClassName="rov-sc__img rov-sc__img--empty"
+          emptyLabel="Add a surface photo"
+        />
+        <span className="rov-sc__index">#{index + 1}</span>
       </button>
-      <div className="rov-structure-card__body">
-        <InlineStack align="space-between" blockAlign="start" gap="300">
-          <BlockStack gap="100">
-            <Text as="h3" variant="headingSm">{structure.name}</Text>
-            <Text as="p" tone="subdued" variant="bodySm">{structure.description || "No description"}</Text>
-          </BlockStack>
-          <Badge tone="info">{`Order ${structure.sort}`}</Badge>
-        </InlineStack>
-        <div className="rov-structure-card__diagram">
-          <button type="button" className="rov-structure-card__diagram-preview" onClick={() => onEdit(structure)}>
-            <RovStructureImage path={structure.diagramPath} alt={`${structure.name} diagram`} className="rov-structure-card__diagram-image" emptyClassName="rov-structure-card__diagram-image rov-structure-card__diagram-image--empty" emptyLabel="Add diagram" />
-          </button>
-          <div className="rov-structure-card__diagram-meta">
-            <Text as="p" variant="bodySm" fontWeight="semibold">Annotatable diagram</Text>
-            <Badge tone={hasDiagram ? "success" : "attention"}>{hasDiagram ? "Ready to annotate" : "Diagram required"}</Badge>
-            <Text as="p" tone="subdued" variant="bodySm">{hasDiagram ? "Open the diagram editor to place inspection pins." : "Upload a diagram in Edit before annotating."}</Text>
+
+      <div className="rov-sc__body">
+        <div className="rov-sc__head">
+          <div>
+            <h3>{structure.name}</h3>
+            <p>{structure.description || "No description"}</p>
           </div>
+          {majors > 0 ? <Badge tone="critical">{`${majors} major`}</Badge> : null}
         </div>
+
+        <div className="rov-sc__stats">
+          <span>
+            <strong>{findings}</strong> finding{findings === 1 ? "" : "s"}
+          </span>
+          <span>
+            <strong>{media}</strong> media
+          </span>
+          {findings > 0 ? (
+            <span className="rov-sc__sev" aria-label={`${majors} major, ${moderates} moderate, ${minors} minor`}>
+              <i className="rov-ov__dot is-major" />
+              {majors}
+              <i className="rov-ov__dot is-moderate" />
+              {moderates}
+              <i className="rov-ov__dot is-minor" />
+              {minors}
+            </span>
+          ) : null}
+        </div>
+
+        <button type="button" className={cn("rov-sc__diagram", !hasDiagram && "is-missing")} onClick={() => (hasDiagram ? onAnnotate(structure) : onEdit(structure))}>
+          <RovStructureImage
+            path={structure.diagramPath}
+            alt={`${structure.name} diagram`}
+            className="rov-sc__diagram-img"
+            emptyClassName="rov-sc__diagram-img rov-sc__diagram-img--empty"
+            emptyLabel={hasDiagram ? "Preview unavailable" : "No diagram"}
+          />
+          <span>
+            <strong>{hasDiagram ? "Engineering diagram" : "Diagram needed"}</strong>
+            <small>
+              {hasDiagram
+                ? findings > 0
+                  ? `${findings} pin${findings === 1 ? "" : "s"} placed · open to add more`
+                  : "Ready. Open it to place inspection pins"
+                : "Upload a diagram to start annotating"}
+            </small>
+          </span>
+        </button>
       </div>
-      <div className="rov-structure-card__actions">
-        <Button variant="primary" disabled={!hasDiagram} onClick={() => onAnnotate(structure)}>Annotate</Button>
+
+      <footer className="rov-sc__actions">
+        {hasDiagram ? (
+          <Button variant="primary" onClick={() => onAnnotate(structure)}>
+            Annotate
+          </Button>
+        ) : (
+          <Button variant="primary" onClick={() => onEdit(structure)}>
+            Upload diagram
+          </Button>
+        )}
         <Button onClick={() => onEdit(structure)}>Edit</Button>
-        <Button tone="critical" variant="plain" onClick={() => onDelete(structure)}>Delete</Button>
-      </div>
-    </div>
+        <Button variant="plain" onClick={() => onDelete(structure)}>
+          Delete
+        </Button>
+      </footer>
+    </article>
   );
 }
 
 export function ManageStructuresTab({ project, onUpdated }: ManageStructuresTabProps) {
   const router = useRouter();
   const structures = project.structures ?? [];
+  const missingDiagrams = structures.filter((item) => !item.diagramPath).length;
   const [addOpen, setAddOpen] = useState(false);
   const [editStructure, setEditStructure] = useState<ProjectStructure | null>(null);
   const [deleteStructureTarget, setDeleteStructureTarget] = useState<ProjectStructure | null>(null);
@@ -103,11 +160,11 @@ export function ManageStructuresTab({ project, onUpdated }: ManageStructuresTabP
             <BlockStack gap="100">
               <Text as="h2" variant="headingMd">Structures</Text>
               <Text as="p" tone="subdued" variant="bodySm">
-                {structures.length === 1
-                  ? "1 structure in this project"
-                  : `${structures.length} structures in this project`}
-                {" · "}
-                Add piles, dolphins, or sections, then upload a diagram to annotate.
+                {structures.length === 0
+                  ? "Add the piles, dolphins or sections you're inspecting."
+                  : `${structures.length} structure${structures.length === 1 ? "" : "s"}${
+                      missingDiagrams > 0 ? ` · ${missingDiagrams} still need${missingDiagrams === 1 ? "s" : ""} a diagram` : " · all ready to annotate"
+                    }`}
               </Text>
             </BlockStack>
             <Button variant="primary" onClick={() => setAddOpen(true)}>Add structure</Button>
@@ -117,16 +174,16 @@ export function ManageStructuresTab({ project, onUpdated }: ManageStructuresTabP
               <p>Add piles, dolphins, or sections. Upload a diagram on each structure, then annotate findings.</p>
             </EmptyState>
           ) : (
-            <div className="rov-structure-list">
-              {structures.map((structure) => (
-                <StructureCard key={structure.id} structure={structure} onEdit={setEditStructure} onDelete={setDeleteStructureTarget} onAnnotate={(item) => router.push(`/dashboard/rov/projects/${project.id}/structures/${item.id}/annotate`)} />
+            <div className="rov-sc-grid">
+              {structures.map((structure, index) => (
+                <StructureCard key={structure.id} index={index} structure={structure} onEdit={setEditStructure} onDelete={setDeleteStructureTarget} onAnnotate={(item) => router.push(`/dashboard/rov/projects/${project.id}/structures/${item.id}/annotate`)} />
               ))}
             </div>
           )}
         </BlockStack>
       </Card>
-      <CreateStructureModal open={addOpen} projectId={project.id} onClose={() => setAddOpen(false)} onCreated={onUpdated} />
-      <EditStructureModal open={Boolean(editStructure)} projectId={project.id} structure={editStructure} onClose={() => setEditStructure(null)} onSaved={onUpdated} />
+      <CreateStructureModal open={addOpen} projectId={project.id} structures={structures} onClose={() => setAddOpen(false)} onCreated={onUpdated} />
+      <EditStructureModal open={Boolean(editStructure)} projectId={project.id} structure={editStructure} structures={structures} onClose={() => setEditStructure(null)} onSaved={onUpdated} />
       <Modal open={Boolean(deleteStructureTarget)} onClose={() => setDeleteStructureTarget(null)} title="Delete structure?" primaryAction={{ content: "Delete structure", destructive: true, loading: deleting, onAction: () => void handleDelete() }} secondaryActions={[{ content: "Cancel", onAction: () => setDeleteStructureTarget(null) }]}>
         <Modal.Section>
           <Text as="p">This will permanently delete <strong>{deleteStructureTarget?.name}</strong> and all related observations, views, and media for this structure.</Text>

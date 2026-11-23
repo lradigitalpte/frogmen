@@ -38,6 +38,27 @@ export interface Vendor {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Purchase order activity; only present on list responses. */
+  stats?: VendorPurchaseStats;
+}
+
+export interface VendorPurchaseStats {
+  orderCount: number;
+  openOrders: number;
+  lastOrderDate: string | null;
+  /** Confirmed order totals in the organisation's base currency. */
+  spendBase: string;
+}
+
+export interface VendorSummary {
+  all: number;
+  company: number;
+  individual: number;
+  archived: number;
+  withOpenOrders: number;
+  openOrders: number;
+  spendBase: string;
+  spendLast90Base: string;
 }
 
 export interface ListVendorsParams {
@@ -58,4 +79,5 @@ export interface PaginatedVendors {
     total: number;
     totalPages: number;
   };
+  summary?: VendorSummary;
 }

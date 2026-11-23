@@ -2,19 +2,28 @@
 
 import type { ReactNode } from "react";
 import {
-  Badge,
   BlockStack,
-  Box,
   Card,
   Checkbox,
   FormLayout,
-  InlineGrid,
-  InlineStack,
-  Layout,
+  Icon,
+  ProgressBar,
   Select,
   Text,
   TextField,
 } from "@shopify/polaris";
+import {
+  CheckCircleIcon,
+  EmailIcon,
+  GlobeIcon,
+  HashtagIcon,
+  IdentityCardIcon,
+  LocationIcon,
+  MobileIcon,
+  OrganizationIcon,
+  PersonIcon,
+  PhoneIcon,
+} from "@shopify/polaris-icons";
 import {
   countryHasStates,
   getCountryOptions,
@@ -22,7 +31,9 @@ import {
   type CustomerFormValues,
 } from "@frog1/shared";
 import type { Customer } from "@/types/customer";
+import { cn } from "@/lib/utils";
 import { CustomerAvatarUpload } from "./customer-avatar-upload";
+import { countryName, titleCase } from "./customer-format";
 
 export function customerToFormValues(customer: Customer): CustomerFormValues {
   return {
@@ -58,84 +69,76 @@ interface CustomerFormProps {
   onAvatarUploaded?: (avatarPath: string) => void;
 }
 
-function AccountTypeOption({
-  title,
-  badge,
-  badgeTone,
-  description,
-  selected,
-  onSelect,
-  disabled,
-}: {
-  title: string;
-  badge: string;
-  badgeTone: "info" | "success" | undefined;
-  description: string;
-  selected: boolean;
-  onSelect: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={`frogmen-account-type-option${selected ? " selected" : ""}`}
-      disabled={disabled}
-      onClick={onSelect}
-    >
-      <BlockStack gap="200">
-        <InlineStack align="space-between" blockAlign="center" gap="200" wrap={false}>
-          <Text as="span" variant="headingSm" fontWeight="semibold">
-            {title}
-          </Text>
-          <Badge tone={selected ? badgeTone : undefined}>{badge}</Badge>
-        </InlineStack>
-        <Text as="p" tone="subdued" variant="bodySm">
-          {description}
-        </Text>
-      </BlockStack>
-    </button>
-  );
+const countryOptions = [{ label: "Select country", value: "" }, ...getCountryOptions()];
+
+function FieldIcon({ source }: { source: typeof EmailIcon }) {
+  return <Icon source={source} tone="subdued" />;
 }
 
-function FormSection({
+function Section({
+  step,
   title,
   description,
   children,
 }: {
+  step: number;
   title: string;
-  description?: string;
+  description: string;
   children: ReactNode;
 }) {
   return (
     <Card>
-      <BlockStack gap="400">
-        <BlockStack gap="100">
-          <Text as="h2" variant="headingMd">
-            {title}
-          </Text>
-          {description ? (
-            <Text as="p" tone="subdued">
-              {description}
-            </Text>
-          ) : null}
-        </BlockStack>
+      <div className="cform-section">
+        <div className="cform-section__head">
+          <span className="cform-step">{step}</span>
+          <div>
+            <Text as="h2" variant="headingMd">{title}</Text>
+            <Text as="p" tone="subdued" variant="bodySm">{description}</Text>
+          </div>
+        </div>
         {children}
-      </BlockStack>
+      </div>
     </Card>
   );
 }
 
-const countryOptions = [
-  { label: "Select country", value: "" },
-  ...getCountryOptions(),
-];
-
-const paymentTermsOptions = [
-  { label: "Net 30 Days (Standard)", value: "net_30" },
-  { label: "Net 15 Days", value: "net_15" },
-  { label: "Net 60 Days", value: "net_60" },
-  { label: "Immediate Payment (COD)", value: "cod" },
-];
+function TypeOption({
+  icon,
+  title,
+  description,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  icon: typeof EmailIcon;
+  title: string;
+  description: string;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={cn("cform-type", selected && "is-selected")}
+      disabled={disabled}
+      onClick={onSelect}
+    >
+      <span className="cform-type__icon">
+        <Icon source={icon} />
+      </span>
+      <span className="cform-type__copy">
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <span className="cform-type__check" aria-hidden>
+        {selected ? <Icon source={CheckCircleIcon} /> : null}
+      </span>
+    </button>
+  );
+}
 
 export function CustomerForm({
   values,
@@ -148,315 +151,305 @@ export function CustomerForm({
   onPendingAvatarChange,
   onAvatarUploaded,
 }: CustomerFormProps) {
+  const isCompany = values.accountType === "company";
   const stateOptions = [
     { label: "Select state / province", value: "" },
     ...getStateOptions(values.countryCode),
   ];
 
-  function update<K extends keyof CustomerFormValues>(
-    key: K,
-    value: CustomerFormValues[K],
-  ) {
+  function update<K extends keyof CustomerFormValues>(key: K, value: CustomerFormValues[K]) {
     onChange({ ...values, [key]: value });
   }
 
-  return (
-    <Layout>
-      <Layout.Section>
-        <BlockStack gap="400">
-          {/* Account Entity Type Selector */}
-          <FormSection
-            description="Choose whether this account is a corporate company or an individual client."
-            title="Customer Account Type"
-          >
-            <InlineGrid columns={{ xs: 1, sm: 2 }} gap="300">
-              <AccountTypeOption
-                badge="B2B Account"
-                badgeTone="info"
-                description="For commercial enterprises, marine contractors, and offshore engineering firms."
-                disabled={disabled}
-                selected={values.accountType === "company"}
-                title="Corporate Company"
-                onSelect={() => update("accountType", "company")}
-              />
-              <AccountTypeOption
-                badge="Individual"
-                badgeTone="success"
-                description="For master divers, private contractors, and individual buyers."
-                disabled={disabled}
-                selected={values.accountType === "individual"}
-                title="Individual Client"
-                onSelect={() => update("accountType", "individual")}
-              />
-            </InlineGrid>
-          </FormSection>
+  const checklist = [
+    { label: "Name", done: Boolean(values.name.trim()) },
+    { label: "Email", done: Boolean(values.email.trim()) },
+    { label: "Phone number", done: Boolean(values.phone.trim() || values.mobile.trim()) },
+    { label: "Address", done: Boolean(values.street1.trim() && values.city.trim()) },
+    { label: "Country", done: Boolean(values.countryCode) },
+    { label: "Tax ID", done: Boolean(values.taxId.trim()) },
+  ];
+  const completeness = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+  const previewLocation = [values.city.trim() ? titleCase(values.city.trim()) : null, countryName(values.countryCode)]
+    .filter(Boolean)
+    .join(", ");
 
-          {/* Primary Contact Details */}
-          <FormSection
-            description="Primary contact information and communication channels."
-            title="Primary Contact Details"
-          >
-            <FormLayout>
+  return (
+    <div className="cform-layout">
+      <div className="cform-main">
+        <Section step={1} title="Account type" description="Is this customer a company or a person?">
+          <div className="cform-types" role="radiogroup" aria-label="Account type">
+            <TypeOption
+              icon={OrganizationIcon}
+              title="Company"
+              description="Contractors, offshore firms and other businesses"
+              selected={isCompany}
+              disabled={disabled}
+              onSelect={() => update("accountType", "company")}
+            />
+            <TypeOption
+              icon={PersonIcon}
+              title="Individual"
+              description="Master divers, private contractors and buyers"
+              selected={!isCompany}
+              disabled={disabled}
+              onSelect={() => update("accountType", "individual")}
+            />
+          </div>
+        </Section>
+
+        <Section
+          step={2}
+          title="Contact details"
+          description="How you reach this customer. Only the name is required."
+        >
+          <FormLayout>
+            <FormLayout.Group>
               <TextField
-                autoComplete="name"
+                autoComplete={isCompany ? "organization" : "name"}
                 disabled={disabled}
                 error={errors.name}
-                label={values.accountType === "company" ? "Company / Account Name" : "Full Name"}
-                placeholder={values.accountType === "company" ? "e.g. Subsea Engineering Ltd" : "e.g. Frank Reynolds"}
+                label={isCompany ? "Company name" : "Full name"}
+                placeholder={isCompany ? "Subsea Engineering Ltd" : "Frank Reynolds"}
                 requiredIndicator
+                prefix={<FieldIcon source={isCompany ? OrganizationIcon : PersonIcon} />}
                 value={values.name}
                 onChange={(value) => update("name", value)}
               />
-
-              <FormLayout.Group>
-                <TextField
-                  autoComplete="email"
-                  disabled={disabled}
-                  error={errors.email}
-                  label="Email Address"
-                  placeholder="e.g. billing@company.com"
-                  type="email"
-                  value={values.email}
-                  onChange={(value) => update("email", value)}
-                />
-                <TextField
-                  autoComplete="tel"
-                  disabled={disabled}
-                  error={errors.phone}
-                  label="Office Phone"
-                  placeholder="e.g. +1 (555) 234-5678"
-                  value={values.phone}
-                  onChange={(value) => update("phone", value)}
-                />
-              </FormLayout.Group>
-
-              <FormLayout.Group>
-                <TextField
-                  autoComplete="tel"
-                  disabled={disabled}
-                  error={errors.mobile}
-                  label="Mobile Direct"
-                  placeholder="e.g. +1 (555) 987-6543"
-                  value={values.mobile}
-                  onChange={(value) => update("mobile", value)}
-                />
-                <TextField
-                  autoComplete="off"
-                  disabled={disabled}
-                  error={errors.website}
-                  label="Company Website"
-                  placeholder="e.g. https://company.com"
-                  value={values.website}
-                  onChange={(value) => update("website", value)}
-                />
-              </FormLayout.Group>
-            </FormLayout>
-          </FormSection>
-
-          {/* Financial & Credit Terms */}
-          <FormSection
-            description="Configure credit limit, payment terms, and tax identifiers."
-            title="Financial & Credit Terms"
-          >
-            <FormLayout>
-              <FormLayout.Group>
-                <TextField
-                  autoComplete="off"
-                  disabled={disabled}
-                  error={errors.taxId}
-                  label="Tax ID / VAT Registration"
-                  placeholder="e.g. TX-99201"
-                  value={values.taxId}
-                  onChange={(value) => update("taxId", value)}
-                />
-                <Select
-                  disabled={disabled}
-                  label="Payment Terms"
-                  options={paymentTermsOptions}
-                  value="net_30"
-                  onChange={() => {}}
-                />
-              </FormLayout.Group>
-
-              <Checkbox
-                checked={values.isLocal}
-                disabled={disabled}
-                helpText="This classification selects the organization’s local or non-local price rule when document pricing adjustments are enabled."
-                label="Local customer pricing"
-                onChange={(checked) => update("isLocal", checked)}
-              />
-
-              <FormLayout.Group>
-                <TextField
-                  autoComplete="off"
-                  disabled={disabled}
-                  error={errors.reference}
-                  label="Internal Reference Code"
-                  placeholder="e.g. REF-2026-C01"
-                  value={values.reference}
-                  onChange={(value) => update("reference", value)}
-                />
-                <TextField
-                  autoComplete="off"
-                  disabled={disabled}
-                  error={errors.jobTitle}
-                  label="Primary Contact Job Title"
-                  placeholder="e.g. Procurement Director"
-                  value={values.jobTitle}
-                  onChange={(value) => update("jobTitle", value)}
-                />
-              </FormLayout.Group>
-            </FormLayout>
-          </FormSection>
-
-          {/* Billing & Shipping Address */}
-          <FormSection
-            description="Primary billing and equipment shipping address details."
-            title="Address Details"
-          >
-            <FormLayout>
               <TextField
-                autoComplete="street-address"
+                autoComplete="organization-title"
                 disabled={disabled}
-                error={errors.street1}
-                label="Street Address Line 1"
-                placeholder="e.g. 42 Offshore Tech Way"
-                value={values.street1}
-                onChange={(value) => update("street1", value)}
+                error={errors.jobTitle}
+                label={isCompany ? "Main contact's job title" : "Job title"}
+                placeholder="Procurement director"
+                value={values.jobTitle}
+                onChange={(value) => update("jobTitle", value)}
+              />
+            </FormLayout.Group>
+            <TextField
+              autoComplete="email"
+              disabled={disabled}
+              error={errors.email}
+              label="Email"
+              placeholder="billing@company.com"
+              type="email"
+              prefix={<FieldIcon source={EmailIcon} />}
+              value={values.email}
+              onChange={(value) => update("email", value)}
+            />
+            <FormLayout.Group>
+              <TextField
+                autoComplete="tel"
+                disabled={disabled}
+                error={errors.phone}
+                label="Office phone"
+                placeholder="+971 4 234 5678"
+                type="tel"
+                prefix={<FieldIcon source={PhoneIcon} />}
+                value={values.phone}
+                onChange={(value) => update("phone", value)}
               />
               <TextField
-                autoComplete="address-line2"
+                autoComplete="tel"
                 disabled={disabled}
-                error={errors.street2}
-                label="Suite, Building, Floor (Optional)"
-                placeholder="e.g. Suite 800"
-                value={values.street2}
-                onChange={(value) => update("street2", value)}
+                error={errors.mobile}
+                label="Mobile"
+                placeholder="+971 50 987 6543"
+                type="tel"
+                prefix={<FieldIcon source={MobileIcon} />}
+                value={values.mobile}
+                onChange={(value) => update("mobile", value)}
               />
-              <FormLayout.Group>
-                <TextField
-                  autoComplete="address-level2"
-                  disabled={disabled}
-                  error={errors.city}
-                  label="City"
-                  placeholder="e.g. Houston"
-                  value={values.city}
-                  onChange={(value) => update("city", value)}
-                />
-                <TextField
-                  autoComplete="postal-code"
-                  disabled={disabled}
-                  error={errors.zip}
-                  label="ZIP / Postal Code"
-                  placeholder="e.g. 77002"
-                  value={values.zip}
-                  onChange={(value) => update("zip", value)}
-                />
-              </FormLayout.Group>
-              <FormLayout.Group>
+            </FormLayout.Group>
+            <TextField
+              autoComplete="url"
+              disabled={disabled}
+              error={errors.website}
+              label="Website"
+              placeholder="company.com"
+              prefix={<FieldIcon source={GlobeIcon} />}
+              value={values.website}
+              onChange={(value) => update("website", value)}
+            />
+          </FormLayout>
+        </Section>
+
+        <Section step={3} title="Address" description="Used for billing and shipping equipment.">
+          <FormLayout>
+            <TextField
+              autoComplete="address-line1"
+              disabled={disabled}
+              error={errors.street1}
+              label="Street address"
+              placeholder="42 Offshore Tech Way"
+              prefix={<FieldIcon source={LocationIcon} />}
+              value={values.street1}
+              onChange={(value) => update("street1", value)}
+            />
+            <TextField
+              autoComplete="address-line2"
+              disabled={disabled}
+              error={errors.street2}
+              label="Apartment, suite or building"
+              placeholder="Suite 800 (optional)"
+              value={values.street2}
+              onChange={(value) => update("street2", value)}
+            />
+            <FormLayout.Group condensed>
+              <TextField
+                autoComplete="address-level2"
+                disabled={disabled}
+                error={errors.city}
+                label="City"
+                placeholder="Dubai"
+                value={values.city}
+                onChange={(value) => update("city", value)}
+              />
+              <TextField
+                autoComplete="postal-code"
+                disabled={disabled}
+                error={errors.zip}
+                label="Postal code"
+                placeholder="00000"
+                value={values.zip}
+                onChange={(value) => update("zip", value)}
+              />
+            </FormLayout.Group>
+            <FormLayout.Group>
+              <Select
+                disabled={disabled}
+                error={errors.countryCode}
+                label="Country"
+                options={countryOptions}
+                value={values.countryCode}
+                onChange={(value) => onChange({ ...values, countryCode: value, stateCode: "" })}
+              />
+              {countryHasStates(values.countryCode) ? (
                 <Select
                   disabled={disabled}
-                  error={errors.countryCode}
-                  label="Country"
-                  options={countryOptions}
-                  value={values.countryCode}
-                  onChange={(value) =>
-                    onChange({ ...values, countryCode: value, stateCode: "" })
-                  }
+                  error={errors.stateCode}
+                  label="State / province"
+                  options={stateOptions}
+                  value={values.stateCode}
+                  onChange={(value) => update("stateCode", value)}
                 />
-                {countryHasStates(values.countryCode) ? (
-                  <Select
-                    disabled={disabled}
-                    error={errors.stateCode}
-                    label="State / Province"
-                    options={stateOptions}
-                    value={values.stateCode}
-                    onChange={(value) => update("stateCode", value)}
-                  />
-                ) : null}
-              </FormLayout.Group>
-            </FormLayout>
-          </FormSection>
-        </BlockStack>
-      </Layout.Section>
+              ) : null}
+            </FormLayout.Group>
+          </FormLayout>
+        </Section>
 
-      {/* Sidebar Cards */}
-      <Layout.Section variant="oneThird">
-        <BlockStack gap="400">
-          <Card>
-            <BlockStack gap="400">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  Account Logo / Photo
-                </Text>
-                <Text as="p" tone="subdued">
-                  Add a company logo or contact photo. Shown in customer lists and invoices.
-                </Text>
-              </BlockStack>
-              <CustomerAvatarUpload
-                avatarPath={avatarPath}
-                customerId={customerId}
-                disabled={disabled}
-                name={values.name}
-                pendingFile={pendingAvatar}
-                onAvatarUploaded={onAvatarUploaded}
-                onPendingFileChange={onPendingAvatarChange}
-              />
-            </BlockStack>
-          </Card>
-
-          <Card>
-            <BlockStack gap="300">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  Membership
-                </Text>
-                <Text as="p" tone="subdued">
-                  Anniversaries appear on the calendar every year from this date.
-                </Text>
-              </BlockStack>
+        <Section step={4} title="Billing & tax" description="Shown on quotations and invoices.">
+          <FormLayout>
+            <FormLayout.Group>
               <TextField
                 autoComplete="off"
                 disabled={disabled}
-                error={errors.memberSince}
-                helpText="Defaults to the date the contact was created."
-                label="Member since"
-                type="date"
-                value={values.memberSince}
-                onChange={(value) => update("memberSince", value)}
+                error={errors.taxId}
+                label="Tax ID / VAT number"
+                placeholder="TX-99201"
+                prefix={<FieldIcon source={IdentityCardIcon} />}
+                value={values.taxId}
+                onChange={(value) => update("taxId", value)}
               />
-            </BlockStack>
-          </Card>
+              <TextField
+                autoComplete="off"
+                disabled={disabled}
+                error={errors.reference}
+                label="Internal reference"
+                placeholder="REF-2026-C01"
+                prefix={<FieldIcon source={HashtagIcon} />}
+                value={values.reference}
+                onChange={(value) => update("reference", value)}
+              />
+            </FormLayout.Group>
+            <div className="cform-toggle">
+              <Checkbox
+                checked={values.isLocal}
+                disabled={disabled}
+                label="Local customer"
+                helpText="Uses your local price rule instead of the non-local one when pricing adjustments are turned on."
+                onChange={(checked) => update("isLocal", checked)}
+              />
+            </div>
+          </FormLayout>
+        </Section>
+      </div>
 
-          <Card>
-            <BlockStack gap="300">
-              <Text as="h2" variant="headingMd">
-                Account Summary
-              </Text>
-              <InlineGrid columns={2} gap="300">
-                <Box>
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Type
-                  </Text>
-                  <Box paddingBlockStart="100">
-                    <Badge tone={values.accountType === "company" ? "info" : "success"}>
-                      {values.accountType === "company" ? "Company" : "Individual"}
-                    </Badge>
-                  </Box>
-                </Box>
-                <Box>
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Status
-                  </Text>
-                  <Box paddingBlockStart="100">
-                    <Badge tone="success">Active</Badge>
-                  </Box>
-                </Box>
-              </InlineGrid>
-            </BlockStack>
-          </Card>
-        </BlockStack>
-      </Layout.Section>
-    </Layout>
+      {/* Live preview */}
+      <aside className="cform-side">
+        <div className="cform-preview">
+          <div className="cform-preview__head">
+            <CustomerAvatarUpload
+              avatarPath={avatarPath}
+              customerId={customerId}
+              disabled={disabled}
+              name={values.name}
+              pendingFile={pendingAvatar}
+              onAvatarUploaded={onAvatarUploaded}
+              onPendingFileChange={onPendingAvatarChange}
+            />
+            <div className="cform-preview__identity">
+              <strong className={values.name.trim() ? undefined : "is-placeholder"}>
+                {values.name.trim() ? titleCase(values.name.trim()) : isCompany ? "Company name" : "Customer name"}
+              </strong>
+              <small>{values.jobTitle.trim() || (isCompany ? "Company account" : "Individual client")}</small>
+              <span className="cdir-type on-dark">{isCompany ? "Company" : "Individual"}</span>
+            </div>
+          </div>
+
+          <ul className="cform-preview__lines">
+            <li>
+              <Icon source={EmailIcon} />
+              <span className={values.email.trim() ? undefined : "is-placeholder"}>{values.email.trim() || "No email yet"}</span>
+            </li>
+            <li>
+              <Icon source={PhoneIcon} />
+              <span className={values.phone.trim() || values.mobile.trim() ? undefined : "is-placeholder"}>
+                {values.phone.trim() || values.mobile.trim() || "No phone yet"}
+              </span>
+            </li>
+            <li>
+              <Icon source={LocationIcon} />
+              <span className={previewLocation ? undefined : "is-placeholder"}>{previewLocation || "No location yet"}</span>
+            </li>
+          </ul>
+        </div>
+
+        <Card>
+          <BlockStack gap="300">
+            <div className="cform-progress-head">
+              <Text as="h2" variant="headingSm">Profile completeness</Text>
+              <Text as="span" variant="bodySm" fontWeight="semibold">{completeness}%</Text>
+            </div>
+            <ProgressBar progress={completeness} size="small" tone={completeness === 100 ? "success" : "primary"} />
+            <ul className="cform-checklist">
+              {checklist.map((item) => (
+                <li key={item.label} className={item.done ? "is-done" : undefined}>
+                  <span className="cform-checklist__dot" aria-hidden />
+                  {item.label}
+                </li>
+              ))}
+            </ul>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="200">
+            <Text as="h2" variant="headingSm">Customer since</Text>
+            <TextField
+              autoComplete="off"
+              disabled={disabled}
+              error={errors.memberSince}
+              label="Customer since"
+              labelHidden
+              type="date"
+              value={values.memberSince}
+              onChange={(value) => update("memberSince", value)}
+              helpText="Shown as an anniversary on the calendar each year. Defaults to today."
+            />
+          </BlockStack>
+        </Card>
+      </aside>
+    </div>
   );
 }

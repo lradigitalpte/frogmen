@@ -267,6 +267,8 @@ export function listStock(
     productId?: string;
     warehouseId?: string;
     search?: string;
+    status?: string;
+    sort?: string;
     page?: number;
     perPage?: number;
   } = {},

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createLead } from "@/lib/leads-api";
-import { listMembers, type OrganizationMember } from "@/lib/security-api";
+import { listMemberDirectory as listMembers, type OrganizationMember } from "@/lib/security-api";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import type { Lead, LeadPriority, LeadSource } from "@/types/lead";
 import {
@@ -44,7 +44,7 @@ export function CreateLeadModal({
   onLeadCreated,
 }: CreateLeadModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [members, setMembers] = useState<Array<Pick<OrganizationMember, "id" | "name" | "email">>>([]);
   const { currencyPrefix } = useOrgCurrency();
 
   const [name, setName] = useState("");
@@ -55,7 +55,9 @@ export function CreateLeadModal({
   const [leadSource, setLeadSource] = useState<LeadSource>("website");
   const [sourceDetails, setSourceDetails] = useState("");
   const [priority, setPriority] = useState<LeadPriority>("warm");
-  const [estimatedValue, setEstimatedValue] = useState("25000");
+  const [estimatedValue, setEstimatedValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [assignedToName, setAssignedToName] = useState("none");
   const [notes, setNotes] = useState("");
   const [contacted, setContacted] = useState(false);
@@ -74,14 +76,18 @@ export function CreateLeadModal({
 
   if (!open || !mounted) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim() || !company.trim()) {
+    if (!name.trim() || !company.trim() || saving) {
       return;
     }
 
-    const newLead = createLead({
+    setSaving(true);
+    setSaveError(null);
+    let newLead: Lead;
+    try {
+      newLead = await createLead({
       name: name.trim(),
       company: company.trim(),
       email: email.trim(),
@@ -94,8 +100,15 @@ export function CreateLeadModal({
       assignedToName: assignedToName === "none" ? undefined : assignedToName.trim(),
       notes: notes.trim() || undefined,
       contacted,
-    });
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save the lead");
+      setSaving(false);
+      return;
+    }
 
+    setSaving(false);
+    setEstimatedValue("");
     onLeadCreated(newLead);
     onOpenChange(false);
 
@@ -376,16 +389,20 @@ export function CreateLeadModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-muted/20 shrink-0">
+            {saveError ? (
+              <p className="mr-auto text-xs font-medium text-destructive">{saveError}</p>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               size="sm"
+              disabled={saving}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm">
-              <UserPlus className="h-4 w-4 mr-1.5" /> Create Lead Record
+            <Button type="submit" size="sm" disabled={saving || !name.trim() || !company.trim()}>
+              <UserPlus className="h-4 w-4 mr-1.5" /> {saving ? "Saving…" : "Create lead"}
             </Button>
           </div>
         </form>

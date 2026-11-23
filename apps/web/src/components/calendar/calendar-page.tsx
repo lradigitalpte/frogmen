@@ -8,20 +8,21 @@ import {
   Button,
   ButtonGroup,
   Card,
-  Checkbox,
-  Divider,
   InlineStack,
-  Layout,
   Modal,
   SkeletonBodyText,
-  Tabs,
   Text,
 } from "@shopify/polaris";
-import { ChevronLeftIcon, ChevronRightIcon } from "@shopify/polaris-icons";
+import {
+  CalendarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  GlobeIcon,
+  PlusIcon,
+} from "@shopify/polaris-icons";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
-import { formatAppDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 import {
   CALENDAR_SOURCE_LABELS,
@@ -51,12 +52,10 @@ const SOURCE_ORDER: CalendarSource[] = [
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FILTER_STORAGE_KEY = "frog1.calendar.sources";
+const VIEW_STORAGE_KEY = "frog1.calendar.view";
 const MAX_CHIPS_PER_DAY = 3;
 
-const VIEW_TABS = [
-  { id: "month", content: "Month" },
-  { id: "agenda", content: "Agenda" },
-];
+type CalendarView = "month" | "agenda";
 
 function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -125,9 +124,46 @@ function formatLongDate(isoDate: string) {
   });
 }
 
+function relativeDay(isoDate: string, today: string) {
+  const diff = Math.round(
+    (parseIsoDate(isoDate).getTime() - parseIsoDate(today).getTime()) / 86_400_000,
+  );
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  if (diff > 1 && diff < 7) {
+    return parseIsoDate(isoDate).toLocaleDateString(undefined, { weekday: "long" });
+  }
+  return parseIsoDate(isoDate).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function timeLabel(item: CalendarItem) {
   if (!item.startTime) return null;
   return item.endTime ? `${item.startTime}–${item.endTime}` : item.startTime;
+}
+
+function groupByDate(items: CalendarItem[]) {
+  const groups = new Map<string, CalendarItem[]>();
+  for (const item of items) {
+    const list = groups.get(item.date) ?? [];
+    list.push(item);
+    groups.set(item.date, list);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+/** Small "date tile" used in lists: weekday over day number. */
+function DateTile({ iso, today }: { iso: string; today: string }) {
+  const date = parseIsoDate(iso);
+  return (
+    <span className={cn("cal-tile", iso === today && "is-today", iso < today && "is-past")}>
+      <small>{date.toLocaleDateString(undefined, { weekday: "short" })}</small>
+      <strong>{date.getDate()}</strong>
+    </span>
+  );
 }
 
 function CalendarChip({
@@ -164,45 +200,43 @@ function CalendarChip({
 function CalendarItemRow({
   item,
   onSelect,
-  showDate,
+  meta,
 }: {
   item: CalendarItem;
   onSelect: (item: CalendarItem) => void;
-  showDate?: boolean;
+  meta?: string | null;
 }) {
   const badge = calendarStatusBadge(item.status);
   const time = timeLabel(item);
+  const showBadge = badge && item.status !== "upcoming" && item.status !== "today";
 
   return (
-    <button className="calendar-row" type="button" onClick={() => onSelect(item)}>
-      <span className={cn("calendar-dot", `calendar-dot--${item.source}`)} />
-      <span className="calendar-row__body">
-        <Text as="span" fontWeight="semibold" variant="bodyMd">
-          {item.title}
-        </Text>
-        <Text as="span" tone="subdued" variant="bodySm">
-          {[
-            showDate ? formatAppDate(item.date) : null,
-            time,
-            item.subtitle,
-          ]
+    <button
+      className={cn("cal-item", `calendar-dot--${item.source}`)}
+      type="button"
+      onClick={() => onSelect(item)}
+    >
+      <span className="cal-item__bar" />
+      <span className="cal-item__body">
+        <span className="cal-item__title">{item.title}</span>
+        <span className="cal-item__meta">
+          {[meta, time, CALENDAR_SOURCE_LABELS[item.source], item.subtitle]
             .filter(Boolean)
             .join(" · ")}
-        </Text>
+        </span>
       </span>
-      {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+      {showBadge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
     </button>
   );
 }
 
 export function CalendarPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const today = toIsoDate(new Date());
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
-  const [viewIndex, setViewIndex] = useState(0);
-  const [sources, setSources] = useState<Set<CalendarSource>>(
-    () => new Set(SOURCE_ORDER),
-  );
+  const [view, setView] = useState<CalendarView>("month");
+  const [sources, setSources] = useState<Set<CalendarSource>>(() => new Set(SOURCE_ORDER));
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [upcoming, setUpcoming] = useState<CalendarItem[]>([]);
   const [overdue, setOverdue] = useState<CalendarItem[]>([]);
@@ -211,7 +245,7 @@ export function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState(today);
   const [eventModal, setEventModal] = useState<{
     open: boolean;
     eventId: string | null;
@@ -219,35 +253,33 @@ export function CalendarPage() {
   }>({ open: false, eventId: null, date: today });
 
   useEffect(() => {
+    setMounted(true);
     setSources(loadStoredSources());
+    try {
+      const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      if (stored === "month" || stored === "agenda") setView(stored);
+    } catch {
+      // Ignore storage failures.
+    }
   }, []);
 
   const grid = useMemo(() => monthGrid(month), [month]);
   const rangeFrom = toIsoDate(grid[0]);
   const rangeTo = toIsoDate(grid[grid.length - 1]);
-  const sourceList = useMemo(
-    () => SOURCE_ORDER.filter((source) => sources.has(source)),
-    [sources],
-  );
 
+  // Load every source once; the "Show on calendar" toggles filter locally so
+  // switching them is instant and each one can show its count.
   const loadMonth = useCallback(async () => {
-    if (!sourceList.length) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      setItems(
-        await listCalendarItems({ from: rangeFrom, to: rangeTo, sources: sourceList }),
-      );
+      setItems(await listCalendarItems({ from: rangeFrom, to: rangeTo }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load calendar");
     } finally {
       setLoading(false);
     }
-  }, [rangeFrom, rangeTo, sourceList]);
+  }, [rangeFrom, rangeTo]);
 
   const loadSidebar = useCallback(async () => {
     try {
@@ -257,7 +289,9 @@ export function CalendarPage() {
         getCalendarSettings(),
       ]);
       setUpcoming(
-        nextItems.filter((item) => item.status !== "done" && item.status !== "paid"),
+        nextItems
+          .filter((item) => item.status !== "done" && item.status !== "paid")
+          .sort((a, b) => a.date.localeCompare(b.date)),
       );
       setOverdue(overdueItems);
       setTrackedCountries(settings.trackedCountries);
@@ -281,8 +315,27 @@ export function CalendarPage() {
       .catch(() => undefined);
   }, [loadSidebar]);
 
-  const byDay = useMemo(() => itemsByDay(items), [items]);
   const monthKey = toIsoDate(month).slice(0, 7);
+  const visibleItems = useMemo(
+    () => items.filter((item) => sources.has(item.source)),
+    [items, sources],
+  );
+  const byDay = useMemo(() => itemsByDay(visibleItems), [visibleItems]);
+  const visibleUpcoming = useMemo(
+    () => upcoming.filter((item) => sources.has(item.source)),
+    [upcoming, sources],
+  );
+
+  const monthItems = useMemo(
+    () => items.filter((item) => item.date.startsWith(monthKey)),
+    [items, monthKey],
+  );
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<CalendarSource, number>();
+    for (const item of monthItems) counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+    return counts;
+  }, [monthItems]);
+
   const agendaDays = useMemo(
     () =>
       [...byDay.entries()]
@@ -291,19 +344,45 @@ export function CalendarPage() {
     [byDay, monthKey],
   );
 
-  function toggleSource(source: CalendarSource, checked: boolean) {
-    setSources((current) => {
-      const next = new Set(current);
-      if (checked) next.add(source);
-      else next.delete(source);
-      storeSources(next);
-      return next;
-    });
+  const weekEnd = toIsoDate(addDays(new Date(), 7));
+  const stats = {
+    month: monthItems.filter((item) => sources.has(item.source)).length,
+    week: visibleUpcoming.filter((item) => item.date <= weekEnd).length,
+    overdue: overdue.length,
+    holidays: monthItems.filter((item) => item.source === "holiday").length,
+  };
+  const nextUp = visibleUpcoming[0] ?? null;
+
+  function changeMonth(next: Date) {
+    const start = startOfMonth(next);
+    setMonth(start);
+    const key = toIsoDate(start).slice(0, 7);
+    setSelectedDay(today.startsWith(key) ? today : toIsoDate(start));
+  }
+
+  function changeView(next: CalendarView) {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
+  function updateSources(next: Set<CalendarSource>) {
+    storeSources(next);
+    setSources(next);
+  }
+
+  function toggleSource(source: CalendarSource) {
+    const next = new Set(sources);
+    if (next.has(source)) next.delete(source);
+    else next.add(source);
+    updateSources(next);
   }
 
   function handleSelect(item: CalendarItem) {
     if (item.source === "event" && item.eventId) {
-      setSelectedDay(null);
       setEventModal({ open: true, eventId: item.eventId, date: item.date });
       return;
     }
@@ -311,7 +390,6 @@ export function CalendarPage() {
   }
 
   function openNewEvent(date: string) {
-    setSelectedDay(null);
     setEventModal({ open: true, eventId: null, date });
   }
 
@@ -321,16 +399,16 @@ export function CalendarPage() {
     void loadSidebar();
   }
 
-  const monthTitle = month.toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+  const monthTitle = mounted
+    ? month.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    : "";
   const selectedBadge = selectedItem ? calendarStatusBadge(selectedItem.status) : null;
-  const dayItems = selectedDay ? byDay.get(selectedDay) ?? [] : [];
+  const dayItems = byDay.get(selectedDay) ?? [];
+  const todayDate = parseIsoDate(today);
 
   return (
     <AppPage
-      primaryAction={{ content: "New event", onAction: () => openNewEvent(today) }}
+      primaryAction={{ content: "New event", icon: PlusIcon, onAction: () => openNewEvent(selectedDay) }}
       secondaryActions={[
         {
           content: "Calendar settings",
@@ -340,184 +418,313 @@ export function CalendarPage() {
       subtitle="Holidays, deliveries, due dates, anniversaries and your team's events in one place."
       title="Calendar"
     >
-      <Layout>
-        <Layout.Section>
-          <BlockStack gap="400">
-            {error ? (
-              <Banner tone="critical" onDismiss={() => setError(null)}>
-                {error}
-              </Banner>
-            ) : null}
+      <BlockStack gap="400">
+        {error ? (
+          <Banner tone="critical" onDismiss={() => setError(null)}>
+            {error}
+          </Banner>
+        ) : null}
 
-            <Card padding="0">
-              <Box padding="400">
-                <InlineStack align="space-between" blockAlign="center" gap="300">
-                  <InlineStack blockAlign="center" gap="300">
-                    <ButtonGroup variant="segmented">
-                      <Button
-                        accessibilityLabel="Previous month"
-                        icon={ChevronLeftIcon}
-                        onClick={() =>
-                          setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
-                        }
-                      />
-                      <Button onClick={() => setMonth(startOfMonth(new Date()))}>Today</Button>
-                      <Button
-                        accessibilityLabel="Next month"
-                        icon={ChevronRightIcon}
-                        onClick={() =>
-                          setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
-                        }
-                      />
-                    </ButtonGroup>
-                    <Text as="h2" variant="headingLg">
-                      {monthTitle}
-                    </Text>
-                  </InlineStack>
-                  <Tabs selected={viewIndex} tabs={VIEW_TABS} onSelect={setViewIndex} />
-                </InlineStack>
-              </Box>
-              <Divider />
+        {/* Hero: today + the month at a glance */}
+        <section className="cal-hero">
+          <div className="cal-hero__today">
+            <span className="cal-hero__badge">
+              <small>{mounted ? todayDate.toLocaleDateString(undefined, { month: "short" }) : ""}</small>
+              <strong>{todayDate.getDate()}</strong>
+            </span>
+            <div>
+              <span className="cal-hero__label">Today</span>
+              <span className="cal-hero__date">
+                {mounted ? todayDate.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }) : ""}
+              </span>
+              <span className="cal-hero__next">
+                {nextUp
+                  ? `Next up: ${nextUp.title} · ${mounted ? relativeDay(nextUp.date, today) : ""}`
+                  : "Nothing scheduled in the next two weeks."}
+              </span>
+            </div>
+          </div>
+          <div className="cal-hero__stats">
+            <button type="button" onClick={() => changeView("agenda")}>
+              <span>{monthTitle ? `In ${monthTitle.split(" ")[0]}` : "This month"}</span>
+              <strong>{stats.month}</strong>
+              <small>items on the calendar</small>
+            </button>
+            <div>
+              <span>Next 7 days</span>
+              <strong>{stats.week}</strong>
+              <small>coming up</small>
+            </div>
+            <button
+              type="button"
+              className={stats.overdue ? "is-alert" : undefined}
+              onClick={() => document.getElementById("cal-overdue")?.scrollIntoView({ behavior: "smooth" })}
+              disabled={!stats.overdue}
+            >
+              <span>Overdue deliveries</span>
+              <strong>{stats.overdue}</strong>
+              <small>{stats.overdue ? "need chasing" : "all on time"}</small>
+            </button>
+            <div>
+              <span>Public holidays</span>
+              <strong>{stats.holidays}</strong>
+              <small>{trackedCountries.length ? `${trackedCountries.length} countries tracked` : "no countries tracked"}</small>
+            </div>
+          </div>
+        </section>
 
-              {viewIndex === 0 ? (
-                <div className={cn("calendar-month", loading && "calendar-month--loading")}>
-                  {WEEKDAYS.map((day) => (
-                    <div className="calendar-month__weekday" key={day}>
-                      {day}
-                    </div>
-                  ))}
-                  {grid.map((day) => {
-                    const iso = toIsoDate(day);
-                    const dayList = byDay.get(iso) ?? [];
-                    const hidden = dayList.length - MAX_CHIPS_PER_DAY;
-                    const hasHoliday = dayList.some((item) => item.source === "holiday");
-                    return (
-                      <div
-                        className={cn(
-                          "calendar-month__day",
-                          day.getMonth() !== month.getMonth() && "calendar-month__day--outside",
-                          iso === today && "calendar-month__day--today",
-                          hasHoliday && "calendar-month__day--holiday",
-                        )}
-                        key={iso}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openNewEvent(iso)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") openNewEvent(iso);
-                        }}
-                      >
+        <div className="cal-layout">
+          {/* Main calendar */}
+          <Card padding="0">
+            <div className="cal-toolbar">
+              <div className="cal-toolbar__nav">
+                <ButtonGroup variant="segmented">
+                  <Button
+                    accessibilityLabel="Previous month"
+                    icon={ChevronLeftIcon}
+                    onClick={() => changeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                  />
+                  <Button onClick={() => changeMonth(new Date())}>Today</Button>
+                  <Button
+                    accessibilityLabel="Next month"
+                    icon={ChevronRightIcon}
+                    onClick={() => changeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                  />
+                </ButtonGroup>
+                <h2 className="cal-toolbar__title">{monthTitle}</h2>
+              </div>
+              <ButtonGroup variant="segmented">
+                <Button pressed={view === "month"} onClick={() => changeView("month")}>
+                  Month
+                </Button>
+                <Button pressed={view === "agenda"} onClick={() => changeView("agenda")}>
+                  Agenda
+                </Button>
+              </ButtonGroup>
+            </div>
+
+            {view === "month" ? (
+              <div className={cn("calendar-month", loading && "calendar-month--loading")}>
+                {WEEKDAYS.map((day, index) => (
+                  <div className={cn("calendar-month__weekday", index > 4 && "is-weekend")} key={day}>
+                    {day}
+                  </div>
+                ))}
+                {grid.map((day) => {
+                  const iso = toIsoDate(day);
+                  const dayList = byDay.get(iso) ?? [];
+                  const hidden = dayList.length - MAX_CHIPS_PER_DAY;
+                  const hasHoliday = dayList.some((item) => item.source === "holiday");
+                  const weekend = day.getDay() === 0 || day.getDay() === 6;
+                  return (
+                    <div
+                      aria-label={`${iso}, ${dayList.length} items`}
+                      aria-pressed={selectedDay === iso}
+                      className={cn(
+                        "calendar-month__day",
+                        day.getMonth() !== month.getMonth() && "calendar-month__day--outside",
+                        iso === today && "calendar-month__day--today",
+                        iso < today && "calendar-month__day--past",
+                        weekend && "calendar-month__day--weekend",
+                        hasHoliday && "calendar-month__day--holiday",
+                        selectedDay === iso && "calendar-month__day--selected",
+                      )}
+                      key={iso}
+                      role="button"
+                      tabIndex={0}
+                      title="Click to see the day · double-click to add an event"
+                      onClick={() => setSelectedDay(iso)}
+                      onDoubleClick={() => openNewEvent(iso)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedDay(iso);
+                        }
+                      }}
+                    >
+                      <div className="calendar-month__head">
                         <span className="calendar-month__date">{day.getDate()}</span>
-                        <div className="calendar-month__chips">
-                          {dayList.slice(0, MAX_CHIPS_PER_DAY).map((item) => (
-                            <CalendarChip item={item} key={`${iso}-${item.id}`} onSelect={handleSelect} />
-                          ))}
-                          {hidden > 0 ? (
-                            <button
-                              className="calendar-more"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setSelectedDay(iso);
-                              }}
-                            >
-                              +{hidden} more
-                            </button>
-                          ) : null}
-                        </div>
+                        <button
+                          aria-label={`Add event on ${iso}`}
+                          className="calendar-month__add"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openNewEvent(iso);
+                          }}
+                        >
+                          +
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Box padding="400">
-                  {loading ? (
+                      <div className="calendar-month__chips">
+                        {dayList.slice(0, MAX_CHIPS_PER_DAY).map((item) => (
+                          <CalendarChip item={item} key={`${iso}-${item.id}`} onSelect={handleSelect} />
+                        ))}
+                        {hidden > 0 ? (
+                          <span className="calendar-more">+{hidden} more</span>
+                        ) : null}
+                      </div>
+                      {dayList.length ? (
+                        <div className="calendar-month__dots" aria-hidden>
+                          {dayList.slice(0, 4).map((item) => (
+                            <span className={cn("calendar-dot", `calendar-dot--${item.source}`)} key={`d-${item.id}`} />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="cal-agenda">
+                {loading ? (
+                  <Box padding="400">
                     <SkeletonBodyText lines={8} />
-                  ) : agendaDays.length === 0 ? (
-                    <Text as="p" tone="subdued">
-                      Nothing scheduled in {monthTitle}.
-                    </Text>
-                  ) : (
-                    <BlockStack gap="400">
-                      {agendaDays.map(([date, list]) => (
-                        <BlockStack gap="200" key={date}>
-                          <InlineStack gap="200" blockAlign="center">
-                            <Text as="h3" variant="headingSm">
-                              {formatLongDate(date)}
-                            </Text>
-                            {date === today ? <Badge tone="attention">Today</Badge> : null}
-                          </InlineStack>
-                          <BlockStack gap="100">
-                            {list.map((item) => (
-                              <CalendarItemRow item={item} key={`${date}-${item.id}`} onSelect={handleSelect} />
-                            ))}
-                          </BlockStack>
-                        </BlockStack>
-                      ))}
-                    </BlockStack>
-                  )}
-                </Box>
-              )}
-            </Card>
-          </BlockStack>
-        </Layout.Section>
+                  </Box>
+                ) : agendaDays.length === 0 ? (
+                  <div className="cal-empty">
+                    <span className="cal-empty__icon">
+                      <CalendarIcon />
+                    </span>
+                    <strong>Nothing scheduled in {monthTitle}</strong>
+                    <p>Add a meeting, reminder or deadline, or turn on more sources on the right.</p>
+                    <Button icon={PlusIcon} onClick={() => openNewEvent(selectedDay)}>
+                      New event
+                    </Button>
+                  </div>
+                ) : (
+                  agendaDays.map(([date, list]) => (
+                    <div className={cn("cal-agenda__day", date < today && "is-past")} key={date}>
+                      <DateTile iso={date} today={today} />
+                      <div className="cal-agenda__items">
+                        {list.map((item) => (
+                          <CalendarItemRow item={item} key={`${date}-${item.id}`} onSelect={handleSelect} />
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
 
-        <Layout.Section variant="oneThird">
-          <BlockStack gap="400">
-            {overdue.length ? (
-              <Card>
-                <BlockStack gap="300">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text as="h2" variant="headingMd">
-                      Overdue deliveries
-                    </Text>
-                    <Badge tone="critical">{String(overdue.length)}</Badge>
-                  </InlineStack>
-                  <BlockStack gap="100">
-                    {overdue.slice(0, 6).map((item) => (
-                      <CalendarItemRow item={item} key={item.id} showDate onSelect={handleSelect} />
-                    ))}
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-            ) : null}
+            {/* Legend doubles as the source filter */}
+            <div className="cal-legend">
+              <div className="cal-legend__head">
+                <Text as="span" variant="bodySm" fontWeight="semibold">
+                  Show on calendar
+                </Text>
+                <InlineStack gap="200">
+                  <Button variant="plain" size="slim" onClick={() => updateSources(new Set(SOURCE_ORDER))}>
+                    All
+                  </Button>
+                  <Button variant="plain" size="slim" onClick={() => updateSources(new Set(["event"]))}>
+                    Only my events
+                  </Button>
+                </InlineStack>
+              </div>
+              <div className="cal-legend__chips">
+                {SOURCE_ORDER.map((source) => {
+                  const on = sources.has(source);
+                  const count = sourceCounts.get(source) ?? 0;
+                  return (
+                    <button
+                      aria-pressed={on}
+                      className={cn("cal-filter", `calendar-dot--${source}`, on && "is-on")}
+                      key={source}
+                      type="button"
+                      onClick={() => toggleSource(source)}
+                    >
+                      <span className="cal-filter__dot" />
+                      {CALENDAR_SOURCE_LABELS[source]}
+                      {count ? <span className="cal-filter__count">{count}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
 
+          {/* Side column */}
+          <div className="cal-side">
             <Card>
               <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">
-                  Coming up (next 14 days)
-                </Text>
-                {upcoming.length === 0 ? (
-                  <Text as="p" tone="subdued">
-                    Nothing coming up.
-                  </Text>
+                <div className="cal-day-head">
+                  {mounted ? <DateTile iso={selectedDay} today={today} /> : null}
+                  <div>
+                    <Text as="h2" variant="headingMd">
+                      {mounted ? relativeDay(selectedDay, today) : ""}
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      {mounted ? formatLongDate(selectedDay) : ""}
+                    </Text>
+                  </div>
+                  <Button icon={PlusIcon} size="slim" onClick={() => openNewEvent(selectedDay)}>
+                    Add
+                  </Button>
+                </div>
+                {dayItems.length === 0 ? (
+                  <div className="cal-day-empty">
+                    Nothing on this day. Double-click any day on the calendar to add an event.
+                  </div>
                 ) : (
-                  <BlockStack gap="100">
-                    {upcoming.slice(0, 10).map((item) => (
-                      <CalendarItemRow item={item} key={`up-${item.id}`} showDate onSelect={handleSelect} />
+                  <div className="cal-list">
+                    {dayItems.map((item) => (
+                      <CalendarItemRow item={item} key={`day-${item.id}`} onSelect={handleSelect} />
                     ))}
-                  </BlockStack>
+                  </div>
                 )}
               </BlockStack>
             </Card>
 
+            {overdue.length ? (
+              <div id="cal-overdue">
+                <Card>
+                  <BlockStack gap="300">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h2" variant="headingMd">
+                        Overdue deliveries
+                      </Text>
+                      <Badge tone="critical">{String(overdue.length)}</Badge>
+                    </InlineStack>
+                    <div className="cal-list">
+                      {overdue.slice(0, 6).map((item) => (
+                        <CalendarItemRow
+                          item={item}
+                          key={item.id}
+                          meta={mounted ? `Expected ${relativeDay(item.date, today)}` : null}
+                          onSelect={handleSelect}
+                        />
+                      ))}
+                    </div>
+                  </BlockStack>
+                </Card>
+              </div>
+            ) : null}
+
             <Card>
               <BlockStack gap="300">
-                <Text as="h2" variant="headingMd">
-                  Show on calendar
-                </Text>
-                <BlockStack gap="100">
-                  {SOURCE_ORDER.map((source) => (
-                    <InlineStack blockAlign="center" gap="200" key={source} wrap={false}>
-                      <span className={cn("calendar-dot", `calendar-dot--${source}`)} />
-                      <Checkbox
-                        checked={sources.has(source)}
-                        label={CALENDAR_SOURCE_LABELS[source]}
-                        onChange={(checked) => toggleSource(source, checked)}
-                      />
-                    </InlineStack>
-                  ))}
-                </BlockStack>
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    Coming up
+                  </Text>
+                  <Text as="span" variant="bodySm" tone="subdued">
+                    Next 14 days
+                  </Text>
+                </InlineStack>
+                {visibleUpcoming.length === 0 ? (
+                  <div className="cal-day-empty">You&apos;re all clear for the next two weeks.</div>
+                ) : (
+                  <div className="cal-upcoming">
+                    {groupByDate(visibleUpcoming.slice(0, 10)).map(([date, list]) => (
+                      <div className="cal-upcoming__group" key={date}>
+                        <span className="cal-upcoming__label">{mounted ? relativeDay(date, today) : ""}</span>
+                        {list.map((item) => (
+                          <CalendarItemRow item={item} key={`up-${item.id}`} onSelect={handleSelect} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </BlockStack>
             </Card>
 
@@ -527,14 +734,22 @@ export function CalendarPage() {
                   <Text as="h2" variant="headingMd">
                     Holiday countries
                   </Text>
-                  <Button variant="plain" onClick={() => router.push("/dashboard/calendar/settings")}>
-                    Manage
-                  </Button>
+                  {trackedCountries.length ? (
+                    <Button variant="plain" onClick={() => router.push("/dashboard/calendar/settings")}>
+                      Manage
+                    </Button>
+                  ) : null}
                 </InlineStack>
                 {trackedCountries.length === 0 ? (
-                  <Text as="p" tone="subdued">
-                    No countries tracked yet. Add countries to see their public holidays.
-                  </Text>
+                  <div className="cal-countries-empty">
+                    <span className="cal-empty__icon">
+                      <GlobeIcon />
+                    </span>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Track the countries you work in to see their public holidays on the calendar.
+                    </Text>
+                    <Button onClick={() => router.push("/dashboard/calendar/settings")}>Add countries</Button>
+                  </div>
                 ) : (
                   <InlineStack gap="200">
                     {trackedCountries.map((code) => (
@@ -544,9 +759,9 @@ export function CalendarPage() {
                 )}
               </BlockStack>
             </Card>
-          </BlockStack>
-        </Layout.Section>
-      </Layout>
+          </div>
+        </div>
+      </BlockStack>
 
       <Modal
         open={selectedItem !== null}
@@ -570,44 +785,18 @@ export function CalendarPage() {
                 <Text as="span" tone="subdued">
                   {CALENDAR_SOURCE_LABELS[selectedItem.source]}
                 </Text>
-                {selectedBadge ? (
-                  <Badge tone={selectedBadge.tone}>{selectedBadge.label}</Badge>
-                ) : null}
+                {selectedBadge ? <Badge tone={selectedBadge.tone}>{selectedBadge.label}</Badge> : null}
               </InlineStack>
               <Text as="p" variant="headingSm">
                 {formatLongDate(selectedItem.date)}
+                {selectedItem.endDate && selectedItem.endDate > selectedItem.date
+                  ? ` – ${formatLongDate(selectedItem.endDate)}`
+                  : ""}
               </Text>
               {selectedItem.subtitle ? <Text as="p">{selectedItem.subtitle}</Text> : null}
             </BlockStack>
           </Modal.Section>
         ) : null}
-      </Modal>
-
-      <Modal
-        open={selectedDay !== null}
-        primaryAction={
-          selectedDay
-            ? { content: "Add event", onAction: () => openNewEvent(selectedDay) }
-            : undefined
-        }
-        secondaryActions={[{ content: "Close", onAction: () => setSelectedDay(null) }]}
-        title={selectedDay ? formatLongDate(selectedDay) : ""}
-        onClose={() => setSelectedDay(null)}
-      >
-        <Modal.Section>
-          <BlockStack gap="100">
-            {dayItems.map((item) => (
-              <CalendarItemRow
-                item={item}
-                key={`day-${item.id}`}
-                onSelect={(next) => {
-                  setSelectedDay(null);
-                  handleSelect(next);
-                }}
-              />
-            ))}
-          </BlockStack>
-        </Modal.Section>
       </Modal>
 
       <CalendarEventModal

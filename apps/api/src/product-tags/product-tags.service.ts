@@ -85,8 +85,29 @@ export class ProductTagsService {
       );
     }
 
+    // How many live products carry each tag (tags are stored by name on products).
+    const countById = new Map<string, number>();
+    if (rows.length) {
+      const names = rows.map((row) => row.name.toLowerCase());
+      const result = await this.db.execute<{ name: string; total: number }>(sql`
+        select lower(t.tag) as name, count(distinct p.id)::int as total
+        from products p
+        cross join lateral jsonb_array_elements_text(p.tags) as t(tag)
+        where p.organization_id = ${organizationId}
+          and p.deleted_at is null
+          and lower(t.tag) in (${sql.join(names.map((n) => sql`${n}`), sql`, `)})
+        group by lower(t.tag)
+      `);
+      const byName = new Map(
+        (Array.isArray(result) ? result : (result as { rows: Array<{ name: string; total: number }> }).rows).map(
+          (row) => [row.name, Number(row.total)] as const,
+        ),
+      );
+      for (const row of rows) countById.set(row.id, byName.get(row.name.toLowerCase()) ?? 0);
+    }
+
     return {
-      data: rows,
+      data: rows.map((row) => ({ ...row, productCount: countById.get(row.id) ?? 0 })),
       meta: {
         page,
         perPage,
@@ -154,6 +175,18 @@ export class ProductTagsService {
       throw new BadRequestException("A tag with this name already exists");
     }
 
+    const [current] = await this.db
+      .select({ name: productTagCatalog.name })
+      .from(productTagCatalog)
+      .where(
+        and(
+          eq(productTagCatalog.id, id),
+          eq(productTagCatalog.organizationId, organizationId),
+          isNull(productTagCatalog.deletedAt),
+        ),
+      )
+      .limit(1);
+
     const [updated] = await this.db
       .update(productTagCatalog)
       .set({
@@ -171,6 +204,25 @@ export class ProductTagsService {
 
     if (!updated) {
       throw new NotFoundException("Tag not found");
+    }
+
+    // Products store tag names, so carry the rename over to them.
+    if (current && current.name !== name) {
+      await this.db.execute(sql`
+        update products p
+        set tags = (
+              select coalesce(
+                jsonb_agg(case when lower(e.tag) = lower(${current.name}) then to_jsonb(${name}::text) else to_jsonb(e.tag) end order by e.pos),
+                '[]'::jsonb
+              )
+              from jsonb_array_elements_text(p.tags) with ordinality as e(tag, pos)
+            ),
+            updated_at = now()
+        where p.organization_id = ${organizationId}
+          and exists (
+            select 1 from jsonb_array_elements_text(p.tags) as x(tag) where lower(x.tag) = lower(${current.name})
+          )
+      `);
     }
 
     return updated;
@@ -200,6 +252,21 @@ export class ProductTagsService {
     if (!tag) {
       throw new NotFoundException("Tag not found");
     }
+
+    // Take the deleted tag off every product that had it.
+    await this.db.execute(sql`
+      update products p
+      set tags = (
+            select coalesce(jsonb_agg(to_jsonb(e.tag) order by e.pos), '[]'::jsonb)
+            from jsonb_array_elements_text(p.tags) with ordinality as e(tag, pos)
+            where lower(e.tag) <> lower(${tag.name})
+          ),
+          updated_at = now()
+      where p.organization_id = ${organizationId}
+        and exists (
+          select 1 from jsonb_array_elements_text(p.tags) as x(tag) where lower(x.tag) = lower(${tag.name})
+        )
+    `);
 
     return tag;
   }

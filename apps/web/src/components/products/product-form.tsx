@@ -11,9 +11,7 @@ import {
   Card,
   Checkbox,
   FormLayout,
-  InlineGrid,
   InlineStack,
-  Layout,
   RadioButton,
   Text,
   TextField,
@@ -46,6 +44,7 @@ import { ProductTagPicker } from "./product-tag-picker";
 import { ProductCategoryPicker } from "./product-category-picker";
 import { WarrantyPolicyPicker } from "@/components/warranty/warranty-policy-picker";
 import { suggestProductReference } from "@/lib/products-api";
+import { cn } from "@/lib/utils";
 import {
   getCategoryBadgeTone,
   getProductBadgeTone,
@@ -87,7 +86,7 @@ const EQUIPMENT_ROLE_OPTIONS: Array<{
     value: "general",
     title: "General product",
     shortTitle: "General",
-    hint: "Sold by quantity   cables, consumables, everyday stock.",
+    hint: "Sold by quantity — cables, consumables, everyday stock.",
   },
   {
     value: "main_equipment",
@@ -175,11 +174,9 @@ export function formValuesToInput(
     costPrice: values.costPrice || "0",
     sellingPrice:
       values.usageType === "for_sale" ? values.sellingPrice || "0" : undefined,
-    priceCurrencyId: values.priceCurrencyId || undefined,
-    parentId:
-      values.equipmentRole === "component"
-        ? values.parentId || undefined
-        : undefined,
+    // null clears the value on update (undefined would leave the old one in place).
+    priceCurrencyId: values.priceCurrencyId || null,
+    parentId: values.equipmentRole === "main_equipment" ? null : values.parentId || null,
     equipmentRole: values.equipmentRole,
     usageType: values.usageType,
     isRovEquipment: values.isRovEquipment,
@@ -233,25 +230,30 @@ export function formValuesToInput(
 function FormSection({
   title,
   description,
+  aside,
   children,
 }: {
   title: string;
   description?: string;
+  aside?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <Card>
       <BlockStack gap="400">
-        <BlockStack gap="100">
-          <Text as="h2" variant="headingMd">
-            {title}
-          </Text>
-          {description ? (
-            <Text as="p" tone="subdued">
-              {description}
+        <InlineStack align="space-between" blockAlign="start" gap="300" wrap={false}>
+          <BlockStack gap="100">
+            <Text as="h2" variant="headingMd">
+              {title}
             </Text>
-          ) : null}
-        </BlockStack>
+            {description ? (
+              <Text as="p" tone="subdued" variant="bodySm">
+                {description}
+              </Text>
+            ) : null}
+          </BlockStack>
+          {aside}
+        </InlineStack>
         {children}
       </BlockStack>
     </Card>
@@ -306,6 +308,8 @@ interface ProductFormProps {
   warehouseOptions?: Array<{ label: string; value: string; description?: string }>;
   lockParent?: boolean;
   lockedParentLabel?: string;
+  /** When set, stock tracking can't be changed (the product already has stock). Shown as the reason. */
+  lockTrackingReason?: string;
   onImagesChange?: (images: string[]) => void;
   onPendingImagesChange?: (files: File[]) => void;
 }
@@ -321,6 +325,7 @@ export function ProductForm({
   warehouseOptions = [],
   lockParent = false,
   lockedParentLabel,
+  lockTrackingReason,
   onImagesChange,
   onPendingImagesChange,
 }: ProductFormProps) {
@@ -366,12 +371,13 @@ export function ProductForm({
       .catch(() => setCurrencies([]));
   }, []);
 
+  const defaultCurrency = useMemo(
+    () => currencyById(currencies, defaultPricingCurrencyId) ?? currencyById(currencies, catalogCurrencyId),
+    [catalogCurrencyId, currencies, defaultPricingCurrencyId],
+  );
   const selectedPriceCurrency = useMemo(
-    () =>
-      currencyById(currencies, values.priceCurrencyId) ??
-      currencyById(currencies, defaultPricingCurrencyId) ??
-      currencyById(currencies, catalogCurrencyId),
-    [catalogCurrencyId, currencies, defaultPricingCurrencyId, values.priceCurrencyId],
+    () => currencyById(currencies, values.priceCurrencyId) ?? defaultCurrency,
+    [currencies, defaultCurrency, values.priceCurrencyId],
   );
   const pricePrefix = currencyInputPrefix(selectedPriceCurrency);
 
@@ -384,23 +390,22 @@ export function ProductForm({
     });
   }, [parentOptions]);
 
-  const parentSelectOptions = useMemo(() => {
-    return dedupedParentOptions;
-  }, [dedupedParentOptions]);
-
-  const parentEmptyLabel =
-    values.equipmentRole === "component" ? "None" : "None (top-level)";
-  const parentEmptyDescription =
-    values.equipmentRole === "component" ? "Link later" : "Standalone product";
+  const parentEmptyLabel = values.equipmentRole === "component" ? "None" : "None (top-level)";
+  const parentEmptyDescription = values.equipmentRole === "component" ? "Link later" : "Standalone product";
 
   const currencyOptions = useMemo(
-    () =>
-      currencies.map((currency) => ({
+    () => [
+      {
+        value: "",
+        label: defaultCurrency ? `Default (${defaultCurrency.code})` : "Default currency",
+      },
+      ...currencies.map((currency) => ({
         value: currency.id,
         label: currency.code,
         description: currency.name,
       })),
-    [currencies],
+    ],
+    [currencies, defaultCurrency],
   );
 
   const showInitialStock =
@@ -416,18 +421,23 @@ export function ProductForm({
         usageType: values.usageType,
         isRovEquipment: values.isRovEquipment,
         equipmentRole: values.equipmentRole,
-        trackSerial:
-          values.type === "goods" && values.isStorable
-            ? values.trackSerial
-            : false,
+        trackSerial: values.type === "goods" && values.isStorable ? values.trackSerial : false,
       }),
     [values],
   );
 
-  function update<K extends keyof ProductFormValues>(
-    key: K,
-    value: ProductFormValues[K],
-  ) {
+  const forSale = values.usageType === "for_sale";
+  const cost = Number(values.costPrice);
+  const price = Number(values.sellingPrice);
+  const costError = values.costPrice !== "" && (!Number.isFinite(cost) || cost < 0) ? "Cost can't be negative." : undefined;
+  const priceError =
+    forSale && values.sellingPrice !== "" && (!Number.isFinite(price) || price < 0) ? "Price can't be negative." : undefined;
+  const margin = forSale && price > 0 && Number.isFinite(cost) ? ((price - cost) / price) * 100 : null;
+  const trackingLocked = Boolean(lockTrackingReason);
+  const formatPrice = (amount: number) =>
+    `${pricePrefix ?? ""}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  function update<K extends keyof ProductFormValues>(key: K, value: ProductFormValues[K]) {
     onChange({ ...values, [key]: value });
   }
 
@@ -440,425 +450,405 @@ export function ProductForm({
   }
 
   function setEquipmentRole(role: ProductEquipmentRole) {
-    const autoRov =
-      role === "main_equipment" || role === "component";
-
+    const rovRole = role === "main_equipment" || role === "component";
     onChange({
       ...values,
       equipmentRole: role,
       parentId: role === "component" ? values.parentId : "",
-      isRovEquipment: autoRov ? true : values.isRovEquipment,
-      trackSerial:
-        role === "main_equipment" || role === "component"
-          ? true
-          : role === "general"
-            ? false
-            : values.trackSerial,
-      isStorable:
-        role === "main_equipment" || role === "component"
-          ? true
-          : values.isStorable,
+      isRovEquipment: rovRole ? true : values.isRovEquipment,
+      // Don't flip stock tracking on a product that already has stock.
+      trackSerial: trackingLocked ? values.trackSerial : rovRole ? true : role === "general" ? false : values.trackSerial,
+      isStorable: rovRole ? true : values.isStorable,
     });
   }
 
   return (
-    <Layout>
-      <Layout.Section>
-        <BlockStack gap="400">
-          <FormSection title="General">
-            <FormLayout>
-              <TextField
-                autoComplete="off"
-                disabled={disabled}
-                label="Name"
-                requiredIndicator
-                value={values.name}
-                onChange={(value) => update("name", value)}
-              />
-              <TextField
-                autoComplete="off"
-                disabled={disabled}
-                label="Description"
-                multiline={3}
-                value={values.description}
-                onChange={(value) => update("description", value)}
-              />
-            </FormLayout>
-          </FormSection>
-
-          <FormSection
-            description="Product photos shown in lists and on the product page."
-            title="Images"
-          >
-            <ProductImagesUpload
+    <div className="pf">
+      <div className="pf-main">
+        <FormSection title="General">
+          <FormLayout>
+            <TextField
+              autoComplete="off"
               disabled={disabled}
-              images={images}
-              pendingFiles={pendingImages}
-              productId={productId}
-              onImagesChange={onImagesChange}
-              onPendingFilesChange={onPendingImagesChange}
+              label="Name"
+              requiredIndicator
+              value={values.name}
+              onChange={(value) => update("name", value)}
             />
-          </FormSection>
+            <TextField
+              autoComplete="off"
+              disabled={disabled}
+              helpText="Shown on quotations and invoices. Put each detail on its own line."
+              label="Description"
+              multiline={4}
+              value={values.description}
+              onChange={(value) => update("description", value)}
+            />
+          </FormLayout>
+        </FormSection>
 
-          {values.type === "goods" ? (
-            <FormSection title="Inventory">
-              <BlockStack gap="400">
-                <Checkbox
-                  checked={values.isStorable}
+        <FormSection
+          aside={
+            <div className="app-segmented-toggle">
+              <ButtonGroup variant="segmented">
+                <Button disabled={disabled} pressed={forSale} size="slim" onClick={() => setUsageType("for_sale")}>
+                  For sale
+                </Button>
+                <Button
                   disabled={disabled}
-                  helpText="Track stock levels for this product."
-                  label="Track inventory"
-                  onChange={(checked) =>
-                    onChange({
-                      ...values,
-                      isStorable: checked,
-                      trackSerial: checked ? values.trackSerial : false,
-                    })
-                  }
+                  pressed={!forSale}
+                  size="slim"
+                  onClick={() => setUsageType("operations")}
+                >
+                  Operations
+                </Button>
+              </ButtonGroup>
+            </div>
+          }
+          description={
+            forSale
+              ? "Shown on quotations and invoices."
+              : "Internal stock only — used in operations, not sold, so it has a cost but no price."
+          }
+          title="Pricing"
+        >
+          <FormLayout>
+            <FormLayout.Group condensed>
+              <AppSelect
+                disabled={disabled}
+                label="Currency"
+                options={currencyOptions}
+                value={values.priceCurrencyId}
+                onChange={(value) => update("priceCurrencyId", value)}
+              />
+              <TextField
+                autoComplete="off"
+                disabled={disabled}
+                error={costError}
+                label="Cost"
+                min={0}
+                prefix={pricePrefix}
+                type="number"
+                value={values.costPrice}
+                onChange={(value) => update("costPrice", value)}
+              />
+              {forSale ? (
+                <TextField
+                  autoComplete="off"
+                  disabled={disabled}
+                  error={priceError}
+                  label="Selling price"
+                  min={0}
+                  prefix={pricePrefix}
+                  requiredIndicator
+                  type="number"
+                  value={values.sellingPrice}
+                  onChange={(value) => update("sellingPrice", value)}
                 />
-
-                {values.isStorable ? (
-                  <BlockStack gap="300">
-                    <RadioButton
-                      checked={!values.trackSerial}
-                      disabled={
-                        disabled ||
-                        values.equipmentRole === "main_equipment" ||
-                        values.equipmentRole === "component"
-                      }
-                      helpText="Restock by quantity   no serial numbers."
-                      id="stock-by-quantity"
-                      label="By quantity"
-                      name="stock-tracking"
-                      onChange={() => update("trackSerial", false)}
-                    />
-                    <RadioButton
-                      checked={values.trackSerial}
-                      disabled={disabled}
-                      helpText="Each physical unit gets a unique serial."
-                      id="stock-by-serial"
-                      label="By serial number"
-                      name="stock-tracking"
-                      onChange={() => update("trackSerial", true)}
-                    />
-                  </BlockStack>
-                ) : null}
-
-                {showInitialStock ? (
-                  <BlockStack gap="300">
-                    <Text as="h3" variant="headingSm">
-                      Initial stock
-                    </Text>
-                    <AppSearchSelect
-                      disabled={disabled}
-                      label="Warehouse"
-                      options={warehouseOptions}
-                      placeholder="Search warehouses…"
-                      value={values.initialWarehouseId}
-                      onChange={(value) => update("initialWarehouseId", value)}
-                    />
-
-                    {values.trackSerial ? (
-                      <ProductSerialEntry
-                        disabled={disabled}
-                        serials={values.initialSerials}
-                        onChange={(serials) => update("initialSerials", serials)}
-                      />
-                    ) : (
-                      <TextField
-                        autoComplete="off"
-                        disabled={disabled}
-                        helpText="Optional starting quantity in this warehouse."
-                        label="Quantity on hand"
-                        type="number"
-                        value={values.initialQuantity}
-                        onChange={(value) => update("initialQuantity", value)}
-                      />
-                    )}
-                  </BlockStack>
-                ) : null}
-
-                <FormLayout.Group>
-                  <TextField
-                    autoComplete="off"
-                    disabled={disabled}
-                    label="Weight"
-                    suffix="kg"
-                    type="number"
-                    value={values.weight}
-                    onChange={(value) => update("weight", value)}
-                  />
-                  <TextField
-                    autoComplete="off"
-                    disabled={disabled}
-                    label="Volume"
-                    suffix="m³"
-                    type="number"
-                    value={values.volume}
-                    onChange={(value) => update("volume", value)}
-                  />
-                </FormLayout.Group>
-              </BlockStack>
-            </FormSection>
+              ) : null}
+            </FormLayout.Group>
+          </FormLayout>
+          {forSale ? (
+            <div className={cn("pf-margin", margin !== null && margin < 0 && "is-loss", margin === null && "is-empty")}>
+              {margin === null ? (
+                <span>Enter a selling price to see your margin.</span>
+              ) : (
+                <>
+                  <span>
+                    <small>Margin</small>
+                    <strong>{margin.toFixed(1)}%</strong>
+                  </span>
+                  <span>
+                    <small>{price - cost >= 0 ? "Profit per unit" : "Loss per unit"}</small>
+                    <strong>{formatPrice(Math.abs(price - cost))}</strong>
+                  </span>
+                  <span className="pf-margin__bar">
+                    <b style={{ width: `${Math.max(0, Math.min(100, margin))}%` }} />
+                  </span>
+                  {margin < 0 ? <em>Selling below cost.</em> : null}
+                </>
+              )}
+            </div>
           ) : null}
-        </BlockStack>
-      </Layout.Section>
+        </FormSection>
 
-      <Layout.Section variant="oneThird">
-        <div className="product-form-sidebar">
-          <BlockStack gap="400">
-            <Card>
-              <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Summary
-                </Text>
-                <InlineStack gap="200" wrap>
-                  {values.categoryName ? (
-                    <Badge tone={getCategoryBadgeTone()}>
-                      {values.categoryName}
-                    </Badge>
-                  ) : null}
-                  {classificationTags.map((tag) => (
-                    <Badge key={`class-${tag}`} tone={getProductBadgeTone(tag)}>
-                      {tag}
-                    </Badge>
-                  ))}
-                  {values.tags.map((tag) => (
-                    <Badge key={`custom-${tag}`}>{tag}</Badge>
-                  ))}
-                </InlineStack>
-                {isCreate &&
-                values.trackSerial &&
-                values.initialSerials.some((serial) => serial.trim()) ? (
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    {productSerialsAreValid(values.initialSerials)
-                      ? `${values.initialSerials.filter((s) => s.trim()).length} serial(s) ready on save.`
-                      : "Fix duplicate serial numbers before saving."}
-                  </Text>
-                ) : null}
-              </BlockStack>
-            </Card>
+        <FormSection description="Shown in lists and on the product page. The first photo is the main one." title="Photos">
+          <ProductImagesUpload
+            disabled={disabled}
+            images={images}
+            pendingFiles={pendingImages}
+            productId={productId}
+            onImagesChange={onImagesChange}
+            onPendingFilesChange={onPendingImagesChange}
+          />
+        </FormSection>
 
-            <FormSection title="Settings">
-              <BlockStack gap="300">
-                <ButtonGroup variant="segmented" fullWidth>
-                  <Button
-                    disabled={disabled}
-                    pressed={values.type === "goods"}
-                    onClick={() => update("type", "goods")}
-                  >
-                    Goods
-                  </Button>
-                  <Button
-                    disabled={disabled}
-                    pressed={values.type === "service"}
-                    onClick={() =>
-                      onChange({
-                        ...values,
-                        type: "service",
-                        isStorable: false,
-                        trackSerial: false,
-                        weight: "",
-                        volume: "",
-                      })
+        {values.type === "goods" ? (
+          <FormSection title="Inventory">
+            <BlockStack gap="400">
+              <Checkbox
+                checked={values.isStorable}
+                disabled={disabled || trackingLocked}
+                helpText="Track stock levels for this product."
+                label="Track inventory"
+                onChange={(checked) =>
+                  onChange({
+                    ...values,
+                    isStorable: checked,
+                    trackSerial: checked ? values.trackSerial : false,
+                  })
+                }
+              />
+
+              {values.isStorable ? (
+                <div className="pf-choices">
+                  <RadioButton
+                    checked={!values.trackSerial}
+                    disabled={
+                      disabled ||
+                      trackingLocked ||
+                      values.equipmentRole === "main_equipment" ||
+                      values.equipmentRole === "component"
                     }
-                  >
-                    Service
-                  </Button>
-                </ButtonGroup>
-
-                <FormLayout>
-                  <TextField
-                    autoComplete="off"
-                    disabled={disabled || isCreate}
-                    label="Reference"
-                    value={values.reference}
-                    onChange={(value) => update("reference", value)}
+                    helpText="Restock by quantity — no serial numbers."
+                    id="stock-by-quantity"
+                    label="By quantity"
+                    name="stock-tracking"
+                    onChange={() => update("trackSerial", false)}
                   />
-                  {values.type === "goods" ? (
+                  <RadioButton
+                    checked={values.trackSerial}
+                    disabled={disabled || trackingLocked}
+                    helpText="Each physical unit gets its own serial."
+                    id="stock-by-serial"
+                    label="By serial number"
+                    name="stock-tracking"
+                    onChange={() => update("trackSerial", true)}
+                  />
+                </div>
+              ) : null}
+
+              {lockTrackingReason ? (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  {lockTrackingReason}
+                </Text>
+              ) : null}
+
+              {showInitialStock ? (
+                <BlockStack gap="300">
+                  <Text as="h3" variant="headingSm">
+                    Initial stock
+                  </Text>
+                  <AppSearchSelect
+                    disabled={disabled}
+                    label="Warehouse"
+                    options={warehouseOptions}
+                    placeholder="Search warehouses…"
+                    value={values.initialWarehouseId}
+                    onChange={(value) => update("initialWarehouseId", value)}
+                  />
+
+                  {values.trackSerial ? (
+                    <ProductSerialEntry
+                      disabled={disabled}
+                      serials={values.initialSerials}
+                      onChange={(serials) => update("initialSerials", serials)}
+                    />
+                  ) : (
                     <TextField
                       autoComplete="off"
                       disabled={disabled}
-                      label="Barcode"
-                      value={values.barcode}
-                      onChange={(value) => update("barcode", value)}
+                      helpText="Optional starting quantity in this warehouse."
+                      label="Quantity on hand"
+                      min={0}
+                      type="number"
+                      value={values.initialQuantity}
+                      onChange={(value) => update("initialQuantity", value)}
                     />
-                  ) : null}
-                </FormLayout>
-              </BlockStack>
-            </FormSection>
-
-            <FormSection title="Purpose">
-              <BlockStack gap="200">
-                <div className="app-segmented-toggle">
-                  <ButtonGroup variant="segmented" fullWidth>
-                    <Button
-                      disabled={disabled}
-                      pressed={values.usageType === "for_sale"}
-                      size="slim"
-                      onClick={() => setUsageType("for_sale")}
-                    >
-                      For sale
-                    </Button>
-                    <Button
-                      disabled={disabled}
-                      pressed={values.usageType === "operations"}
-                      size="slim"
-                      onClick={() => setUsageType("operations")}
-                    >
-                      Operations
-                    </Button>
-                  </ButtonGroup>
-                </div>
-                <Text as="p" tone="subdued" variant="bodySm">
-                  {values.usageType === "for_sale"
-                    ? "On quotations and invoices."
-                    : "Internal stock only."}
-                </Text>
-              </BlockStack>
-            </FormSection>
-
-            <FormSection title="Classification">
-              <BlockStack gap="300">
-                <ProductCategoryPicker
-                  disabled={disabled}
-                  value={values.categoryId}
-                  onChange={(categoryId, categoryName) =>
-                    onChange({
-                      ...values,
-                      categoryId,
-                      categoryName: categoryName ?? "",
-                    })
-                  }
-                />
-                <WarrantyPolicyPicker
-                  helpText="Applied automatically when this product is invoiced, unless overridden on a quotation line."
-                  onChange={(defaultWarrantyPolicyId) =>
-                    onChange({ ...values, defaultWarrantyPolicyId })
-                  }
-                  value={values.defaultWarrantyPolicyId}
-                />
-                <ProductTagPicker
-                  disabled={disabled}
-                  selected={values.tags}
-                  onChange={(tags) => update("tags", tags)}
-                />
-              </BlockStack>
-            </FormSection>
-
-            {values.type === "goods" ? (
-              <FormSection title="Product structure">
-                <BlockStack gap="200">
-                  <Checkbox
-                    checked={values.isRovEquipment}
-                    disabled={disabled}
-                    helpText="ROV catalog, serial assembly, inspections."
-                    label="ROV equipment"
-                    onChange={(checked) =>
-                      onChange({
-                        ...values,
-                        isRovEquipment: checked,
-                        trackSerial:
-                          checked &&
-                          values.equipmentRole === "general" &&
-                          !values.trackSerial
-                            ? true
-                            : values.trackSerial,
-                      })
-                    }
-                  />
-
-                  <EquipmentRolePicker
-                    disabled={disabled}
-                    value={values.equipmentRole}
-                    onChange={setEquipmentRole}
-                  />
-
-                  {values.equipmentRole === "component" ||
-                  (values.equipmentRole === "general" &&
-                    dedupedParentOptions.length > 0) ? (
-                    lockParent && values.parentId && lockedParentLabel ? (
-                      <Box
-                        background="bg-surface-secondary"
-                        borderRadius="200"
-                        padding="300"
-                      >
-                        <BlockStack gap="100">
-                          <Text as="p" fontWeight="semibold" variant="bodySm">
-                            Parent product
-                          </Text>
-                          <Text as="p" variant="bodyMd">
-                            {lockedParentLabel}
-                          </Text>
-                        </BlockStack>
-                      </Box>
-                    ) : (
-                      <AppSearchSelect
-                        allowEmpty
-                        disabled={disabled || lockParent}
-                        emptyDescription={parentEmptyDescription}
-                        emptyLabel={parentEmptyLabel}
-                        helpText={
-                          values.equipmentRole === "component"
-                            ? "Optional   link later."
-                            : undefined
-                        }
-                        label={
-                          values.equipmentRole === "component"
-                            ? "Parent product"
-                            : "Parent (optional)"
-                        }
-                        options={parentSelectOptions}
-                        placeholder="Search parent…"
-                        value={values.parentId}
-                        onChange={(nextValue) => update("parentId", nextValue)}
-                      />
-                    )
-                  ) : null}
+                  )}
                 </BlockStack>
-              </FormSection>
-            ) : null}
+              ) : null}
 
-            <FormSection title="Pricing">
-              <FormLayout>
-                <AppSelect
+              <FormLayout.Group condensed>
+                <TextField
+                  autoComplete="off"
                   disabled={disabled}
-                  label="Price currency"
-                  options={currencyOptions}
-                  placeholder="Choose currency…"
-                  value={values.priceCurrencyId}
-                  onChange={(value) => update("priceCurrencyId", value)}
+                  label="Weight"
+                  min={0}
+                  suffix="kg"
+                  type="number"
+                  value={values.weight}
+                  onChange={(value) => update("weight", value)}
                 />
                 <TextField
                   autoComplete="off"
                   disabled={disabled}
-                  label="Cost"
-                  prefix={pricePrefix}
+                  label="Volume"
+                  min={0}
+                  suffix="m³"
                   type="number"
-                  value={values.costPrice}
-                  onChange={(value) => update("costPrice", value)}
+                  value={values.volume}
+                  onChange={(value) => update("volume", value)}
                 />
-                {values.usageType === "for_sale" ? (
-                  <TextField
-                    autoComplete="off"
-                    disabled={disabled}
-                    label="Selling price"
-                    prefix={pricePrefix}
-                    requiredIndicator
-                    type="number"
-                    value={values.sellingPrice}
-                    onChange={(value) => update("sellingPrice", value)}
-                  />
-                ) : (
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Operations   cost only.
-                  </Text>
-                )}
-              </FormLayout>
-            </FormSection>
+              </FormLayout.Group>
+            </BlockStack>
+          </FormSection>
+        ) : null}
+      </div>
+
+      <aside className="pf-side">
+        {/* Live preview */}
+        <section className="pf-preview">
+          <span className="pf-preview__label">Preview</span>
+          <strong className="pf-preview__name">{values.name.trim() || "Untitled product"}</strong>
+          <span className="pf-preview__ref">{values.reference ? `SKU ${values.reference}` : "No reference yet"}</span>
+          <span className="pf-preview__price">
+            {forSale ? (Number.isFinite(price) ? formatPrice(price) : "—") : "Not for sale"}
+            {forSale && margin !== null ? <small>{margin.toFixed(0)}% margin</small> : null}
+          </span>
+          <span className="pf-preview__tags">
+            {values.categoryName ? <Badge tone={getCategoryBadgeTone()}>{values.categoryName}</Badge> : null}
+            {classificationTags.map((tag) => (
+              <Badge key={`class-${tag}`} tone={getProductBadgeTone(tag)}>
+                {tag}
+              </Badge>
+            ))}
+            {values.tags.map((tag) => (
+              <Badge key={`custom-${tag}`}>{tag}</Badge>
+            ))}
+          </span>
+          {isCreate && values.trackSerial && values.initialSerials.some((serial) => serial.trim()) ? (
+            <span className={cn("pf-preview__note", !productSerialsAreValid(values.initialSerials) && "is-error")}>
+              {productSerialsAreValid(values.initialSerials)
+                ? `${values.initialSerials.filter((s) => s.trim()).length} serial(s) will be added on save.`
+                : "Fix duplicate serial numbers before saving."}
+            </span>
+          ) : null}
+        </section>
+
+        <FormSection title="Identity">
+          <BlockStack gap="300">
+            <ButtonGroup variant="segmented" fullWidth>
+              <Button disabled={disabled} pressed={values.type === "goods"} onClick={() => update("type", "goods")}>
+                Goods
+              </Button>
+              <Button
+                disabled={disabled || trackingLocked}
+                pressed={values.type === "service"}
+                onClick={() =>
+                  onChange({
+                    ...values,
+                    type: "service",
+                    isStorable: false,
+                    trackSerial: false,
+                    weight: "",
+                    volume: "",
+                  })
+                }
+              >
+                Service
+              </Button>
+            </ButtonGroup>
+
+            <FormLayout>
+              <TextField
+                autoComplete="off"
+                disabled={disabled || isCreate}
+                helpText={isCreate ? "Suggested from the name — you can change it after saving." : undefined}
+                label="Reference (SKU)"
+                value={values.reference}
+                onChange={(value) => update("reference", value)}
+              />
+              {values.type === "goods" ? (
+                <TextField
+                  autoComplete="off"
+                  disabled={disabled}
+                  label="Barcode"
+                  placeholder="Optional"
+                  value={values.barcode}
+                  onChange={(value) => update("barcode", value)}
+                />
+              ) : null}
+            </FormLayout>
           </BlockStack>
-        </div>
-      </Layout.Section>
-    </Layout>
+        </FormSection>
+
+        <FormSection title="Classification">
+          <BlockStack gap="300">
+            <ProductCategoryPicker
+              disabled={disabled}
+              value={values.categoryId}
+              onChange={(categoryId, categoryName) =>
+                onChange({
+                  ...values,
+                  categoryId,
+                  categoryName: categoryName ?? "",
+                })
+              }
+            />
+            <WarrantyPolicyPicker
+              helpText="Applied automatically when this product is invoiced, unless changed on a quotation line."
+              onChange={(defaultWarrantyPolicyId) => onChange({ ...values, defaultWarrantyPolicyId })}
+              value={values.defaultWarrantyPolicyId}
+            />
+            <ProductTagPicker disabled={disabled} selected={values.tags} onChange={(tags) => update("tags", tags)} />
+          </BlockStack>
+        </FormSection>
+
+        {values.type === "goods" ? (
+          <FormSection title="Product structure">
+            <BlockStack gap="300">
+              <Checkbox
+                checked={values.isRovEquipment}
+                disabled={disabled}
+                helpText="ROV catalog, serial assembly, inspections."
+                label="ROV equipment"
+                onChange={(checked) =>
+                  onChange({
+                    ...values,
+                    isRovEquipment: checked,
+                    trackSerial:
+                      !trackingLocked && checked && values.equipmentRole === "general" && !values.trackSerial
+                        ? true
+                        : values.trackSerial,
+                  })
+                }
+              />
+
+              <EquipmentRolePicker disabled={disabled} value={values.equipmentRole} onChange={setEquipmentRole} />
+
+              {values.equipmentRole === "component" ||
+              (values.equipmentRole === "general" && dedupedParentOptions.length > 0) ? (
+                lockParent && values.parentId && lockedParentLabel ? (
+                  <Box background="bg-surface-secondary" borderRadius="200" padding="300">
+                    <BlockStack gap="100">
+                      <Text as="p" fontWeight="semibold" variant="bodySm">
+                        Parent product
+                      </Text>
+                      <Text as="p" variant="bodyMd">
+                        {lockedParentLabel}
+                      </Text>
+                    </BlockStack>
+                  </Box>
+                ) : (
+                  <AppSearchSelect
+                    allowEmpty
+                    disabled={disabled || lockParent}
+                    emptyDescription={parentEmptyDescription}
+                    emptyLabel={parentEmptyLabel}
+                    helpText={values.equipmentRole === "component" ? "Optional — you can link it later." : undefined}
+                    label={values.equipmentRole === "component" ? "Parent product" : "Parent (optional)"}
+                    options={dedupedParentOptions}
+                    placeholder="Search parent…"
+                    value={values.parentId}
+                    onChange={(nextValue) => update("parentId", nextValue)}
+                  />
+                )
+              ) : null}
+            </BlockStack>
+          </FormSection>
+        ) : null}
+      </aside>
+    </div>
   );
 }

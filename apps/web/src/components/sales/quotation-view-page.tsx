@@ -4,37 +4,45 @@ import {
   Badge,
   Banner,
   BlockStack,
-  Box,
   Button,
   Card,
-  Divider,
+  DropZone,
   EmptyState,
-  Grid,
+  Icon,
   InlineStack,
   Link,
   Modal,
-  Tabs,
+  SkeletonBodyText,
   Text,
   TextField,
+  type IconSource,
 } from "@shopify/polaris";
-import { useRouter, useSearchParams } from "next/navigation";
 import {
-  billingQuotationTypeLabel,
-  groupSerializedLines,
-  sumDocumentAmounts,
-} from "@frog1/shared";
+  AttachmentIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  EditIcon,
+  LockIcon,
+  NoteIcon,
+  ReceiptIcon,
+  SendIcon,
+  XCircleIcon,
+} from "@shopify/polaris-icons";
+import { useRouter, useSearchParams } from "next/navigation";
+import { billingQuotationTypeLabel, groupSerializedLines, sumDocumentAmounts } from "@frog1/shared";
 import { useEffect, useMemo, useState } from "react";
 import { SendDocumentEmailModal } from "@/components/documents/send-document-email-modal";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { AppPage } from "@/components/layout/page";
 import { formatMoney } from "@/components/sales/format-money";
 import { LineItemDescription } from "@/components/sales/line-item-description";
+import { DealThreadPanel } from "@/components/sales/deal-thread-panel";
+import { useToast } from "@/components/providers/toast-provider";
 import { formatAppDate } from "@/lib/format-date";
 import { formatQuantity } from "@/lib/format-quantity";
 import { copyText } from "@/lib/clipboard";
 import { formatDiscountLabel, resolveDeliveryFee } from "@/lib/line-item-utils";
-import { listCurrencies } from "@/lib/currencies-api";
-import type { Currency } from "@/lib/currencies-api";
+import { listCurrencies, type Currency } from "@/lib/currencies-api";
 import {
   cancelQuotation,
   confirmQuotation,
@@ -48,32 +56,66 @@ import {
   type Quotation,
   type QuotationActivity,
 } from "@/lib/quotations-api";
-import { QuotationWorkflowPanel } from "@/components/sales/quotation-workflow-panel";
-import { QuotationCustomerApprovalCard } from "@/components/sales/quotation-customer-approval-card";
-import { DealThreadPanel } from "@/components/sales/deal-thread-panel";
-import { useToast } from "@/components/providers/toast-provider";
+import { cn } from "@/lib/utils";
 
 interface QuotationViewPageProps {
   quotationId: string;
 }
 
-function documentLabel(state: Quotation["state"]) {
-  return state === "confirmed" ? "Sales Order" : "Quotation";
+const STEPS = [
+  { key: "draft", label: "Draft", activity: ["created"] },
+  { key: "sent", label: "Sent", activity: ["sent"] },
+  { key: "signed", label: "Signed", activity: ["signed"] },
+  { key: "confirmed", label: "Order", activity: ["confirmed"] },
+  { key: "invoiced", label: "Invoiced", activity: ["invoiced"] },
+] as const;
+
+function stepIndex(q: Quotation) {
+  if (q.invoiceStatus === "invoiced") return 4;
+  if (q.state === "confirmed") return 3;
+  if (q.state === "signed") return 2;
+  if (q.state === "sent") return 1;
+  return 0;
 }
 
-function stateBadgeLabel(state: Quotation["state"]) {
-  switch (state) {
-    case "draft":
-      return "Draft Quotation";
-    case "sent":
-      return "Quotation Sent to Customer";
-    case "signed":
-      return "Digitally Signed";
-    case "confirmed":
-      return "Confirmed Sales Order";
-    case "cancelled":
-      return "Cancelled";
-  }
+const STATE_META: Record<Quotation["state"], { label: string; tone?: "success" | "info" | "attention" | "critical" }> = {
+  draft: { label: "Draft" },
+  sent: { label: "Sent", tone: "info" },
+  signed: { label: "Signed", tone: "attention" },
+  confirmed: { label: "Sales order", tone: "success" },
+  cancelled: { label: "Cancelled", tone: "critical" },
+};
+
+const ACTIVITY_ICON: Record<string, IconSource> = {
+  created: NoteIcon,
+  sent: SendIcon,
+  signed: EditIcon,
+  confirmed: CheckCircleIcon,
+  cancelled: XCircleIcon,
+  invoiced: ReceiptIcon,
+};
+
+function daysUntil(date: string | null) {
+  if (!date) return null;
+  const target = new Date(`${date.slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+function shortDateTime(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
 }
 
 export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
@@ -81,100 +123,33 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
   const { showSuccess, showError } = useToast();
   const searchParams = useSearchParams();
   const createdDraft = searchParams.get("created") === "draft";
+
   const [quotation, setQuotation] = useState<Quotation | null>(null);
   const [currency, setCurrency] = useState<Currency | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [copySigningLinkLoading, setCopySigningLinkLoading] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
 
-  // Tab State for Order Workspace
-  const [selectedTab, setSelectedTab] = useState(0);
-
-  // PDF Fullscreen Preview Modal State
-  const [pdfModalOpen, setPdfModalOpen] = useState(false);
-
-  // Email Send Modal State
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
-  const [emailSuccessBanner, setEmailSuccessBanner] = useState<string | null>(null);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
-  // Activity Log Email View Modal State
-  const [selectedActivity, setSelectedActivity] = useState<QuotationActivity | null>(null);
-
-  // Internal Notes State
-  const [internalNotesModalOpen, setInternalNotesModalOpen] = useState(false);
-  const [editingInternalNotes, setEditingInternalNotes] = useState("");
-  const [savingInternalNotes, setSavingInternalNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
   const [poUploading, setPoUploading] = useState(false);
-
-  async function handlePoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !quotation) return;
-    setPoUploading(true);
-    try {
-      const updated = await uploadCustomerPoDocument(quotation.id, file);
-      setQuotation(updated);
-      showSuccess(`Uploaded Customer PO document: ${file.name}`);
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to upload PO document");
-    } finally {
-      setPoUploading(false);
-    }
-  }
-
-  async function handleCopySigningLink() {
-    if (!quotation) return;
-    setCopySigningLinkLoading(true);
-    try {
-      const { url } = await getQuotationSigningUrl(quotation.id);
-      await copyText(url);
-      showSuccess("Customer signing link copied to clipboard");
-    } catch (err) {
-      showError(
-        err instanceof Error ? err.message : "Failed to copy signing link",
-      );
-    } finally {
-      setCopySigningLinkLoading(false);
-    }
-  }
-
-  async function handleSaveInternalNotes() {
-    if (!quotation) return;
-    setSavingInternalNotes(true);
-    try {
-      const updated = await updateQuotationInternalNotes(quotation.id, editingInternalNotes);
-      setQuotation(updated);
-      setInternalNotesModalOpen(false);
-      showSuccess("Internal team notes saved");
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to save internal notes");
-    } finally {
-      setSavingInternalNotes(false);
-    }
-  }
-
-  const orderWorkspaceTabs = [
-    { id: "lines", content: "Order Lines" },
-    { id: "other", content: "Other Information" },
-    { id: "terms", content: "Terms & Conditions" },
-  ];
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const quotationResult = await getQuotation(quotationId);
-        const [currencies] = await Promise.all([
-          listCurrencies(),
-        ]);
-
-        const resolvedCurrency =
-          currencies.find((item) => item.id === quotationResult.currencyId) ?? null;
-
-        setQuotation(quotationResult);
-        setCurrency(resolvedCurrency);
+        const [result, currencies] = await Promise.all([getQuotation(quotationId), listCurrencies()]);
+        setQuotation(result);
+        setCurrency(currencies.find((c) => c.id === result.currencyId) ?? null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load quotation");
       } finally {
@@ -184,98 +159,78 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
     void load();
   }, [quotationId]);
 
-  const lines = quotation?.lines ?? [];
+  const lines = useMemo(() => quotation?.lines ?? [], [quotation?.lines]);
   const displayLines = useMemo(() => groupSerializedLines(lines), [lines]);
   const currencyCode = currency?.code ?? "USD";
-  const decimalPlaces = currency?.decimalPlaces ?? 2;
+  const decimals = currency?.decimalPlaces ?? 2;
+  const money = (value: string | number) => formatMoney(value, currencyCode, decimals);
 
-  const lineNetSubtotal = useMemo(
-    () =>
-      lines.reduce((sum, line) => sum + Number(line.priceSubtotal ?? 0), 0),
-    [lines],
-  );
-  const lineGrossSubtotal = useMemo(
-    () => lines.reduce(
-      (sum, line) => sum + Number(line.quantity) * Number(line.unitPrice),
-      0,
-    ),
-    [lines],
-  );
-  const totalDiscount = Math.max(0, lineGrossSubtotal - lineNetSubtotal);
-  const totalDiscountPercent = lineGrossSubtotal > 0
-    ? Number(((totalDiscount / lineGrossSubtotal) * 100).toFixed(2))
-    : 0;
-
+  const lineNet = useMemo(() => lines.reduce((s, l) => s + Number(l.priceSubtotal ?? 0), 0), [lines]);
+  const lineGross = useMemo(() => lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0), [lines]);
+  const discount = Math.max(0, lineGross - lineNet);
+  const discountPct = lineGross > 0 ? Number(((discount / lineGross) * 100).toFixed(2)) : 0;
   const deliveryFee = useMemo(
-    () =>
-      resolveDeliveryFee(
-        lineNetSubtotal,
-        quotation?.deliveryFeeAmount,
-        quotation?.deliveryFeePercent,
-      ),
-    [lineNetSubtotal, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent],
+    () => resolveDeliveryFee(lineNet, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent),
+    [lineNet, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent],
   );
-
-  const documentTotals = useMemo(() => {
-    if (lines.length === 0) {
-      return null;
-    }
+  const totals = useMemo(() => {
+    if (!lines.length) return null;
     return sumDocumentAmounts(
-      lines.map((line) => ({
-        priceSubtotal: Number(line.priceSubtotal ?? 0),
-        priceTax: Number(line.priceTax ?? 0),
-        priceTotal: Number(line.priceTotal ?? 0),
+      lines.map((l) => ({
+        priceSubtotal: Number(l.priceSubtotal ?? 0),
+        priceTax: Number(l.priceTax ?? 0),
+        priceTotal: Number(l.priceTotal ?? 0),
       })),
       1,
       quotation?.deliveryFeeAmount,
       quotation?.deliveryFeePercent,
     );
   }, [lines, quotation?.deliveryFeeAmount, quotation?.deliveryFeePercent]);
+  const amountUntaxed = String(totals?.amountUntaxed ?? quotation?.amountUntaxed ?? 0);
+  const amountTax = String(totals?.amountTax ?? quotation?.amountTax ?? 0);
+  const amountTotal = String(totals?.amountTotal ?? quotation?.amountTotal ?? 0);
 
-  const amountUntaxed = String(
-    documentTotals?.amountUntaxed ?? quotation?.amountUntaxed ?? 0,
-  );
-  const amountTax = String(documentTotals?.amountTax ?? quotation?.amountTax ?? 0);
-  const amountTotal = String(
-    documentTotals?.amountTotal ?? quotation?.amountTotal ?? 0,
-  );
-
-  async function handleMarkSent() {
-    if (!quotation) return;
+  // ── Actions ─────────────────────────────────────────────────
+  async function run(action: () => Promise<Quotation>, success: string, failure: string) {
     setActionLoading(true);
     try {
-      const updated = await markQuotationSent(quotation.id);
-      setQuotation(updated);
+      setQuotation(await action());
+      showSuccess(success);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to mark quotation as sent");
+      const message = err instanceof Error ? err.message : failure;
+      setError(message);
+      showError(message);
     } finally {
       setActionLoading(false);
     }
   }
 
-  async function handleConfirm() {
+  async function handleCopySigningLink() {
     if (!quotation) return;
-    setActionLoading(true);
+    setCopyLoading(true);
     try {
-      const updated = await confirmQuotation(quotation.id);
-      setQuotation(updated);
+      const { url } = await getQuotationSigningUrl(quotation.id);
+      await copyText(url);
+      showSuccess("Signing link copied — paste it into any message to the customer.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to confirm sales order");
+      showError(err instanceof Error ? err.message : "Failed to copy signing link");
     } finally {
-      setActionLoading(false);
+      setCopyLoading(false);
     }
   }
 
-  async function handleCancel() {
+  async function handleSendEmail(input: { recipientEmail: string; subject: string; body: string }) {
     if (!quotation) return;
-    setActionLoading(true);
+    setEmailSending(true);
     try {
-      const updated = await cancelQuotation(quotation.id);
-      setQuotation(updated);
+      await sendQuotationEmail(quotation.id, input.recipientEmail, input.subject, input.body);
+      setNotice(`Sent to ${input.recipientEmail}. The quotation is now marked as sent.`);
+      setEmailOpen(false);
+      setQuotation(await getQuotation(quotation.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cancel quotation");
+      setError(err instanceof Error ? err.message : "Failed to send email");
     } finally {
-      setActionLoading(false);
+      setEmailSending(false);
     }
   }
 
@@ -294,727 +249,635 @@ export function QuotationViewPage({ quotationId }: QuotationViewPageProps) {
     }
   }
 
-  async function handleSendEmail(input: {
-    recipientEmail: string;
-    subject: string;
-    body: string;
-  }) {
+  async function saveNotes() {
     if (!quotation) return;
-    setEmailSending(true);
+    setNotesSaving(true);
     try {
-      await sendQuotationEmail(
-        quotation.id,
-        input.recipientEmail,
-        input.subject,
-        input.body,
-      );
-      setEmailSuccessBanner(
-        `Sales Quotation PDF email successfully sent to ${input.recipientEmail}. Status updated to Quotation Sent.`,
-      );
-      setEmailModalOpen(false);
-      const updated = await getQuotation(quotation.id);
-      setQuotation(updated);
+      setQuotation(await updateQuotationInternalNotes(quotation.id, notesDraft));
+      setNotesEditing(false);
+      showSuccess("Team notes saved");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send email");
+      showError(err instanceof Error ? err.message : "Failed to save notes");
     } finally {
-      setEmailSending(false);
+      setNotesSaving(false);
     }
   }
 
-  function handleCreateInvoice() {
-    router.push(`/dashboard/invoices/new?quotationId=${quotation?.id}`);
+  async function uploadPo(files: File[]) {
+    const file = files[0];
+    if (!file || !quotation) return;
+    setPoUploading(true);
+    try {
+      setQuotation(await uploadCustomerPoDocument(quotation.id, file));
+      showSuccess(`Attached ${file.name}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to upload PO document");
+    } finally {
+      setPoUploading(false);
+    }
   }
 
   if (loading) {
     return (
-      <AppPage title="Sales Order Workspace">
-        <Text as="p">Loading sales order workspace...</Text>
+      <AppPage backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }} title="Quotation">
+        <Card>
+          <SkeletonBodyText lines={10} />
+        </Card>
       </AppPage>
     );
   }
 
   if (!quotation) {
     return (
-      <AppPage title="Sales Order Workspace">
+      <AppPage backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }} title="Quotation">
         <Banner tone="critical">{error || "Quotation not found"}</Banner>
       </AppPage>
     );
   }
 
-  const isConfirmed = quotation.state === "confirmed";
-  const isSent = quotation.state === "sent";
-  const isCancelled = quotation.state === "cancelled";
-  const isDraft = quotation.state === "draft";
-  const isSigned = quotation.state === "signed";
-  const canShareSigningLink =
-    quotation.state !== "cancelled" && quotation.state !== "confirmed";
-  const docLabel = documentLabel(quotation.state);
-  const canEdit = quotation.state === "draft" || quotation.state === "sent";
+  const q = quotation;
+  const state = q.state;
+  const isCancelled = state === "cancelled";
+  const isConfirmed = state === "confirmed";
+  const canEdit = state === "draft" || state === "sent";
+  const canShareLink = !isCancelled && !isConfirmed;
+  const current = stepIndex(q);
+  const docLabel = isConfirmed ? "Sales order" : "Quotation";
+  const name = q.customerName ?? "Customer";
+  const validDays = state === "draft" || state === "sent" ? daysUntil(q.validityDate) : null;
+  const activities = [...(q.activities ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const primaryAction = isCancelled
-    ? undefined
-    : isConfirmed
-      ? {
-          content: "Create Invoice",
-          onAction: handleCreateInvoice,
-        }
-      : isSent || isSigned
-        ? {
-            content: "Confirm Sales Order",
-            loading: actionLoading,
-            onAction: () => void handleConfirm(),
-          }
-        : {
-            content: "Send to Customer",
-            onAction: () => setEmailModalOpen(true),
-          };
+  const stepDate = (keys: readonly string[]) => {
+    const match = (q.activities ?? []).find((a) => keys.includes(a.activityType));
+    return match ? shortDateTime(match.createdAt) : null;
+  };
+
+  // What should happen next, in plain words.
+  const next = (() => {
+    if (isCancelled) {
+      return {
+        tone: "critical" as const,
+        title: "This quotation was cancelled",
+        text: "It can no longer be sent or confirmed. Revise it from the deal thread, or delete it.",
+        action: { label: "Delete quotation", onClick: () => setDeleteOpen(true), destructive: true },
+      };
+    }
+    if (q.invoiceStatus === "invoiced") {
+      return { tone: "done" as const, title: "Invoiced", text: "This order has been invoiced. Nothing else to do here.", action: null };
+    }
+    if (isConfirmed) {
+      return {
+        tone: "go" as const,
+        title: "Ready to invoice",
+        text: "The customer's order is confirmed. Create the invoice to bill them.",
+        action: { label: "Create invoice", onClick: () => router.push(`/dashboard/invoices/new?quotationId=${q.id}`) },
+      };
+    }
+    if (state === "signed") {
+      return {
+        tone: "go" as const,
+        title: `${q.signedBy ?? name} signed this quote`,
+        text: `Signed ${q.signedOn ? shortDateTime(q.signedOn) : "recently"}. Confirm it as a sales order to start delivery and invoicing.`,
+        action: { label: "Confirm sales order", onClick: () => void run(() => confirmQuotation(q.id), `${q.number} confirmed as a sales order.`, "Failed to confirm") },
+      };
+    }
+    if (state === "sent") {
+      return {
+        tone: validDays !== null && validDays < 0 ? ("warn" as const) : ("wait" as const),
+        title: validDays !== null && validDays < 0 ? "Expired without a reply" : "Waiting for the customer",
+        text:
+          validDays !== null && validDays < 0
+            ? `The quote expired ${Math.abs(validDays)} days ago. Revise it or send a reminder.`
+            : "They can sign online from the link in your email. Confirm manually if they approved another way.",
+        action: { label: "Confirm sales order", onClick: () => void run(() => confirmQuotation(q.id), `${q.number} confirmed as a sales order.`, "Failed to confirm") },
+      };
+    }
+    return {
+      tone: "wait" as const,
+      title: "Draft — not sent yet",
+      text: "Check the lines below, then send it to the customer for signature.",
+      action: { label: "Send to customer", onClick: () => setEmailOpen(true) },
+    };
+  })();
 
   const secondaryActions = [
-    ...(canEdit
-      ? [
-          {
-            content: "Edit lines",
-            onAction: () =>
-              router.push(`/dashboard/sales/quotations/${quotation.id}/edit`),
-          },
-        ]
+    ...(canEdit ? [{ content: "Edit", onAction: () => router.push(`/dashboard/sales/quotations/${q.id}/edit`) }] : []),
+    { content: "Preview PDF", onAction: () => setPdfOpen(true) },
+    ...(!isCancelled && state !== "draft" ? [{ content: "Send again", onAction: () => setEmailOpen(true) }] : []),
+  ];
+
+  const moreActions = [
+    ...(state === "draft"
+      ? [{ content: "Mark as sent (sent another way)", onAction: () => void run(() => markQuotationSent(q.id), "Marked as sent.", "Failed to mark as sent") }]
       : []),
-    ...(isDraft
-      ? [
-          {
-            content: "Mark as sent",
-            loading: actionLoading,
-            onAction: () => void handleMarkSent(),
-          },
-        ]
-      : quotation.state !== "cancelled"
-        ? [
-            {
-              content: "Send by email",
-              onAction: () => setEmailModalOpen(true),
-            },
-          ]
-        : []),
-  ...(canShareSigningLink
-    ? [
-        {
-          content: "Copy signing link",
-          loading: copySigningLinkLoading,
-          onAction: () => void handleCopySigningLink(),
-        },
-      ]
-    : []),
-    {
-      content: "Preview PDF",
-      onAction: () => setPdfModalOpen(true),
-    },
-    {
-      content: "Internal notes",
-      onAction: () => {
-        setEditingInternalNotes(quotation.internalNotes || "");
-        setInternalNotesModalOpen(true);
-      },
-    },
-    ...(quotation.state !== "cancelled"
-      ? [
-          {
-            content: "Cancel order",
-            onAction: () => void handleCancel(),
-          },
-        ]
-      : []),
-    ...(isCancelled
-      ? [
-          {
-            content: "Delete",
-            destructive: true,
-            onAction: () => setDeleteModalOpen(true),
-          },
-        ]
-      : []),
+    ...(canShareLink ? [{ content: "Copy signing link", onAction: () => void handleCopySigningLink() }] : []),
+    ...(!isCancelled ? [{ content: `Cancel ${docLabel.toLowerCase()}`, destructive: true, onAction: () => setCancelOpen(true) }] : []),
+    ...(isCancelled ? [{ content: "Delete", destructive: true, onAction: () => setDeleteOpen(true) }] : []),
   ];
 
   return (
     <AppPage
       backAction={{ content: "Quotations", url: "/dashboard/sales/quotations" }}
-      primaryAction={primaryAction}
+      primaryAction={
+        next.action && !("destructive" in next.action)
+          ? { content: next.action.label, loading: actionLoading, onAction: next.action.onClick }
+          : undefined
+      }
       secondaryActions={secondaryActions}
-      subtitle={`Customer: ${quotation.customerName ?? " "} • Date: ${formatAppDate(quotation.quoteDate)}`}
-      title={`${docLabel} ${quotation.number}`}
+      actionGroups={moreActions.length ? [{ title: "More", actions: moreActions }] : undefined}
+      subtitle={`${name} · ${billingQuotationTypeLabel(q.billingDocumentType ?? "tax_invoice")}`}
+      title={`${docLabel} ${q.number}`}
+      titleMetadata={<Badge tone={STATE_META[state].tone}>{STATE_META[state].label}</Badge>}
     >
-      <BlockStack gap="500">
+      <BlockStack gap="400">
         {createdDraft ? (
-          <Banner tone="success" onDismiss={() => router.replace(`/dashboard/sales/quotations/${quotation.id}`)}>
-            Draft quotation saved. Send or preview it for the customer, then confirm
-            when approved. Invoices can only be created after confirmation.
+          <Banner tone="success" onDismiss={() => router.replace(`/dashboard/sales/quotations/${q.id}`)}>
+            Draft saved. Send it to the customer when you&apos;re ready — you can confirm it once they approve.
           </Banner>
         ) : null}
-
-        {emailSuccessBanner ? (
-          <Banner tone="success" onDismiss={() => setEmailSuccessBanner(null)}>
-            {emailSuccessBanner}
+        {notice ? (
+          <Banner tone="success" onDismiss={() => setNotice(null)}>
+            {notice}
           </Banner>
         ) : null}
-
         {error ? (
           <Banner tone="critical" onDismiss={() => setError(null)}>
             {error}
           </Banner>
         ) : null}
 
-        <Card>
-          <QuotationWorkflowPanel quotation={quotation} />
-        </Card>
+        {/* Hero */}
+        <section className={cn("qv-hero", isCancelled && "is-cancelled")}>
+          <div className="qv-hero__top">
+            <div className="qv-hero__who">
+              <span className="qv-hero__avatar">{initials(name)}</span>
+              <div>
+                <span className="qv-hero__label">{docLabel} for</span>
+                <strong>{name}</strong>
+                {q.customerEmail ? <small>{q.customerEmail}</small> : null}
+              </div>
+            </div>
+            <div className="qv-hero__total">
+              <span className="qv-hero__label">Total</span>
+              <strong>{money(amountTotal)}</strong>
+              <small>
+                {money(amountUntaxed)} + {money(amountTax)} tax
+              </small>
+            </div>
+          </div>
 
-        <QuotationCustomerApprovalCard
-          currencyCode={currencyCode}
-          decimalPlaces={decimalPlaces}
-          quotation={quotation}
-          onPreviewPdf={() => setPdfModalOpen(true)}
-        />
+          <div className="qv-hero__facts">
+            <div>
+              <span>Quote date</span>
+              <strong>{formatAppDate(q.quoteDate)}</strong>
+            </div>
+            <div className={cn(validDays !== null && validDays < 0 && !isConfirmed && "is-bad", validDays !== null && validDays >= 0 && validDays <= 7 && "is-warn")}>
+              <span>Valid until</span>
+              <strong>{q.validityDate ? formatAppDate(q.validityDate) : "—"}</strong>
+              {validDays !== null && !isConfirmed && !isCancelled ? (
+                <small>{validDays < 0 ? `expired ${Math.abs(validDays)}d ago` : validDays === 0 ? "expires today" : `${validDays} days left`}</small>
+              ) : null}
+            </div>
+            <div>
+              <span>Customer ref / PO</span>
+              <strong>{q.customerReference || "—"}</strong>
+            </div>
+            <div>
+              <span>Currency</span>
+              <strong>{currency ? currency.code : currencyCode}</strong>
+            </div>
+          </div>
 
-        <DealThreadPanel
-          quotation={quotation}
-          onUpdated={(updated) => setQuotation(updated)}
-        />
+          <ol className={cn("qv-steps", isCancelled && "is-cancelled")}>
+            {STEPS.map((step, i) => {
+              const done = !isCancelled && i < current;
+              const now = !isCancelled && i === current;
+              const date = i <= current ? stepDate(step.activity) : null;
+              return (
+                <li className={cn(done && "is-done", now && "is-now")} key={step.key}>
+                  <span className="qv-steps__dot">{done ? <Icon source={CheckIcon} /> : i + 1}</span>
+                  <span className="qv-steps__text">
+                    <strong>{step.label}</strong>
+                    <small>{date ?? (now ? "current" : "")}</small>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
 
-        <Card>
-          <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="center">
-              <InlineStack gap="200" blockAlign="center">
+        {/* Next step */}
+        <div className={cn("qv-next", `is-${next.tone}`)}>
+          <div>
+            <strong>{next.title}</strong>
+            <span>{next.text}</span>
+          </div>
+          {next.action ? (
+            <Button
+              loading={actionLoading}
+              tone={"destructive" in next.action ? "critical" : undefined}
+              variant="primary"
+              onClick={next.action.onClick}
+            >
+              {next.action.label}
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="qv-layout">
+          {/* Main column */}
+          <div className="qv-main">
+            <Card padding="0">
+              <div className="qv-card-head">
                 <Text as="h2" variant="headingMd">
-                  Internal Team Notes
+                  Items
                 </Text>
-                <Badge tone="info">Private — Team Only</Badge>
-              </InlineStack>
-              <Button
-                size="slim"
-                onClick={() => {
-                  setEditingInternalNotes(quotation.internalNotes || "");
-                  setInternalNotesModalOpen(true);
-                }}
-              >
-                {quotation.internalNotes ? "Edit Internal Notes" : "Add Internal Notes"}
-              </Button>
-            </InlineStack>
-
-            {quotation.internalNotes ? (
-              <Box background="bg-surface-secondary" padding="300" borderRadius="200">
-                <Text as="p" variant="bodyMd">
-                  {quotation.internalNotes}
+                <Text as="span" tone="subdued" variant="bodySm">
+                  {lines.length} line{lines.length === 1 ? "" : "s"}
                 </Text>
-              </Box>
-            ) : (
-              <Text as="p" tone="subdued">
-                No internal team notes recorded for this quotation yet. Click above to leave private notes for staff.
-              </Text>
-            )}
-          </BlockStack>
-        </Card>
-
-        {/* ── Sales Order Header Card ── */}
-        <Card>
-          <BlockStack gap="500">
-            <InlineStack align="space-between" blockAlign="center">
-              <BlockStack gap="050">
-                <Text as="h1" variant="headingLg">
-                  {docLabel} #{quotation.number}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {quotation.internalReference || quotation.customerReference || "Quotation"}
-                </Text>
-              </BlockStack>
-              <InlineStack gap="200" blockAlign="center">
-                <Badge>
-                  {billingQuotationTypeLabel(
-                    quotation.billingDocumentType ?? "tax_invoice",
-                  )}
-                </Badge>
-                <Badge tone={isConfirmed ? "success" : isSent ? "info" : isCancelled ? "critical" : undefined}>
-                  {stateBadgeLabel(quotation.state)}
-                </Badge>
-              </InlineStack>
-            </InlineStack>
-
-            <Divider />
-
-            {/* General Information Grid */}
-            <Grid>
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Customer Account
-                  </Text>
-                  <Text as="span" fontWeight="bold">
-                    {quotation.customerName ?? " "}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Quotation Date
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {formatAppDate(quotation.quoteDate)}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Expiration Date
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {quotation.validityDate
-                      ? formatAppDate(quotation.validityDate)
-                      : " "}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Payment Terms
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {quotation.paymentReference || " "}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-            </Grid>
-
-            {/* 3-Tab Order Workspace: Order Lines / Other Info / Terms & Conditions */}
-            <Tabs
-              tabs={orderWorkspaceTabs}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-            />
-
-            {/* TAB 0: ORDER LINES TABLE & PROFIT MARGIN BOX */}
-            {selectedTab === 0 ? (
-              <BlockStack gap="400">
-                {lines.length === 0 ? (
-                  <EmptyState
-                    heading="No products on this quotation"
-                    image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
-                  >
-                    <p>Add line items from the edit screen to build this quotation.</p>
-                  </EmptyState>
-                ) : (
-                  <div className="frogmen-recent-table-wrapper">
-                    <table className="frogmen-recent-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: "34%" }}>Description</th>
-                          <th style={{ width: "10%" }}>Quantity</th>
-                          <th style={{ width: "14%", textAlign: "right" }}>Unit Price</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>Discount</th>
-                          <th style={{ width: "10%", textAlign: "right" }}>Tax %</th>
-                          <th style={{ width: "16%", textAlign: "right" }}>Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayLines.map((line) => (
-                          <tr key={line.id}>
-                            <td>
-                              <BlockStack gap="050">
-                                <LineItemDescription
-                                  details={line.productDescription}
-                                  productId={line.productId}
-                                  title={line.description}
-                                />
-                                {line.serialNumbers.length > 0 ? (
-                                  <Text as="span" tone="subdued" variant="bodySm">
-                                    SN:{" "}
-                                    {line.sourceLines.map((sourceLine, index) => (
-                                      <span key={sourceLine.id}>
-                                        {index > 0 ? ", " : ""}
-                                        {sourceLine.productUnitId ? (
-                                          <Link url={`/dashboard/inventory/units/${sourceLine.productUnitId}`}>
-                                            {sourceLine.serialNumber}
-                                          </Link>
-                                        ) : sourceLine.serialNumber}
-                                      </span>
-                                    ))}
-                                  </Text>
-                                ) : line.productUnitId ? (
-                                  <Text as="span" tone="subdued" variant="bodySm">
-                                    Serial-tracked item
-                                  </Text>
-                                ) : null}
-                              </BlockStack>
-                            </td>
-                            <td>{formatQuantity(line.quantity)}</td>
-                            <td style={{ textAlign: "right" }}>
-                              {formatMoney(line.unitPrice, currencyCode, decimalPlaces)}
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              {formatDiscountLabel(
-                                line.discountAmount,
-                                line.discountPercent,
-                                currencyCode,
-                              )}
-                            </td>
-                            <td style={{ textAlign: "right" }}>{line.taxRatePercent}%</td>
-                            <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                              {formatMoney(
-                                Number(line.quantity) * Number(line.unitPrice),
-                                currencyCode,
-                                decimalPlaces,
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <Divider />
-
-                <InlineStack align="end">
-                  <div style={{ width: "360px" }}>
-                    <div className="quotation-summary-panel__rows">
-                      {totalDiscount > 0 ? (
-                        <>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">Gross subtotal</Text>
-                            <Text as="span" fontWeight="semibold">
-                              {formatMoney(lineGrossSubtotal, currencyCode, decimalPlaces)}
-                            </Text>
-                          </div>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">
-                              Commercial discount ({totalDiscountPercent}%)
-                            </Text>
-                            <Text as="span" fontWeight="semibold" tone="success">
-                              -{formatMoney(totalDiscount, currencyCode, decimalPlaces)}
-                            </Text>
-                          </div>
-                        </>
-                      ) : null}
-                      {deliveryFee > 0 ? (
-                        <>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">
-                              Line net
-                            </Text>
-                            <Text as="span" fontWeight="semibold">
-                              {formatMoney(
-                                lineNetSubtotal,
-                                currencyCode,
-                                decimalPlaces,
-                              )}
-                            </Text>
-                          </div>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">
-                              Shipping fee
-                              {quotation?.deliveryFeePercent
-                                ? ` (${quotation.deliveryFeePercent}%)`
-                                : ""}
-                            </Text>
-                            <Text as="span" fontWeight="semibold">
-                              +
-                              {formatMoney(
-                                deliveryFee,
-                                currencyCode,
-                                decimalPlaces,
-                              )}
-                            </Text>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued">
-                            Untaxed Amount
-                          </Text>
-                          <Text as="span" fontWeight="semibold">
-                            {formatMoney(
-                              amountUntaxed,
-                              currencyCode,
-                              decimalPlaces,
-                            )}
-                          </Text>
-                        </div>
-                      )}
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued">
-                          Tax
-                        </Text>
-                        <Text as="span" fontWeight="semibold">
-                          +{formatMoney(amountTax, currencyCode, decimalPlaces)}
-                        </Text>
-                      </div>
-                      <div className="quotation-summary-row">
-                        <Text as="span" variant="headingMd" fontWeight="bold">
-                          Total
-                        </Text>
-                        <Text as="span" variant="headingLg" fontWeight="bold">
-                          {formatMoney(amountTotal, currencyCode, decimalPlaces)}
-                        </Text>
-                      </div>
-                    </div>
-                  </div>
-                </InlineStack>
-              </BlockStack>
-            ) : null}
-
-            {/* TAB 1: OTHER INFORMATION */}
-            {selectedTab === 1 ? (
-              <Grid>
-                <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      References
-                    </Text>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Customer reference: </Text>
-                      {quotation.customerReference || "None"}
-                    </Text>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Customer PO File: </Text>
-                      {quotation.customerPoDocumentUrl ? (
-                        <a
-                          href={`/api/v1/files/${quotation.customerPoDocumentUrl}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-blue-600 hover:underline font-semibold text-xs inline-flex items-center gap-1"
-                        >
-                          📎 View Uploaded PO File
-                        </a>
-                      ) : (
-                        <Text as="span" tone="subdued">No PO file attached</Text>
-                      )}
-                    </Text>
-                    <div className="pt-1">
-                      <label className="inline-flex items-center px-3 py-1.5 border border-slate-300 rounded-md shadow-sm text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 cursor-pointer">
-                        {poUploading ? "Uploading..." : "Upload Customer PO Document (PDF/Image)"}
-                        <input
-                          type="file"
-                          accept="application/pdf,image/*"
-                          className="hidden"
-                          onChange={handlePoUpload}
-                          disabled={poUploading}
-                        />
-                      </label>
-                    </div>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Internal reference: </Text>
-                      {quotation.internalReference || " "}
-                    </Text>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Payment reference: </Text>
-                      {quotation.paymentReference || " "}
-                    </Text>
-                  </BlockStack>
-                </Grid.Cell>
-                <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      Billing
-                    </Text>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Currency: </Text>
-                      {currency ? `${currency.code}   ${currency.name}` : " "}
-                    </Text>
-                    <Text as="p">
-                      <Text as="span" tone="subdued">Invoice status: </Text>
-                      {quotation.invoiceStatus === "to_invoice"
-                        ? "Ready to invoice"
-                        : quotation.invoiceStatus === "invoiced"
-                          ? "Invoiced"
-                          : "Not invoiced"}
-                    </Text>
-                  </BlockStack>
-                </Grid.Cell>
-              </Grid>
-            ) : null}
-
-            {selectedTab === 2 ? (
-              <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">Notes & Terms</Text>
-                <Text as="p" tone="subdued">
-                  {quotation.notes?.trim() || "No terms or notes added for this quotation."}
-                </Text>
-              </BlockStack>
-            ) : null}
-          </BlockStack>
-        </Card>
-
-        {/* ── User Activity Audit Log & Email History ── */}
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between" blockAlign="center">
-              <BlockStack gap="050">
-                <Text as="h2" variant="headingMd">
-                  User Activity Audit Log & History
-                </Text>
-                <Text as="p" tone="subdued">
-                  Audit trail tracking user actions for sales order #{quotation.number}
-                </Text>
-              </BlockStack>
-              <Badge tone="info">Click Log Item for Full Details</Badge>
-            </InlineStack>
-
-            <div className="frogmen-rules-list">
-              {quotation.activities && quotation.activities.length > 0 ? (
-                quotation.activities.map((act) => (
-                  <div
-                    key={act.id}
-                    className="frogmen-rule-item"
-                    style={{ cursor: "pointer", transition: "background 0.15s ease" }}
-                    onClick={() => setSelectedActivity(act)}
-                  >
-                    <div className="frogmen-rule-info">
-                      <div className="frogmen-rule-title-row">
-                        <span className="frogmen-rule-title">{act.message}</span>
-                        <Badge tone={act.activityType === "confirmed" ? "success" : "info"}>
-                          {act.activityType}
-                        </Badge>
-                      </div>
-                      <span className="frogmen-rule-desc">
-                        {new Date(act.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <Button size="slim" onClick={() => setSelectedActivity(act)}>
-                      View
-                    </Button>
-                  </div>
-                ))
-              ) : (
+              </div>
+              {lines.length === 0 ? (
                 <EmptyState
-                  heading="No activity yet"
+                  action={canEdit ? { content: "Add items", onAction: () => router.push(`/dashboard/sales/quotations/${q.id}/edit`) } : undefined}
+                  heading="No items yet"
                   image="https://cdn.shopify.com/s/images/empty-states/empty-state.svg"
                 >
-                  <p>Actions like create, update, and confirm will appear here.</p>
+                  <p>Add products or services to build this quotation.</p>
                 </EmptyState>
+              ) : (
+                <div className="qv-lines">
+                  <div className="qv-lines__head">
+                    <span>Item</span>
+                    <span>Qty</span>
+                    <span>Unit price</span>
+                    <span>Discount</span>
+                    <span>Tax</span>
+                    <span>Amount</span>
+                  </div>
+                  {displayLines.map((line) => (
+                    <div className="qv-lines__row" key={line.id}>
+                      <div className="qv-lines__item">
+                        <LineItemDescription details={line.productDescription} productId={line.productId} title={line.description} />
+                        {line.serialNumbers.length > 0 ? (
+                          <small>
+                            SN{" "}
+                            {line.sourceLines.map((source, index) => (
+                              <span key={source.id}>
+                                {index > 0 ? ", " : ""}
+                                {source.productUnitId ? (
+                                  <Link url={`/dashboard/inventory/units/${source.productUnitId}`}>{source.serialNumber}</Link>
+                                ) : (
+                                  source.serialNumber
+                                )}
+                              </span>
+                            ))}
+                          </small>
+                        ) : line.productUnitId ? (
+                          <small>Serial-tracked item</small>
+                        ) : null}
+                      </div>
+                      <span className="qv-num" data-label="Qty">{formatQuantity(line.quantity)}</span>
+                      <span className="qv-num" data-label="Unit price">{money(line.unitPrice)}</span>
+                      <span className="qv-num is-muted" data-label="Discount">
+                        {formatDiscountLabel(line.discountAmount, line.discountPercent, currencyCode)}
+                      </span>
+                      <span className="qv-num is-muted" data-label="Tax">{line.taxRatePercent}%</span>
+                      <span className="qv-num is-strong" data-label="Amount">
+                        {money(Number(line.quantity) * Number(line.unitPrice))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
-            </div>
-          </BlockStack>
-        </Card>
+
+              <div className="qv-totals">
+                <dl>
+                  {discount > 0 ? (
+                    <>
+                      <div>
+                        <dt>Subtotal before discount</dt>
+                        <dd>{money(lineGross)}</dd>
+                      </div>
+                      <div className="is-good">
+                        <dt>Discount ({discountPct}%)</dt>
+                        <dd>−{money(discount)}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                  {deliveryFee > 0 ? (
+                    <>
+                      <div>
+                        <dt>Items</dt>
+                        <dd>{money(lineNet)}</dd>
+                      </div>
+                      <div>
+                        <dt>Shipping{q.deliveryFeePercent ? ` (${q.deliveryFeePercent}%)` : ""}</dt>
+                        <dd>+{money(deliveryFee)}</dd>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <dt>Subtotal</dt>
+                      <dd>{money(amountUntaxed)}</dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>Tax</dt>
+                    <dd>+{money(amountTax)}</dd>
+                  </div>
+                  <div className="is-total">
+                    <dt>Total</dt>
+                    <dd>{money(amountTotal)}</dd>
+                  </div>
+                </dl>
+              </div>
+            </Card>
+
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">
+                  Terms &amp; notes for the customer
+                </Text>
+                {q.notes?.trim() ? (
+                  <p className="qv-terms">{q.notes}</p>
+                ) : (
+                  <Text as="p" tone="subdued">
+                    No terms or notes on this quotation.
+                    {canEdit ? " Add them from Edit." : ""}
+                  </Text>
+                )}
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Activity
+                </Text>
+                {activities.length === 0 ? (
+                  <Text as="p" tone="subdued">
+                    Nothing yet — sending, signing and confirming will show up here.
+                  </Text>
+                ) : (
+                  <ol className="qv-timeline">
+                    {activities.map((act: QuotationActivity) => (
+                      <li className={`is-${act.activityType}`} key={act.id}>
+                        <span className="qv-timeline__icon">
+                          <Icon source={ACTIVITY_ICON[act.activityType] ?? NoteIcon} />
+                        </span>
+                        <div>
+                          <strong>{act.message}</strong>
+                          <small>
+                            {shortDateTime(act.createdAt)}
+                            {act.performedBy ? ` · ${act.performedBy}` : ""}
+                          </small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </BlockStack>
+            </Card>
+          </div>
+
+          {/* Side column */}
+          <div className="qv-side">
+            {q.signedBy || state === "signed" ? (
+              <Card>
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Customer approval
+                    </Text>
+                    <Badge tone="success">Signed</Badge>
+                  </InlineStack>
+                  {q.signatureImage ? (
+                    <div className="qv-signature">
+                      <img alt={`Signature of ${q.signedBy ?? "customer"}`} src={q.signatureImage} />
+                    </div>
+                  ) : null}
+                  <dl className="qv-facts">
+                    <div>
+                      <dt>Signed by</dt>
+                      <dd>{q.signedBy ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>When</dt>
+                      <dd>{q.signedOn ? shortDateTime(q.signedOn) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Email</dt>
+                      <dd>{q.signedEmail ?? q.customerEmail ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Approved total</dt>
+                      <dd>{money(q.amountTotal)}</dd>
+                    </div>
+                  </dl>
+                  <InlineStack gap="200">
+                    <Button onClick={() => setPdfOpen(true)}>Signed PDF</Button>
+                    {q.accessToken ? (
+                      <Button
+                        variant="plain"
+                        onClick={() =>
+                          window.open(`${window.location.origin}/quotations/public/${q.accessToken}`, "_blank", "noopener,noreferrer")
+                        }
+                      >
+                        Approval page
+                      </Button>
+                    ) : null}
+                  </InlineStack>
+                </BlockStack>
+              </Card>
+            ) : canShareLink ? (
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">
+                    Online signature
+                  </Text>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    The customer can review and sign this quote from a secure link — no account needed.
+                  </Text>
+                  <Button loading={copyLoading} onClick={() => void handleCopySigningLink()}>
+                    Copy signing link
+                  </Button>
+                </BlockStack>
+              </Card>
+            ) : null}
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Details
+                </Text>
+                <dl className="qv-facts">
+                  <div>
+                    <dt>Document type</dt>
+                    <dd>{billingQuotationTypeLabel(q.billingDocumentType ?? "tax_invoice")}</dd>
+                  </div>
+                  <div>
+                    <dt>Currency</dt>
+                    <dd>{currency ? `${currency.code} · ${currency.name}` : currencyCode}</dd>
+                  </div>
+                  <div>
+                    <dt>Internal ref</dt>
+                    <dd>{q.internalReference || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Payment ref</dt>
+                    <dd>{q.paymentReference || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Invoicing</dt>
+                    <dd>
+                      {q.invoiceStatus === "invoiced"
+                        ? "Invoiced"
+                        : q.invoiceStatus === "partial"
+                          ? "Partly invoiced"
+                          : q.invoiceStatus === "to_invoice"
+                            ? "Ready to invoice"
+                            : "Not yet"}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="qv-po">
+                  <Text as="span" fontWeight="semibold" variant="bodySm">
+                    Customer PO document
+                  </Text>
+                  {q.customerPoDocumentUrl ? (
+                    <a className="qv-po__file" href={`/api/v1/files/${q.customerPoDocumentUrl}`} rel="noreferrer" target="_blank">
+                      <Icon source={AttachmentIcon} />
+                      View attached PO
+                    </a>
+                  ) : null}
+                  <DropZone
+                    accept="application/pdf,image/*"
+                    allowMultiple={false}
+                    disabled={poUploading}
+                    outline
+                    variableHeight
+                    onDropAccepted={(files) => void uploadPo(files)}
+                  >
+                    <div className="qv-po__drop">
+                      {poUploading ? "Uploading…" : q.customerPoDocumentUrl ? "Replace PO (PDF or image)" : "Drop the customer's PO here, or click to upload"}
+                    </div>
+                  </DropZone>
+                </div>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="150" blockAlign="center">
+                    <Icon source={LockIcon} tone="subdued" />
+                    <Text as="h2" variant="headingMd">
+                      Team notes
+                    </Text>
+                  </InlineStack>
+                  {!notesEditing ? (
+                    <Button
+                      size="slim"
+                      variant="plain"
+                      onClick={() => {
+                        setNotesDraft(q.internalNotes || "");
+                        setNotesEditing(true);
+                      }}
+                    >
+                      {q.internalNotes ? "Edit" : "Add note"}
+                    </Button>
+                  ) : null}
+                </InlineStack>
+                {notesEditing ? (
+                  <BlockStack gap="200">
+                    <TextField
+                      autoComplete="off"
+                      autoFocus
+                      helpText="Only your team sees this — never printed or sent."
+                      label="Team notes"
+                      labelHidden
+                      multiline={5}
+                      placeholder="e.g. Customer asked for delivery after the 20th."
+                      value={notesDraft}
+                      onChange={setNotesDraft}
+                    />
+                    <InlineStack gap="200" align="end">
+                      <Button onClick={() => setNotesEditing(false)}>Cancel</Button>
+                      <Button loading={notesSaving} variant="primary" onClick={() => void saveNotes()}>
+                        Save
+                      </Button>
+                    </InlineStack>
+                  </BlockStack>
+                ) : q.internalNotes ? (
+                  <p className="qv-note">{q.internalNotes}</p>
+                ) : (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Private notes for your team. Never shown to the customer.
+                  </Text>
+                )}
+              </BlockStack>
+            </Card>
+
+            <DealThreadPanel quotation={q} onUpdated={(updated) => setQuotation(updated)} />
+          </div>
+        </div>
       </BlockStack>
 
       <DocumentPreviewModal
-        onClose={() => setPdfModalOpen(false)}
-        open={pdfModalOpen}
-        quotationId={quotation.id}
-        quotationNumber={quotation.number}
-        title="Quotation PDF preview"
+        open={pdfOpen}
+        quotationId={q.id}
+        quotationNumber={q.number}
+        title={`${docLabel} ${q.number}`}
+        onClose={() => setPdfOpen(false)}
       />
 
       <SendDocumentEmailModal
-        open={emailModalOpen}
-        onClose={() => setEmailModalOpen(false)}
-        title={`Send sales quotation ${quotation.number} to customer`}
-        pdfLabel={`quotation-${quotation.number}.pdf`}
-        loading={emailSending}
         documentType="quotation"
-        recipient={quotation.customerEmail ?? ""}
-        placeholders={{
-          number: quotation.number,
-          customerName: quotation.customerName ?? "Customer",
-          companyName: "",
-          total: formatMoney(amountTotal, currencyCode, decimalPlaces),
-        }}
-        primaryActionLabel="Dispatch quotation email"
+        loading={emailSending}
+        open={emailOpen}
+        pdfLabel={`quotation-${q.number}.pdf`}
+        placeholders={{ number: q.number, customerName: name, companyName: "", total: money(amountTotal) }}
+        primaryActionLabel="Send quotation"
+        recipient={q.customerEmail ?? ""}
+        title={`Send ${q.number} to ${name}`}
+        onClose={() => setEmailOpen(false)}
         onSend={handleSendEmail}
       />
 
-      {/* ── Interactive Email Log Detail Modal ── */}
       <Modal
-        open={selectedActivity !== null}
-        onClose={() => setSelectedActivity(null)}
-        title="Audit Activity Log & Dispatched Email Detail"
+        open={cancelOpen}
         primaryAction={{
-          content: "Close Preview",
-          onAction: () => setSelectedActivity(null),
-        }}
-      >
-        <Modal.Section>
-          {selectedActivity ? (
-            <BlockStack gap="400">
-              <Banner tone="info">
-                {new Date(selectedActivity.createdAt).toLocaleString()}
-              </Banner>
-
-              <div className="frogmen-email-preview-box">
-                <div className="frogmen-email-field">
-                  <Text as="span" fontWeight="bold">Event: </Text>
-                  {selectedActivity.message}
-                </div>
-                <div className="frogmen-email-field">
-                  <Text as="span" fontWeight="bold">Type: </Text>
-                  {selectedActivity.activityType}
-                </div>
-              </div>
-            </BlockStack>
-          ) : null}
-        </Modal.Section>
-      </Modal>
-
-      <Modal
-        open={deleteModalOpen}
-        onClose={() => setDeleteModalOpen(false)}
-        title={`Delete cancelled quotation ${quotation.number}?`}
-        primaryAction={{
-          content: "Delete",
+          content: `Cancel ${docLabel.toLowerCase()}`,
           destructive: true,
           loading: actionLoading,
-          onAction: () => void handleDelete(),
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setDeleteModalOpen(false),
+          onAction: async () => {
+            await run(() => cancelQuotation(q.id), `${q.number} cancelled.`, "Failed to cancel");
+            setCancelOpen(false);
           },
-        ]}
+        }}
+        secondaryActions={[{ content: "Keep it", onAction: () => setCancelOpen(false) }]}
+        title={`Cancel ${q.number}?`}
+        onClose={() => setCancelOpen(false)}
       >
         <Modal.Section>
           <Text as="p">
-            This removes {quotation.number} from normal lists. Its audit history
-            and document number remain recorded. Only cancelled quotations can
-            be deleted.
+            The customer will no longer be able to sign it, and it won&apos;t count in your pipeline. You can still revise it
+            into a new quote afterwards.
           </Text>
         </Modal.Section>
       </Modal>
 
-      {/* ── Internal Notes Modal ── */}
       <Modal
-        open={internalNotesModalOpen}
-        onClose={() => setInternalNotesModalOpen(false)}
-        title={`Internal Team Notes — ${quotation.number}`}
-        primaryAction={{
-          content: "Save Internal Notes",
-          loading: savingInternalNotes,
-          onAction: () => void handleSaveInternalNotes(),
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setInternalNotesModalOpen(false),
-          },
-        ]}
+        open={deleteOpen}
+        primaryAction={{ content: "Delete", destructive: true, loading: actionLoading, onAction: () => void handleDelete() }}
+        secondaryActions={[{ content: "Keep it", onAction: () => setDeleteOpen(false) }]}
+        title={`Delete ${q.number}?`}
+        onClose={() => setDeleteOpen(false)}
       >
         <Modal.Section>
-          <BlockStack gap="300">
-            <Text as="p" tone="subdued">
-              Internal team notes are visible strictly to staff and team members. They will NEVER be printed or shown to the customer.
-            </Text>
-            <TextField
-              autoComplete="off"
-              label="Internal Notes"
-              multiline={8}
-              onChange={setEditingInternalNotes}
-              placeholder="Private team notes (e.g. customer requested special delivery terms, battery warranty exception, internal approvals...)"
-              value={editingInternalNotes}
-            />
-          </BlockStack>
+          <Text as="p">
+            This removes the cancelled quotation from your lists. Its document number and history stay on record.
+          </Text>
         </Modal.Section>
       </Modal>
     </AppPage>

@@ -47,6 +47,15 @@ export class BranchesController {
     return this.branchesService.deactivate(context, id);
   }
 
+  @Post(":id/reactivate")
+  @RequirePermission("branches.manage")
+  reactivate(
+    @CurrentSecurity() context: SecurityContext,
+    @Param("id") id: string,
+  ) {
+    return this.branchesService.reactivate(context, id);
+  }
+
   @Post("select")
   @RequirePermission("organization.read")
   select(

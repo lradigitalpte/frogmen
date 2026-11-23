@@ -16,6 +16,7 @@ import {
   invitationBranches,
   members,
   organizations,
+  sessions,
   users,
   type Database,
 } from "@frog1/db";
@@ -69,6 +70,44 @@ export class MembersService {
     }));
   }
 
+  /** Names only — for "assign to" pickers that every member may use (e.g. leads). */
+  async directory(organizationId: string) {
+    return this.db
+      .select({ id: members.id, userId: members.userId, name: users.name, email: users.email })
+      .from(members)
+      .innerJoin(users, eq(users.id, members.userId))
+      .where(eq(members.organizationId, organizationId))
+      .orderBy(asc(users.name));
+  }
+
+  async remove(context: SecurityContext, memberId: string) {
+    const [target] = await this.db
+      .select()
+      .from(members)
+      .where(and(eq(members.id, memberId), eq(members.organizationId, context.organizationId)))
+      .limit(1);
+    if (!target) throw new NotFoundException("Member not found");
+    if (normalizeRole(target.role) === "owner") {
+      throw new BadRequestException("The organization owner can't be removed");
+    }
+    if (target.userId === context.userId) {
+      throw new BadRequestException("You can't remove yourself");
+    }
+    if (normalizeRole(target.role) === "admin" && context.role !== "owner") {
+      throw new ForbiddenException("Only the owner can remove an admin");
+    }
+
+    await this.db.transaction(async (transaction) => {
+      await transaction.delete(branchMembers).where(eq(branchMembers.memberId, memberId));
+      await transaction.delete(members).where(eq(members.id, memberId));
+      // End their sessions in this organization so access stops immediately.
+      await transaction
+        .delete(sessions)
+        .where(and(eq(sessions.userId, target.userId), eq(sessions.activeOrganizationId, context.organizationId)));
+    });
+    return { id: memberId };
+  }
+
   async update(
     context: SecurityContext,
     memberId: string,
@@ -99,6 +138,28 @@ export class MembersService {
     }
     if (nextRole === "owner" && currentRole !== "owner") {
       throw new BadRequestException("Ownership transfer is not supported");
+    }
+    if (currentRole === "owner" && nextRole !== "owner") {
+      // Otherwise the organization would be left without an owner.
+      throw new BadRequestException("The owner's role can't be changed");
+    }
+    if (currentRole === "admin" && context.role !== "owner" && nextRole !== "admin") {
+      throw new ForbiddenException("Only the owner can change an admin's role");
+    }
+
+    // Roles below admin only see their assigned branches; without any they'd be locked out.
+    if (!["owner", "admin"].includes(nextRole) && !input.branchIds) {
+      const [assigned] = await this.db
+        .select({ id: branchMembers.branchId })
+        .from(branchMembers)
+        .innerJoin(branches, eq(branches.id, branchMembers.branchId))
+        .where(and(eq(branchMembers.memberId, memberId), eq(branches.isActive, true)))
+        .limit(1);
+      if (!assigned) {
+        throw new BadRequestException(
+          `Choose at least one branch for this person — a ${nextRole} only sees the branches they're assigned to`,
+        );
+      }
     }
 
     await this.db.transaction(async (transaction) => {

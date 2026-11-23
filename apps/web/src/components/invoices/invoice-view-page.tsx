@@ -4,21 +4,28 @@ import {
   Badge,
   Banner,
   BlockStack,
-  Box,
   Button,
   Card,
   Checkbox,
-  Divider,
-  Grid,
+  Icon,
   InlineStack,
-  Layout,
   Link,
   Modal,
   Select,
-  Tabs,
+  SkeletonBodyText,
   Text,
   TextField,
+  type IconSource,
 } from "@shopify/polaris";
+import {
+  CheckCircleIcon,
+  CheckIcon,
+  EmailIcon,
+  NoteIcon,
+  ReceiptIcon,
+  XCircleIcon,
+} from "@shopify/polaris-icons";
+import { cn } from "@/lib/utils";
 import { billingDocumentTypeLabel } from "@frog1/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -59,6 +66,39 @@ import { getInvoiceJournal } from "@/lib/accounting-api";
 import { useToast } from "@/components/providers/toast-provider";
 import { resolveDeliveryFee } from "@/lib/line-item-utils";
 
+const INVOICE_ACTIVITY_ICON: Record<string, IconSource> = {
+  created: NoteIcon,
+  posted: ReceiptIcon,
+  confirmed: ReceiptIcon,
+  paid: CheckCircleIcon,
+  payment: CheckCircleIcon,
+  sent: EmailIcon,
+  email: EmailIcon,
+  cancelled: XCircleIcon,
+};
+
+function daysFromToday(date: string) {
+  const target = new Date(`${date.slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+function shortDateTime(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function initials(name: string) {
+  return name
+    .split(/s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
 interface InvoiceViewPageProps {
   invoiceId: string;
 }
@@ -71,7 +111,6 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState(0);
 
   // Payment Modal State
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -110,20 +149,14 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   >([]);
   const [journalLoading, setJournalLoading] = useState(false);
 
-  const workspaceTabs = [
-    { id: "lines", content: "Invoice Lines" },
-    { id: "journal", content: "Journal Items" },
-    { id: "other", content: "Other Information" },
-    { id: "terms", content: "Terms & Conditions" },
-  ];
-
   const loadInvoiceData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      // Bank accounts only feed the payment details; a role without access still sees the invoice.
       const [data, banks] = await Promise.all([
         getInvoice(invoiceId),
-        listBankAccounts({ activeOnly: true }),
+        listBankAccounts({ activeOnly: true }).catch(() => []),
       ]);
       setInvoice(data);
       setBankAccounts(banks);
@@ -378,16 +411,18 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
 
   if (loading && !invoice) {
     return (
-      <AppPage title="Loading Invoice...">
-        <Text as="p" tone="subdued">Loading tax invoice workspace...</Text>
+      <AppPage backAction={{ content: "Invoices", url: "/dashboard/invoices" }} title="Invoice">
+        <Card>
+          <SkeletonBodyText lines={10} />
+        </Card>
       </AppPage>
     );
   }
 
   if (!invoice) {
     return (
-      <AppPage title="Invoice Not Found">
-        <Banner tone="critical">The requested tax invoice could not be found.</Banner>
+      <AppPage backAction={{ content: "Invoices", url: "/dashboard/invoices" }} title="Invoice not found">
+        <Banner tone="critical">{error || "This invoice could not be found."}</Banner>
       </AppPage>
     );
   }
@@ -399,585 +434,480 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
   const canPay = isPosted && !isPaid;
 
   const rawSubtotal = invoice.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
-  const deliveryFee = resolveDeliveryFee(
-    rawSubtotal,
-    invoice.deliveryFeeAmount,
-    invoice.deliveryFeePercent,
-  );
-  const invoiceBillingLabel = billingDocumentTypeLabel(
-    invoice.billingDocumentType ?? "tax_invoice",
-  );
+  const deliveryFee = resolveDeliveryFee(rawSubtotal, invoice.deliveryFeeAmount, invoice.deliveryFeePercent);
+  const invoiceBillingLabel = billingDocumentTypeLabel(invoice.billingDocumentType ?? "tax_invoice");
+  const amountPaid = isPaid ? invoice.amountTotal : Math.min(invoice.amountPaid ?? 0, invoice.amountTotal);
+  const amountDue = isCancelled ? 0 : Math.max(0, invoice.amountTotal - amountPaid);
+  const paidShare = invoice.amountTotal > 0 ? (amountPaid / invoice.amountTotal) * 100 : 0;
+  const taxRates = [...new Set(invoice.lines.map((l) => Number(l.taxRatePercent)))];
+  const taxLabel = taxRates.length === 1 ? `Tax (${taxRates[0]}%)` : "Tax";
+  const dueDays = invoice.dueDate ? daysFromToday(invoice.dueDate) : null;
+  const overdue = canPay && dueDays !== null && dueDays < 0;
+  const refundOutstanding = (invoice.creditNote?.refundDue ?? 0) - (invoice.creditNote?.refundPaid ?? 0);
+  const activities = [...(invoice.activities ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const activityDate = (types: string[]) => {
+    const found = [...(invoice.activities ?? [])]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .find((a) => types.includes(a.activityType) || types.some((t) => new RegExp(`\b${t}\b`, "i").test(a.message)));
+    return found ? shortDateTime(found.createdAt) : null;
+  };
+
+  const steps = [
+    { label: "Draft", done: !isDraft, now: isDraft, date: activityDate(["created"]) },
+    { label: "Posted", done: isPosted && (isPaid || amountPaid > 0), now: isPosted && !isPaid && amountPaid === 0, date: activityDate(["posted", "confirmed"]) },
+    { label: amountPaid > 0 && !isPaid ? "Part paid" : "Paid", done: isPaid, now: isPosted && !isPaid && amountPaid > 0, date: activityDate(["paid", "payment", "registered"]) },
+  ];
+
+  const next = (() => {
+    if (isCancelled) {
+      return refundOutstanding > 0
+        ? { tone: "warn", title: "Refund due to the customer", text: `${fmt(refundOutstanding)} was paid on this cancelled invoice and still needs refunding.`, label: "Record refund", onClick: () => { setRefundAmount(String(refundOutstanding)); setRefundOpen(true); } }
+        : { tone: "done", title: "Cancelled", text: `${invoice.cancellationReason || "No reason recorded"}${invoice.creditNote ? ` · credit note ${invoice.creditNote.number}` : ""}.`, label: null, onClick: null };
+    }
+    if (isDraft) {
+      return { tone: "wait", title: "Draft — not issued yet", text: "Check the lines, then post it. Posting locks the exchange rate and marks the sales order as invoiced.", label: "Post invoice", onClick: () => void handleConfirmInvoice() };
+    }
+    if (isPaid) {
+      return { tone: "done", title: "Paid in full", text: `${invoice.customerName} has paid ${fmt(invoice.amountTotal)}. Nothing left to collect.`, label: null, onClick: null };
+    }
+    if (overdue) {
+      return { tone: "bad", title: `${Math.abs(dueDays!)} days overdue`, text: `${fmt(amountDue)} was due on ${formatAppDate(invoice.dueDate)}. Record a payment or send a reminder.`, label: "Record payment", onClick: () => setPaymentModalOpen(true) };
+    }
+    return {
+      tone: "go",
+      title: amountPaid > 0 ? `${fmt(amountDue)} still to collect` : "Waiting for payment",
+      text: invoice.dueDate ? `Due ${dueDays === 0 ? "today" : `in ${dueDays} days`} (${formatAppDate(invoice.dueDate)}).` : "No due date set.",
+      label: "Record payment",
+      onClick: () => setPaymentModalOpen(true),
+    };
+  })();
+
+  const moreActions = [
+    ...(isPosted ? [{ content: "Delivery note", onAction: () => setDeliveryNoteOpen(true) }] : []),
+    ...(isPosted ? [{ content: "Create credit note", onAction: () => setCreditNoteOpen(true) }] : []),
+    ...(invoice.status === "posted" && amountPaid === 0 ? [{ content: "Reset to draft", onAction: () => void handleResetToDraft() }] : []),
+    ...(!isCancelled ? [{ content: "Cancel invoice", destructive: true, onAction: () => setCancelOpen(true) }] : []),
+    ...(isCancelled ? [{ content: "Delete", destructive: true, onAction: () => setDeleteOpen(true) }] : []),
+  ];
 
   return (
     <AppPage
-      backAction={{ content: "Invoices Directory", url: "/dashboard/invoices" }}
+      actionGroups={moreActions.length ? [{ title: "More", actions: moreActions }] : undefined}
+      backAction={{ content: "Invoices", url: "/dashboard/invoices" }}
       fullWidth
-      primaryAction={
-        isDraft
-          ? {
-              content: "Confirm & Post Invoice",
-              loading,
-              onAction: () => void handleConfirmInvoice(),
-            }
-          : canPay
-            ? {
-                content: "Register Payment",
-                onAction: () => setPaymentModalOpen(true),
-              }
-            : undefined
+      primaryAction={next.label && next.onClick ? { content: next.label, loading, onAction: next.onClick } : undefined}
+      secondaryActions={[
+        { content: "Preview PDF", onAction: openInvoicePreview },
+        ...(isPosted ? [{ content: "Send by email", onAction: () => setSendInvoiceOpen(true) }] : []),
+        ...(!isCancelled ? [{ content: "Edit details", onAction: () => setEditDetailsOpen(true) }] : []),
+      ]}
+      subtitle={`${invoice.customerName} · ${invoiceBillingLabel}`}
+      title={`Invoice ${invoice.number}`}
+      titleMetadata={
+        <Badge tone={isPaid ? "success" : isCancelled ? "critical" : isDraft ? undefined : overdue ? "critical" : "attention"}>
+          {isPaid ? "Paid" : isCancelled ? "Cancelled" : isDraft ? "Draft" : overdue ? "Overdue" : amountPaid > 0 ? "Part paid" : "Unpaid"}
+        </Badge>
       }
-      subtitle={`${invoiceBillingLabel} #${invoice.number} • Customer: ${invoice.customerName}`}
-      title={`${invoiceBillingLabel} ${invoice.number}`}
     >
-      <BlockStack gap="500">
+      <BlockStack gap="400">
         {successBanner ? (
           <Banner
+            action={isPosted && !deliveryNoteOpen ? { content: "Create delivery note", onAction: () => setDeliveryNoteOpen(true) } : undefined}
             tone="success"
-            action={
-              isPosted && !deliveryNoteOpen
-                ? { content: "Create delivery note", onAction: () => setDeliveryNoteOpen(true) }
-                : undefined
-            }
+            onDismiss={() => setSuccessBanner(null)}
           >
             {successBanner}
           </Banner>
         ) : null}
-        {error ? <Banner tone="critical">{error}</Banner> : null}
-        {isCancelled ? (
-          <Banner tone="warning">
-            Cancelled: {invoice.cancellationReason || "No reason recorded"}.
-            {invoice.creditNote ? ` Credit note ${invoice.creditNote.number}.` : ""}
-            {(invoice.creditNote?.refundDue ?? 0) > 0
-              ? ` Refund due: ${fmt((invoice.creditNote?.refundDue ?? 0) - (invoice.creditNote?.refundPaid ?? 0))}.`
-              : ""}
-          </Banner>
-        ) : null}
-        {isDraft ? (
-          <Banner tone="warning">
-            This invoice is still a draft. Confirm & post it before registering payment.
-            Posting locks the exchange rate and marks the linked sales order as invoiced.
+        {error ? (
+          <Banner tone="critical" onDismiss={() => setError(null)}>
+            {error}
           </Banner>
         ) : null}
 
-        {/* ── Top Odoo Action Bar & Stepper ── */}
-        <Card padding="300">
-          <InlineStack align="space-between" blockAlign="center">
-            {/* Odoo Command Toolbar Buttons */}
-            <InlineStack gap="200" blockAlign="center">
-              {isDraft ? (
-                <Button
-                  size="slim"
-                  variant="primary"
-                  loading={loading}
-                  onClick={() => void handleConfirmInvoice()}
-                >
-                  Confirm & Post
-                </Button>
-              ) : null}
-              <Button size="slim" onClick={openInvoicePreview}>
-                Preview
-              </Button>
-              {invoice.status === "posted" || invoice.status === "paid" ? (
-                <Button size="slim" onClick={() => setSendInvoiceOpen(true)}>
-                  Send by email
-                </Button>
-              ) : null}
-              {isPosted ? (
-                <Button size="slim" onClick={() => setDeliveryNoteOpen(true)}>
-                  Delivery note
-                </Button>
-              ) : null}
-              <Button
-                size="slim"
-                variant={canPay ? "primary" : "secondary"}
-                disabled={!canPay}
-                onClick={() => setPaymentModalOpen(true)}
-              >
-                Pay
-              </Button>
-              {!isCancelled ? (
-                <Button size="slim" onClick={() => setEditDetailsOpen(true)}>
-                  Edit details
-                </Button>
-              ) : null}
-              <Button
-                size="slim"
-                disabled={isCancelled}
-                onClick={() => setCancelOpen(true)}
-              >
-                Cancel Invoice
-              </Button>
-              {isCancelled ? (
-                <>
-                  {(invoice.creditNote?.refundDue ?? 0) > (invoice.creditNote?.refundPaid ?? 0) ? (
-                    <Button size="slim" variant="primary" onClick={() => {
-                      setRefundAmount(String((invoice.creditNote?.refundDue ?? 0) - (invoice.creditNote?.refundPaid ?? 0)));
-                      setRefundOpen(true);
-                    }}>Record refund</Button>
-                  ) : null}
-                  <Button tone="critical" size="slim" onClick={() => setDeleteOpen(true)}>
-                    Delete
-                  </Button>
-                </>
-              ) : null}
-            </InlineStack>
+        {/* Hero */}
+        <section className={cn("qv-hero", isCancelled && "is-cancelled")}>
+          <div className="qv-hero__top">
+            <div className="qv-hero__who">
+              <span className="qv-hero__avatar">{initials(invoice.customerName)}</span>
+              <div>
+                <span className="qv-hero__label">Invoice to</span>
+                <strong>{invoice.customerName}</strong>
+                {invoice.customerEmail ? <small>{invoice.customerEmail}</small> : null}
+              </div>
+            </div>
+            <div className="qv-hero__total">
+              <span className="qv-hero__label">{isPaid || isCancelled || isDraft ? "Total" : "Amount due"}</span>
+              <strong>{fmt(isPaid || isCancelled || isDraft ? invoice.amountTotal : amountDue)}</strong>
+              <small>
+                {isPaid || isCancelled || isDraft
+                  ? `${fmt(invoice.amountUntaxed)} + ${fmt(invoice.amountTax)} tax`
+                  : `of ${fmt(invoice.amountTotal)} · ${fmt(amountPaid)} paid`}
+              </small>
+            </div>
+          </div>
 
-            {/* Odoo Dual Stepper: State & Payment State */}
-            <InlineStack gap="400" blockAlign="center">
-              <InlineStack gap="150" blockAlign="center">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  State:
+          <div className="qv-hero__facts">
+            <div>
+              <span>Invoice date</span>
+              <strong>{formatAppDate(invoice.invoiceDate)}</strong>
+            </div>
+            <div className={cn(overdue && "is-bad", canPay && dueDays !== null && dueDays >= 0 && dueDays <= 7 && "is-warn")}>
+              <span>Due date</span>
+              <strong>{invoice.dueDate ? formatAppDate(invoice.dueDate) : "—"}</strong>
+              {canPay && dueDays !== null ? (
+                <small>{dueDays < 0 ? `${Math.abs(dueDays)}d overdue` : dueDays === 0 ? "due today" : `${dueDays} days left`}</small>
+              ) : null}
+            </div>
+            <div>
+              <span>Customer PO</span>
+              <strong>{invoice.customerReference || "—"}</strong>
+            </div>
+            <div>
+              <span>Currency</span>
+              <strong>{invoice.currencyCode ?? documentCurrency?.code ?? "—"}</strong>
+            </div>
+          </div>
+
+          <ol className={cn("qv-steps iv-steps", isCancelled && "is-cancelled")}>
+            {steps.map((step, i) => (
+              <li className={cn(!isCancelled && step.done && "is-done", !isCancelled && step.now && "is-now")} key={step.label}>
+                <span className="qv-steps__dot">{!isCancelled && step.done ? <Icon source={CheckIcon} /> : i + 1}</span>
+                <span className="qv-steps__text">
+                  <strong>{step.label}</strong>
+                  <small>{step.date ?? (step.now && !isCancelled ? "current" : "")}</small>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <div className={cn("qv-next", `is-${next.tone === "bad" ? "critical" : next.tone}`)}>
+          <div>
+            <strong>{next.title}</strong>
+            <span>{next.text}</span>
+          </div>
+          {next.label && next.onClick ? (
+            <Button loading={loading} variant="primary" onClick={next.onClick}>
+              {next.label}
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="qv-layout">
+          <div className="qv-main">
+            <Card padding="0">
+              <div className="qv-card-head">
+                <Text as="h2" variant="headingMd">
+                  Items
                 </Text>
-                {invoice.status === "draft" ? (
-                  <Badge>Draft</Badge>
-                ) : invoice.status === "cancelled" ? (
-                  <Badge tone="warning">Cancelled</Badge>
-                ) : (
-                  <Badge tone="info">Posted</Badge>
-                )}
-              </InlineStack>
-
-              <InlineStack gap="150" blockAlign="center">
                 <Text as="span" tone="subdued" variant="bodySm">
-                  Payment state:
+                  {invoice.lines.length} line{invoice.lines.length === 1 ? "" : "s"}
                 </Text>
-                {invoice.status === "paid" ? (
-                  <Badge tone="success">Paid</Badge>
-                ) : (
-                  <Badge tone="critical">Not paid</Badge>
-                )}
-              </InlineStack>
-            </InlineStack>
-          </InlineStack>
-        </Card>
-
-        {/* ── Customer Invoice Header Details ── */}
-        <Card>
-          <BlockStack gap="500">
-            <Text as="h2" variant="headingMd">
-              General Customer Invoice Header
-            </Text>
-
-            <Grid>
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    {invoiceBillingLabel}
-                  </Text>
-                  <Text as="span" fontWeight="bold" variant="headingSm">
-                    {invoice.number}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Customer Account
-                  </Text>
-                  <Text as="span" fontWeight="bold" variant="bodyMd">
-                    {invoice.customerName}
-                  </Text>
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    {invoice.customerEmail}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Customer PO Reference
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {invoice.customerReference || "—"}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Invoice Date
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {formatAppDate(invoice.invoiceDate)}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Payment Term
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {invoice.paymentTerm}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Due Date
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {invoice.dueDate ? formatAppDate(invoice.dueDate) : "—"}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Journal
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    Customer Invoices
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 4, sm: 4, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="050">
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    Currency
-                  </Text>
-                  <Text as="span" fontWeight="semibold">
-                    {invoice.currencyCode ?? documentCurrency?.code ?? " "}
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-            </Grid>
-
-            <Divider />
-
-            {/* ── 4 Workspace Content Tabs ── */}
-            <Tabs
-              tabs={workspaceTabs}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-            />
-
-            {/* ── TAB 0: INVOICE LINES ── */}
-            {selectedTab === 0 ? (
-              <BlockStack gap="400">
-                <div className="frogmen-recent-table-wrapper">
-                  <table className="frogmen-recent-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: "40%" }}>Product</th>
-                        <th style={{ width: "15%", textAlign: "right" }}>Quantity</th>
-                        <th style={{ width: "15%", textAlign: "right" }}>Unit Price</th>
-                        <th style={{ width: "10%", textAlign: "right" }}>Taxes</th>
-                        <th style={{ width: "20%", textAlign: "right" }}>Sub Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoice.lines.map((l) => (
-                        <tr key={l.id}>
-                          <td className="frogmen-font-bold">
-                            <BlockStack gap="050">
-                              <LineItemDescription
-                                details={l.productDescription}
-                                productId={l.productId}
-                                title={l.description}
-                              />
-                              {l.serialNumber ? (
-                                <Text as="span" tone="subdued" variant="bodySm">
-                                  SN:{" "}
-                                  {l.productUnitId ? (
-                                    <Link
-                                      url={`/dashboard/inventory/units/${l.productUnitId}`}
-                                    >
-                                      {l.serialNumber}
-                                    </Link>
-                                  ) : (
-                                    l.serialNumber
-                                  )}
-                                </Text>
-                              ) : null}
-                            </BlockStack>
-                          </td>
-                          <td style={{ textAlign: "right" }}>{formatQuantity(l.quantity)}</td>
-                          <td style={{ textAlign: "right" }}>
-                            {fmt(l.unitPrice)}
-                          </td>
-                          <td style={{ textAlign: "right" }}>{l.taxRatePercent}%</td>
-                          <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                            {fmt(l.lineTotal)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              </div>
+              <div className="qv-lines">
+                <div className="qv-lines__head iv-lines">
+                  <span>Item</span>
+                  <span>Qty</span>
+                  <span>Unit price</span>
+                  <span>Tax</span>
+                  <span>Amount</span>
                 </div>
-
-                <InlineStack align="end">
-                  <div style={{ width: "340px" }}>
-                    <div className="quotation-summary-panel__rows">
-                      {deliveryFee > 0 ? (
-                        <>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">Line net</Text>
-                            <Text as="span" fontWeight="semibold">
-                              {fmt(rawSubtotal)}
-                            </Text>
-                          </div>
-                          <div className="quotation-summary-row">
-                            <Text as="span" tone="subdued">
-                              Shipping fee
-                              {invoice.deliveryFeePercent
-                                ? ` (${invoice.deliveryFeePercent}%)`
-                                : ""}
-                            </Text>
-                            <Text as="span" fontWeight="semibold">
-                              +{fmt(deliveryFee)}
-                            </Text>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="quotation-summary-row">
-                          <Text as="span" tone="subdued">Untaxed Amount</Text>
-                          <Text as="span" fontWeight="semibold">
-                            {fmt(rawSubtotal)}
-                          </Text>
-                        </div>
-                      )}
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued">Tax (5%)</Text>
-                        <Text as="span" fontWeight="semibold">
-                          {fmt(invoice.amountTax)}
-                        </Text>
-                      </div>
-                      <Divider />
-                      <div className="quotation-summary-row">
-                        <Text as="span" variant="headingMd" fontWeight="bold">Total</Text>
-                        <Text as="span" variant="headingLg" fontWeight="bold">
-                          {fmt(invoice.amountTotal)}
-                        </Text>
-                      </div>
-                      <div className="quotation-summary-row">
-                        <Text as="span" tone="subdued" fontWeight="bold">Amount Due</Text>
-                        <Text
-                          as="span"
-                          variant="headingLg"
-                          fontWeight="bold"
-                          tone={invoice.status === "paid" ? "success" : "critical"}
-                        >
-                          {invoice.status === "paid" ? fmt(0) : fmt(invoice.amountTotal)}
-                        </Text>
-                      </div>
+                {invoice.lines.map((l) => (
+                  <div className="qv-lines__row iv-lines" key={l.id}>
+                    <div className="qv-lines__item">
+                      <LineItemDescription details={l.productDescription} productId={l.productId} title={l.description} />
+                      {l.serialNumber ? (
+                        <small>
+                          SN{" "}
+                          {l.productUnitId ? <Link url={`/dashboard/inventory/units/${l.productUnitId}`}>{l.serialNumber}</Link> : l.serialNumber}
+                        </small>
+                      ) : null}
                     </div>
+                    <span className="qv-num" data-label="Qty">{formatQuantity(l.quantity)}</span>
+                    <span className="qv-num" data-label="Unit price">{fmt(l.unitPrice)}</span>
+                    <span className="qv-num is-muted" data-label="Tax">{l.taxRatePercent}%</span>
+                    <span className="qv-num is-strong" data-label="Amount">{fmt(l.lineTotal)}</span>
                   </div>
-                </InlineStack>
-              </BlockStack>
+                ))}
+              </div>
+              <div className="qv-totals">
+                <dl>
+                  {deliveryFee > 0 ? (
+                    <>
+                      <div>
+                        <dt>Items</dt>
+                        <dd>{fmt(rawSubtotal)}</dd>
+                      </div>
+                      <div>
+                        <dt>Shipping{invoice.deliveryFeePercent ? ` (${invoice.deliveryFeePercent}%)` : ""}</dt>
+                        <dd>+{fmt(deliveryFee)}</dd>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <dt>Subtotal</dt>
+                      <dd>{fmt(invoice.amountUntaxed)}</dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>{taxLabel}</dt>
+                    <dd>+{fmt(invoice.amountTax)}</dd>
+                  </div>
+                  <div className="is-total">
+                    <dt>Total</dt>
+                    <dd>{fmt(invoice.amountTotal)}</dd>
+                  </div>
+                  {isPosted ? (
+                    <>
+                      <div className="is-good">
+                        <dt>Paid</dt>
+                        <dd>−{fmt(amountPaid)}</dd>
+                      </div>
+                      <div className={cn("iv-due-row", amountDue > 0 && "is-open")}>
+                        <dt>Amount due</dt>
+                        <dd>{fmt(amountDue)}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                </dl>
+              </div>
+            </Card>
+
+            {invoice.notes?.trim() ? (
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">
+                    Terms &amp; notes
+                  </Text>
+                  <p className="qv-terms">{invoice.notes}</p>
+                </BlockStack>
+              </Card>
             ) : null}
 
-            {/* ── TAB 1: JOURNAL ITEMS ── */}
-            {selectedTab === 1 ? (
-              <BlockStack gap="300">
-                {invoice.status === "draft" ? (
-                  <Banner tone="info">
-                    Post this invoice to generate accounting journal entries.
-                  </Banner>
-                ) : journalLoading ? (
-                  <Text as="p" tone="subdued">
-                    Loading journal entries...
+            {!isDraft ? (
+              <Card padding="0">
+                <div className="qv-card-head">
+                  <Text as="h2" variant="headingMd">
+                    Accounting entries
                   </Text>
+                  <Text as="span" tone="subdued" variant="bodySm">
+                    Customer invoices journal
+                  </Text>
+                </div>
+                {journalLoading ? (
+                  <div className="iv-journal-empty">
+                    <SkeletonBodyText lines={3} />
+                  </div>
                 ) : journalLines.length === 0 ? (
-                  <Text as="p" tone="subdued">
-                    No journal entries found for this invoice yet.
-                  </Text>
+                  <div className="iv-journal-empty">
+                    <Text as="p" tone="subdued">
+                      No journal entries yet.
+                    </Text>
+                  </div>
                 ) : (
-                  <div className="frogmen-recent-table-wrapper">
-                    <table className="frogmen-recent-table">
-                      <thead>
-                        <tr>
-                          <th>Account</th>
-                          <th>Label</th>
-                          <th style={{ textAlign: "right" }}>Debit</th>
-                          <th style={{ textAlign: "right" }}>Credit</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {journalLines.map((line) => (
-                          <tr key={line.id}>
-                            <td className="frogmen-font-bold">
-                              {line.accountCode} {line.accountName}
-                            </td>
-                            <td>{line.label}</td>
-                            <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                              {line.debit > 0 ? fmt(line.debit) : fmt(0)}
-                            </td>
-                            <td style={{ textAlign: "right" }} className="frogmen-font-bold">
-                              {line.credit > 0 ? fmt(line.credit) : fmt(0)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="iv-journal">
+                    <div className="iv-journal__head">
+                      <span>Account</span>
+                      <span>Label</span>
+                      <span>Debit</span>
+                      <span>Credit</span>
+                    </div>
+                    {journalLines.map((line) => (
+                      <div className="iv-journal__row" key={line.id}>
+                        <span>
+                          <strong>{line.accountCode}</strong> {line.accountName}
+                        </span>
+                        <span className="is-muted">{line.label}</span>
+                        <span className={line.debit > 0 ? "is-num" : "is-num is-zero"}>{line.debit > 0 ? fmt(line.debit) : "—"}</span>
+                        <span className={line.credit > 0 ? "is-num" : "is-num is-zero"}>{line.credit > 0 ? fmt(line.credit) : "—"}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </BlockStack>
+              </Card>
             ) : null}
 
-            {/* ── TAB 2: OTHER INFORMATION ── */}
-            {selectedTab === 2 ? (
-              <BlockStack gap="400">
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Activity
+                </Text>
+                {activities.length === 0 ? (
+                  <Text as="p" tone="subdued">
+                    Nothing yet — posting, payments and emails will show up here.
+                  </Text>
+                ) : (
+                  <ol className="qv-timeline">
+                    {activities.map((act) => (
+                      <li className={`is-${act.activityType === "paid" || act.activityType === "payment" ? "confirmed" : act.activityType}`} key={act.id}>
+                        <span className="qv-timeline__icon">
+                          <Icon source={INVOICE_ACTIVITY_ICON[act.activityType] ?? (/payment|paid/i.test(act.message) ? CheckCircleIcon : /posted/i.test(act.message) ? ReceiptIcon : /email|sent/i.test(act.message) ? EmailIcon : /cancel/i.test(act.message) ? XCircleIcon : NoteIcon)} />
+                        </span>
+                        <div>
+                          <strong>{act.message}</strong>
+                          <small>{shortDateTime(act.createdAt)}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </BlockStack>
+            </Card>
+          </div>
+
+          <div className="qv-side">
+            {isPosted ? (
+              <Card>
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text as="h2" variant="headingMd">
+                      Payment
+                    </Text>
+                    <Badge tone={isPaid ? "success" : overdue ? "critical" : "attention"}>
+                      {isPaid ? "Paid" : overdue ? "Overdue" : amountPaid > 0 ? "Part paid" : "Unpaid"}
+                    </Badge>
+                  </InlineStack>
+                  <div className={cn("iv-paybox", isPaid && "is-done", overdue && "is-late")}>
+                    <div className="iv-paybox__nums">
+                      <span>
+                        <small>Paid</small>
+                        <strong>{fmt(amountPaid)}</strong>
+                      </span>
+                      <span>
+                        <small>Due</small>
+                        <strong>{fmt(amountDue)}</strong>
+                      </span>
+                    </div>
+                    <i>
+                      <b style={{ width: `${paidShare}%` }} />
+                    </i>
+                    <small>{Math.round(paidShare)}% of {fmt(invoice.amountTotal)} collected</small>
+                  </div>
+                  {canPay ? (
+                    <Button fullWidth variant="primary" onClick={() => setPaymentModalOpen(true)}>
+                      Record payment
+                    </Button>
+                  ) : null}
+                </BlockStack>
+              </Card>
+            ) : null}
+
+            {isCancelled && invoice.creditNote ? (
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">
+                    Credit note
+                  </Text>
+                  <dl className="qv-facts">
+                    <div>
+                      <dt>Number</dt>
+                      <dd>{invoice.creditNote.number}</dd>
+                    </div>
+                    <div>
+                      <dt>Reason</dt>
+                      <dd>{invoice.creditNote.reason || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Refund due</dt>
+                      <dd>{fmt(invoice.creditNote.refundDue)}</dd>
+                    </div>
+                    <div>
+                      <dt>Refunded</dt>
+                      <dd>{fmt(invoice.creditNote.refundPaid)}</dd>
+                    </div>
+                  </dl>
+                  {refundOutstanding > 0 ? (
+                    <Button
+                      fullWidth
+                      variant="primary"
+                      onClick={() => {
+                        setRefundAmount(String(refundOutstanding));
+                        setRefundOpen(true);
+                      }}
+                    >
+                      Record refund
+                    </Button>
+                  ) : null}
+                </BlockStack>
+              </Card>
+            ) : null}
+
+            <Card>
+              <BlockStack gap="300">
                 <InlineStack align="space-between" blockAlign="center">
-                  <Text as="h3" variant="headingSm">Document references</Text>
+                  <Text as="h2" variant="headingMd">
+                    Details
+                  </Text>
                   {!isCancelled ? (
-                    <Button size="slim" onClick={() => setEditDetailsOpen(true)}>
-                      Edit references & notes
+                    <Button size="slim" variant="plain" onClick={() => setEditDetailsOpen(true)}>
+                      Edit
                     </Button>
                   ) : null}
                 </InlineStack>
-                <Grid>
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="100">
-                      <Text as="span" tone="subdued" variant="bodySm">Customer PO Reference</Text>
-                      <Text as="span" fontWeight="semibold">
-                        {invoice.customerReference || "Not provided"}
-                      </Text>
-                    </BlockStack>
-                  </Grid.Cell>
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="100">
-                      <Text as="span" tone="subdued" variant="bodySm">Internal Reference</Text>
-                      <Text as="span" fontWeight="semibold">
-                        {invoice.internalReference || "Not provided"}
-                      </Text>
-                    </BlockStack>
-                  </Grid.Cell>
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="100">
-                      <Text as="span" tone="subdued" variant="bodySm">Payment Reference</Text>
-                      <Text as="span" fontWeight="semibold">
-                        {invoice.number}
-                      </Text>
-                    </BlockStack>
-                  </Grid.Cell>
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="100">
-                      <Text as="span" tone="subdued" variant="bodySm">Payment Due Date</Text>
-                      <Text as="span" fontWeight="semibold">
-                        {invoice.dueDate
-                          ? formatAppDate(invoice.dueDate)
-                          : "Immediate / Not set"}
-                      </Text>
-                    </BlockStack>
-                  </Grid.Cell>
-                </Grid>
-
-                <Divider />
-                <BlockStack gap="300">
-                  <Text as="h3" variant="headingSm">
-                    Payment bank on PDF
-                  </Text>
-                  {!isCancelled ? (
-                    <>
-                      <Select
-                        label="Bank account shown to customer"
-                        options={[
-                          ...(invoiceBankCandidates.length > 1 &&
-                          !invoice.documentBankAccountId
-                            ? [
-                                {
-                                  label: "Select bank account…",
-                                  value: "",
-                                  disabled: true,
-                                },
-                              ]
-                            : []),
-                          ...invoiceBankCandidates.map((account) => ({
-                            label: `${account.name} (${account.currencyCode})`,
-                            value: account.id,
-                          })),
-                        ]}
-                        value={invoice.documentBankAccountId ?? ""}
-                        onChange={(value) => {
-                          if (value) void handleSaveDocumentBank(value);
-                        }}
-                        disabled={
-                          savingDocumentBank || invoiceBankCandidates.length === 0
-                        }
-                        helpText="Must match invoice currency. Shown in the PDF payment details section."
-                      />
-                      {invoiceBankCandidates.length === 0 ? (
-                        <Banner tone="warning">
-                          No {invoice.currencyCode ?? "invoice currency"} bank
-                          account is set to show on documents.{" "}
-                          <Link url="/dashboard/settings/bank-accounts">
-                            Add a bank account
-                          </Link>
-                        </Banner>
-                      ) : null}
-                    </>
-                  ) : (
-                    <Text as="p" tone="subdued">
-                      Payment bank selection is locked on cancelled invoices.
-                    </Text>
-                  )}
-                </BlockStack>
-
-                {invoice.activities && invoice.activities.length > 0 ? (
-                  <>
-                    <Divider />
-                    <BlockStack gap="200">
-                      <Text as="h3" variant="headingSm">Activity & Audit Trail</Text>
-                      <div className="frogmen-recent-table-wrapper">
-                        <table className="frogmen-recent-table">
-                          <thead>
-                            <tr>
-                              <th style={{ width: "25%" }}>Date & Time</th>
-                              <th style={{ width: "20%" }}>Action</th>
-                              <th style={{ width: "55%" }}>Details / Reason</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {invoice.activities.map((act) => (
-                              <tr key={act.id}>
-                                <td style={{ color: "var(--p-color-text-subdued)" }}>
-                                  {formatAppDateTime(act.createdAt)}
-                                </td>
-                                <td>
-                                  <Badge
-                                    tone={
-                                      act.activityType === "created"
-                                        ? "info"
-                                        : act.activityType === "paid"
-                                          ? "success"
-                                          : "attention"
-                                    }
-                                  >
-                                    {act.activityType.toUpperCase()}
-                                  </Badge>
-                                </td>
-                                <td>{act.message}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </BlockStack>
-                  </>
-                ) : null}
+                <dl className="qv-facts">
+                  <div>
+                    <dt>Document</dt>
+                    <dd>{invoiceBillingLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Payment term</dt>
+                    <dd>{invoice.paymentTerm || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Internal ref</dt>
+                    <dd>{invoice.internalReference || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Payment ref</dt>
+                    <dd>{invoice.number}</dd>
+                  </div>
+                </dl>
               </BlockStack>
-            ) : null}
+            </Card>
 
-            {/* ── TAB 3: TERMS & CONDITIONS ── */}
-            {selectedTab === 3 ? (
+            <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">Terms & conditions</Text>
-                <Text as="p" tone="subdued">
-                  {invoice.notes || "No terms or conditions were added to this invoice."}
+                <Text as="h2" variant="headingMd">
+                  Bank shown on the PDF
                 </Text>
+                {isCancelled ? (
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Locked on cancelled invoices.
+                  </Text>
+                ) : (
+                  <>
+                    <Select
+                      disabled={savingDocumentBank || invoiceBankCandidates.length === 0}
+                      helpText={`Only ${invoice.currencyCode ?? "matching"} accounts can be used.`}
+                      label="Bank account"
+                      labelHidden
+                      options={[
+                        ...(invoiceBankCandidates.length > 1 && !invoice.documentBankAccountId
+                          ? [{ label: "Choose a bank account…", value: "", disabled: true }]
+                          : []),
+                        ...invoiceBankCandidates.map((account) => ({
+                          label: `${account.name} (${account.currencyCode})`,
+                          value: account.id,
+                        })),
+                      ]}
+                      value={invoice.documentBankAccountId ?? ""}
+                      onChange={(value) => {
+                        if (value) void handleSaveDocumentBank(value);
+                      }}
+                    />
+                    {invoiceBankCandidates.length === 0 ? (
+                      <Banner tone="warning">
+                        No {invoice.currencyCode ?? "matching"} bank account is set up for documents.{" "}
+                        <Link url="/dashboard/settings/bank-accounts">Add one</Link>
+                      </Banner>
+                    ) : null}
+                  </>
+                )}
               </BlockStack>
-            ) : null}
-          </BlockStack>
-        </Card>
+            </Card>
+          </div>
+        </div>
       </BlockStack>
 
       <RegisterPaymentModal
@@ -1072,7 +1002,7 @@ export function InvoiceViewPage({ invoiceId }: InvoiceViewPageProps) {
           customerName: invoice.customerName,
           companyName: "",
           total: fmt(invoice.amountTotal),
-          dueDate: invoice.dueDate,
+          dueDate: invoice.dueDate ? formatAppDate(invoice.dueDate) : "",
           outstanding: fmt(Math.max(invoice.amountTotal - (invoice.amountPaid ?? 0), 0)),
         }}
         primaryActionLabel="Send invoice email"
