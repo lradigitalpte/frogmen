@@ -23,6 +23,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
+import { useToast } from "@/components/providers/toast-provider";
 import { cn } from "@/lib/utils";
 import {
   CALENDAR_SOURCE_LABELS,
@@ -31,6 +32,7 @@ import {
   listCalendarItems,
   listHolidayCountries,
   listOverdueDeliveries,
+  runCalendarRemindersNow,
   parseIsoDate,
   toIsoDate,
   type CalendarItem,
@@ -233,6 +235,8 @@ function CalendarItemRow({
 export function CalendarPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const { showSuccess, showError } = useToast();
+  const [sendingReminders, setSendingReminders] = useState(false);
   const today = toIsoDate(new Date());
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [view, setView] = useState<CalendarView>("month");
@@ -406,10 +410,36 @@ export function CalendarPage() {
   const dayItems = byDay.get(selectedDay) ?? [];
   const todayDate = parseIsoDate(today);
 
+  async function handleSendReminders() {
+    setSendingReminders(true);
+    try {
+      const result = await runCalendarRemindersNow();
+      if (result.skipped) {
+        showError(result.skipped);
+      } else {
+        const total = result.eventRemindersSent + result.digestsSent;
+        showSuccess(
+          total
+            ? `Sent ${result.eventRemindersSent} event reminder${result.eventRemindersSent === 1 ? "" : "s"} and ${result.digestsSent} digest${result.digestsSent === 1 ? "" : "s"}`
+            : "Nothing due right now — everything due has already been sent",
+        );
+      }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to send reminders");
+    } finally {
+      setSendingReminders(false);
+    }
+  }
+
   return (
     <AppPage
       primaryAction={{ content: "New event", icon: PlusIcon, onAction: () => openNewEvent(selectedDay) }}
       secondaryActions={[
+        {
+          content: "Send due reminders",
+          loading: sendingReminders,
+          onAction: () => void handleSendReminders(),
+        },
         {
           content: "Calendar settings",
           onAction: () => router.push("/dashboard/calendar/settings"),
