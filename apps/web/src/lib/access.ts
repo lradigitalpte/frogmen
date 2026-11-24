@@ -18,6 +18,7 @@ export function allows(permissions: readonly string[], rule: AccessRule) {
 /** Longest matching prefix wins. */
 const ROUTE_ACCESS: Array<[string, AccessRule]> = [
   ["/dashboard/analytics", "sales.read"],
+  ["/dashboard/analytics/expenses", "accounting.read"],
   ["/dashboard/customers", "customers.read"],
   ["/dashboard/customers/new", "customers.write"],
   ["/dashboard/leads", "customers.read"],

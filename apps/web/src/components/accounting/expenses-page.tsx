@@ -7,6 +7,7 @@ import {
   Button,
   ButtonGroup,
   Icon,
+  InlineStack,
   Modal,
   Pagination,
   Popover,
@@ -36,6 +37,7 @@ import { AppPage } from "@/components/layout/page";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { getAccountingOverview } from "@/lib/accounting-api";
+import { rangeError, type DateRange } from "@/lib/analytics-api";
 import { downloadCsv } from "@/lib/export-csv";
 import {
   deleteExpense,
@@ -48,10 +50,11 @@ import {
 import { formatAppDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 
-type Period = "month" | "quarter" | "year" | "all";
+type Period = "week" | "month" | "quarter" | "year" | "all" | "custom";
 type SourceFilter = "all" | "cash" | "bank" | "claims";
 
 const PERIODS: Array<{ id: Period; label: string }> = [
+  { id: "week", label: "This week" },
   { id: "month", label: "This month" },
   { id: "quarter", label: "Last 3 months" },
   { id: "year", label: "This year" },
@@ -67,6 +70,10 @@ function localIso(date: Date) {
 
 function periodStart(period: Period) {
   const now = new Date();
+  if (period === "week") {
+    // Weeks start on Monday.
+    return localIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)));
+  }
   if (period === "month") return localIso(new Date(now.getFullYear(), now.getMonth(), 1));
   if (period === "quarter") return localIso(new Date(now.getFullYear(), now.getMonth() - 2, 1));
   if (period === "year") return `${now.getFullYear()}-01-01`;
@@ -124,6 +131,9 @@ export function ExpensesPage() {
   const [viewingExpenseId, setViewingExpenseId] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("month");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [draft, setDraft] = useState<DateRange>({ from: "", to: "" });
+  const [custom, setCustom] = useState<DateRange>({ from: "", to: "" });
   const [source, setSource] = useState<SourceFilter>("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -164,13 +174,31 @@ export function ExpensesPage() {
 
   function choosePeriod(next: Period) {
     periodChosenRef.current = true;
+    setCustomOpen(false);
     setPeriod(next);
     setPage(1);
   }
 
+  function openCustom() {
+    if (customOpen) return;
+    periodChosenRef.current = true;
+    setDraft(period === "custom" ? custom : { from: start, to: todayIsoDate() });
+    setCustomOpen(true);
+  }
+
+  function applyCustom() {
+    setCustom(draft);
+    setPeriod("custom");
+    setPage(1);
+  }
+
   const all = data?.expenses ?? [];
-  const start = periodStart(period);
-  const inPeriod = useMemo(() => all.filter((e) => !start || e.expenseDate >= start), [all, start]);
+  const start = period === "custom" ? custom.from : periodStart(period);
+  const end = period === "custom" ? custom.to : "";
+  const inPeriod = useMemo(
+    () => all.filter((e) => (!start || e.expenseDate >= start) && (!end || e.expenseDate <= end)),
+    [all, start, end],
+  );
 
   const stats = useMemo(() => {
     let total = 0;
@@ -211,10 +239,19 @@ export function ExpensesPage() {
   const pageRows = filtered.slice((safePage - 1) * perPage, safePage * perPage);
   const filteredTotal = filtered.reduce((sum, e) => sum + e.amount, 0);
 
+  const rangeLabel =
+    period === "custom"
+      ? `${formatAppDate(start)} – ${formatAppDate(end)}`
+      : start
+        ? `Since ${formatAppDate(start)}`
+        : "Everything recorded";
+  const draftError = customOpen ? rangeError(draft) : null;
+
   function handleExport() {
     if (!filtered.length) return;
     const rows: string[][] = [
       ["Expenses", `Exported ${todayIsoDate()}`],
+      ["Period", rangeLabel],
       [],
       ["Number", "Date", "Category", "Description", "Reference", "Paid from", "Amount"],
       ...filtered.map((expense) => [
@@ -251,7 +288,7 @@ export function ExpensesPage() {
     setModalOpen(true);
   }
 
-  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? "";
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? rangeLabel;
   const first = loading && !data;
   const topCategories = stats.categories.slice(0, 4);
   const sourceCounts = {
@@ -286,15 +323,45 @@ export function ExpensesPage() {
         <div className="pl-period">
           <ButtonGroup variant="segmented">
             {PERIODS.map((p) => (
-              <Button key={p.id} pressed={period === p.id} size="slim" onClick={() => choosePeriod(p.id)}>
+              <Button key={p.id} pressed={!customOpen && period === p.id} size="slim" onClick={() => choosePeriod(p.id)}>
                 {p.label}
               </Button>
             ))}
+            <Button pressed={customOpen} size="slim" onClick={openCustom}>
+              Custom
+            </Button>
           </ButtonGroup>
-          <span className="pl-period__label">
-            {start ? `Since ${formatAppDate(start)}` : "Everything recorded"}
-          </span>
+          <span className="pl-period__label">{rangeLabel}</span>
         </div>
+
+        {customOpen ? (
+          <InlineStack blockAlign="end" gap="300">
+            <TextField
+              autoComplete="off"
+              label="From"
+              max={draft.to || undefined}
+              type="date"
+              value={draft.from}
+              onChange={(from) => setDraft((current) => ({ ...current, from }))}
+            />
+            <TextField
+              autoComplete="off"
+              label="To"
+              min={draft.from || undefined}
+              type="date"
+              value={draft.to}
+              onChange={(to) => setDraft((current) => ({ ...current, to }))}
+            />
+            <Button disabled={draftError !== null} variant="primary" onClick={applyCustom}>
+              Apply
+            </Button>
+            {draftError ? (
+              <Text as="span" tone="critical" variant="bodySm">
+                {draftError}
+              </Text>
+            ) : null}
+          </InlineStack>
+        ) : null}
 
         {/* Hero */}
         <section className="pl-hero ex-hero">

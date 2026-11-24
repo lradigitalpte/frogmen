@@ -53,6 +53,10 @@ export const mainNavItems: NavItem[] = [
         label: "Purchasing & cost",
         url: "/dashboard/analytics/purchasing",
       },
+      {
+        label: "Expenses",
+        url: "/dashboard/analytics/expenses",
+      },
     ],
   },
   {

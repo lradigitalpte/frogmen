@@ -15,6 +15,10 @@ export const ANALYTICS_SECTIONS = {
     title: "Purchasing & cost",
     subtitle: "Purchase order spend, receipts and your largest vendors.",
   },
+  expenses: {
+    title: "Expenses",
+    subtitle: "Petty cash and operating costs, and where the money goes.",
+  },
 } as const;
 
 export type AnalyticsSection = keyof typeof ANALYTICS_SECTIONS;

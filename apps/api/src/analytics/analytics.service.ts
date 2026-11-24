@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, isNull, lte, sql, sum, type AnyColumn } from "drizzle-orm";
 import type { Database } from "@frog1/db";
 import {
+  expenseCategories,
+  expenses,
   salesOrders,
   invoices,
   purchaseOrders,
@@ -89,6 +91,85 @@ export class AnalyticsService {
       sales: { current: salesCurrent, compare: salesCompare },
       invoices: { current: invoicesCurrent, compare: invoicesCompare },
       purchasing: { current: purchasingCurrent, compare: purchasingCompare },
+    };
+  }
+
+  async getExpenseAnalytics(query: AnalyticsQuery) {
+    const { current, compare, organizationId, groupBy } = query;
+    const [currentStats, compareStats] = await Promise.all([
+      this.getExpenseStats(organizationId, current, groupBy),
+      this.getExpenseStats(organizationId, compare, groupBy),
+    ]);
+    return { current: currentStats, compare: compareStats };
+  }
+
+  // ── Expenses ───────────────────────────────────────────────────────────────
+
+  private async getExpenseStats(orgId: string, range: DateRange, groupBy: AnalyticsGroupBy) {
+    const rows = await this.db
+      .select({
+        expenseDate: expenses.expenseDate,
+        amount: expenses.amount,
+        paymentMethod: expenses.paymentMethod,
+        categoryId: expenses.categoryId,
+        categoryName: expenseCategories.name,
+      })
+      .from(expenses)
+      .leftJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
+      .where(
+        and(
+          eq(expenses.organizationId, orgId),
+          gte(expenses.expenseDate, range.from),
+          lte(expenses.expenseDate, range.to),
+          isNull(expenses.deletedAt),
+        ),
+      );
+
+    let totalSpent = 0;
+    const paidFrom = {
+      cash: { count: 0, amount: 0 },
+      bank: { count: 0, amount: 0 },
+    };
+    const byMonth = buildBuckets(range, groupBy).map((month) => ({ month, count: 0, spent: 0 }));
+    const buckets = new Map(byMonth.map((bucket) => [bucket.month, bucket]));
+    const categories = new Map<
+      string,
+      { categoryId: string; categoryName: string; count: number; spent: number }
+    >();
+
+    for (const row of rows) {
+      const amount = safeNum(row.amount);
+      totalSpent += amount;
+
+      const source = row.paymentMethod === "cash" ? paidFrom.cash : paidFrom.bank;
+      source.count += 1;
+      source.amount += amount;
+
+      const bucket = buckets.get(bucketKey(row.expenseDate, groupBy));
+      if (bucket) {
+        bucket.count += 1;
+        bucket.spent += amount;
+      }
+
+      const categoryId = row.categoryId ?? "none";
+      const category = categories.get(categoryId) ?? {
+        categoryId,
+        categoryName: row.categoryName ?? "Uncategorised",
+        count: 0,
+        spent: 0,
+      };
+      category.count += 1;
+      category.spent += amount;
+      categories.set(categoryId, category);
+    }
+
+    return {
+      totalCount: rows.length,
+      totalSpent,
+      avgExpense: rows.length ? totalSpent / rows.length : 0,
+      paidFrom,
+      byMonth,
+      categories: [...categories.values()].sort((a, b) => b.spent - a.spent),
     };
   }
 

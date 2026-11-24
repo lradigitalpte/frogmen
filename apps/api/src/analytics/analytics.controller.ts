@@ -1,5 +1,6 @@
 import { BadRequestException, Controller, Get, Query } from "@nestjs/common";
 import { RequireActiveOrg, Session, type UserSession } from "@thallesp/nestjs-better-auth";
+import { RequirePermission } from "../security/require-permission.decorator";
 import { AnalyticsService, type AnalyticsGroupBy, type DateRange } from "./analytics.service";
 
 function defaultRange() {
@@ -57,23 +58,48 @@ export class AnalyticsController {
     @Query("to") to?: string,
     @Query("compareFrom") compareFrom?: string,
     @Query("compareTo") compareTo?: string,
-    @Query("groupBy") groupByParam?: string,
+    @Query("groupBy") groupBy?: string,
+  ) {
+    return this.analyticsService.getAnalytics(
+      this.query(session, { from, to, compareFrom, compareTo, groupBy }),
+    );
+  }
+
+  /** Company costs: needs accounting access, unlike the sales analytics above. */
+  @Get("expenses")
+  @RequirePermission("accounting.read")
+  async getExpenseAnalytics(
+    @Session() session: UserSession,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("compareFrom") compareFrom?: string,
+    @Query("compareTo") compareTo?: string,
+    @Query("groupBy") groupBy?: string,
+  ) {
+    return this.analyticsService.getExpenseAnalytics(
+      this.query(session, { from, to, compareFrom, compareTo, groupBy }),
+    );
+  }
+
+  private query(
+    session: UserSession,
+    params: {
+      from?: string;
+      to?: string;
+      compareFrom?: string;
+      compareTo?: string;
+      groupBy?: string;
+    },
   ) {
     const defaults = defaultRange();
-    const groupBy = parseGroupBy(groupByParam);
-    const current = { from: from ?? defaults.from, to: to ?? defaults.to };
+    const groupBy = parseGroupBy(params.groupBy);
+    const current = { from: params.from ?? defaults.from, to: params.to ?? defaults.to };
     const compare = {
-      from: compareFrom ?? defaults.compareFrom,
-      to: compareTo ?? defaults.compareTo,
+      from: params.compareFrom ?? defaults.compareFrom,
+      to: params.compareTo ?? defaults.compareTo,
     };
     checkRange(current, groupBy);
     checkRange(compare, groupBy);
-
-    return this.analyticsService.getAnalytics({
-      organizationId: this.orgId(session),
-      groupBy,
-      current,
-      compare,
-    });
+    return { organizationId: this.orgId(session), groupBy, current, compare };
   }
 }

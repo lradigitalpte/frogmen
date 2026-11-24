@@ -102,6 +102,17 @@ export interface PurchasingStats {
   topVendors: PurchasingVendor[];
 }
 
+// ── Expenses ──────────────────────────────────────────────────────────────────
+
+export interface ExpenseStats {
+  totalCount: number;
+  totalSpent: number;
+  avgExpense: number;
+  paidFrom: Record<"cash" | "bank", { count: number; amount: number }>;
+  byMonth: Array<{ month: string; count: number; spent: number }>;
+  categories: Array<{ categoryId: string; categoryName: string; count: number; spent: number }>;
+}
+
 // ── Composite response ────────────────────────────────────────────────────────
 
 export interface AnalyticsSectionData<T> {
@@ -126,15 +137,24 @@ export interface FetchAnalyticsParams {
   compare: DateRange;
 }
 
-export function fetchAnalytics(params: FetchAnalyticsParams) {
-  const qs = new URLSearchParams({
+function analyticsQuery(params: FetchAnalyticsParams) {
+  return new URLSearchParams({
     from: params.current.from,
     to: params.current.to,
     compareFrom: params.compare.from,
     compareTo: params.compare.to,
     groupBy: params.groupBy,
-  });
-  return apiFetch<AnalyticsData>(`/api/v1/analytics?${qs.toString()}`);
+  }).toString();
+}
+
+export function fetchAnalytics(params: FetchAnalyticsParams) {
+  return apiFetch<AnalyticsData>(`/api/v1/analytics?${analyticsQuery(params)}`);
+}
+
+export function fetchExpenseAnalytics(params: FetchAnalyticsParams) {
+  return apiFetch<AnalyticsSectionData<ExpenseStats>>(
+    `/api/v1/analytics/expenses?${analyticsQuery(params)}`,
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

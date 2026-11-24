@@ -19,6 +19,7 @@ import { AppPage } from "@/components/layout/page";
 import {
   MAX_DAILY_DAYS,
   fetchAnalytics,
+  fetchExpenseAnalytics,
   getPresets,
   previousRange,
   rangeDays,
@@ -26,13 +27,16 @@ import {
   resolveGroupBy,
   type AnalyticsData,
   type AnalyticsGroupBy,
+  type AnalyticsSectionData,
   type DateRange,
+  type ExpenseStats,
   type GroupByChoice,
   type PresetId,
 } from "@/lib/analytics-api";
 import { ANALYTICS_SECTIONS, type AnalyticsSection } from "@/lib/analytics-sections";
 import { formatAppDate } from "@/lib/format-date";
 import { MetricGrid } from "./analytics-ui";
+import { TabExpenses } from "./tab-expenses";
 import { TabInvoices } from "./tab-invoices";
 import { TabPurchasing } from "./tab-purchasing";
 import { TabQuotations } from "./tab-quotations";
@@ -76,7 +80,12 @@ export function AnalyticsDashboard({ section }: { section: AnalyticsSection }) {
   const [customOpen, setCustomOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange>({ from: "", to: "" });
   const [loading, setLoading] = useState(true);
-  const [result, setResult] = useState<{ data: AnalyticsData; groupBy: AnalyticsGroupBy } | null>(null);
+  const [result, setResult] = useState<{
+    /** Everything except expenses, which load separately (accounting access). */
+    data: AnalyticsData | null;
+    expenses: AnalyticsSectionData<ExpenseStats> | null;
+    groupBy: AnalyticsGroupBy;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
@@ -103,8 +112,9 @@ export function AnalyticsDashboard({ section }: { section: AnalyticsSection }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAnalytics(active);
-      if (id === requestId.current) setResult({ data, groupBy: active.groupBy });
+      const data = section === "expenses" ? null : await fetchAnalytics(active);
+      const expenses = section === "expenses" ? await fetchExpenseAnalytics(active) : null;
+      if (id === requestId.current) setResult({ data, expenses, groupBy: active.groupBy });
     } catch (err) {
       if (id === requestId.current) {
         setError(err instanceof Error ? err.message : "Failed to load analytics data");
@@ -112,7 +122,7 @@ export function AnalyticsDashboard({ section }: { section: AnalyticsSection }) {
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [active]);
+  }, [active, section]);
 
   useEffect(() => {
     if (filter) void load();
@@ -238,10 +248,23 @@ export function AnalyticsDashboard({ section }: { section: AnalyticsSection }) {
           ) : null
         ) : (
           <div className={loading ? "an-content is-loading" : "an-content"}>
-            {section === "quotations" && <TabQuotations data={result.data.quotations} groupBy={result.groupBy} />}
-            {section === "sales" && <TabSales data={result.data.sales} groupBy={result.groupBy} />}
-            {section === "invoices" && <TabInvoices data={result.data.invoices} groupBy={result.groupBy} />}
-            {section === "purchasing" && <TabPurchasing data={result.data.purchasing} groupBy={result.groupBy} />}
+            {section === "expenses" && result.expenses ? (
+              <TabExpenses data={result.expenses} groupBy={result.groupBy} />
+            ) : null}
+            {result.data ? (
+              <>
+                {section === "quotations" && (
+                  <TabQuotations data={result.data.quotations} groupBy={result.groupBy} />
+                )}
+                {section === "sales" && <TabSales data={result.data.sales} groupBy={result.groupBy} />}
+                {section === "invoices" && (
+                  <TabInvoices data={result.data.invoices} groupBy={result.groupBy} />
+                )}
+                {section === "purchasing" && (
+                  <TabPurchasing data={result.data.purchasing} groupBy={result.groupBy} />
+                )}
+              </>
+            ) : null}
           </div>
         )}
       </BlockStack>

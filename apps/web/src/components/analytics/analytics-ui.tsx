@@ -177,7 +177,7 @@ export function ChartTooltip({
   active?: boolean;
   payload?: TooltipEntry[];
   label?: string | number;
-  format: (value: number) => string;
+  format: (value: number, name: string) => string;
 }) {
   if (!active || !payload?.length) return null;
   return (
@@ -187,7 +187,7 @@ export function ChartTooltip({
         <span key={String(entry.name)}>
           <i style={{ background: entry.color ?? entry.stroke ?? entry.fill }} />
           {entry.name}
-          <b>{format(Number(entry.value) || 0)}</b>
+          <b>{format(Number(entry.value) || 0, String(entry.name))}</b>
         </span>
       ))}
     </div>

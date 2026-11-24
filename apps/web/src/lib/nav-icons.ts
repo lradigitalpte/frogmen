@@ -73,6 +73,7 @@ const pageIcons: Record<string, PolarisIconSource> = {
   "/dashboard/analytics/sales": ChartLineIcon,
   "/dashboard/analytics/invoices": CashDollarIcon,
   "/dashboard/analytics/purchasing": ChartStackedIcon,
+  "/dashboard/analytics/expenses": ReceiptIcon,
   "/dashboard/alerts": AlertTriangleIcon,
   "/dashboard/calendar": CalendarIcon,
   "/dashboard/customers": PersonIcon,
