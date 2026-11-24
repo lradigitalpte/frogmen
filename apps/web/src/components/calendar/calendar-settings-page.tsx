@@ -9,6 +9,8 @@ import {
   Card,
   Checkbox,
   FormLayout,
+  Box,
+  Divider,
   Icon,
   InlineStack,
   Select,
@@ -17,8 +19,10 @@ import {
   TextField,
 } from "@shopify/polaris";
 import {
+  ClipboardIcon,
   ClockIcon,
   EmailIcon,
+  PlayIcon,
   GlobeIcon,
   PlusIcon,
   SearchIcon,
@@ -26,18 +30,22 @@ import {
   XIcon,
 } from "@shopify/polaris-icons";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { useToast } from "@/components/providers/toast-provider";
 import { parseEmailList } from "@frog1/shared";
 import {
+  getCalendarReminderStatus,
   getCalendarSettings,
   listHolidayCountries,
+  runCalendarRemindersNow,
   sendCalendarDigestNow,
+  type CalendarReminderStatus,
   updateCalendarSettings,
   type CalendarSettings,
   type HolidayCountry,
 } from "@/lib/calendar-api";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
@@ -85,6 +93,15 @@ const DIGEST_OPTIONS: Array<{ key: DigestKey; label: string; help: string; sourc
   },
 ];
 
+function shortDay(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 function lookaheadLabel(days: number) {
   return LOOKAHEAD_OPTIONS.find((option) => option.value === String(days))?.label ?? `Today + ${days} days`;
 }
@@ -99,6 +116,18 @@ export function CalendarSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
+  const [status, setStatus] = useState<CalendarReminderStatus | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
+
+  const loadStatus = useCallback(() => {
+    getCalendarReminderStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
 
   useEffect(() => {
     Promise.all([getCalendarSettings(), listHolidayCountries()])
@@ -184,6 +213,37 @@ export function CalendarSettingsPage() {
     }
   }
 
+  async function handleRunNow() {
+    setRunningNow(true);
+    try {
+      const result = await runCalendarRemindersNow();
+      if (result.skipped) {
+        showError(result.skipped);
+      } else {
+        const total = result.eventRemindersSent + result.digestsSent;
+        showSuccess(
+          total
+            ? `Sent ${result.eventRemindersSent} event reminder${result.eventRemindersSent === 1 ? "" : "s"} and ${result.digestsSent} digest${result.digestsSent === 1 ? "" : "s"}`
+            : "Nothing due right now — everything due has already been sent",
+        );
+      }
+      loadStatus();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to run reminders");
+    } finally {
+      setRunningNow(false);
+    }
+  }
+
+  async function handleCopyCronUrl(url: string) {
+    try {
+      await copyText(url);
+      showSuccess("Cron URL copied");
+    } catch {
+      showError("Could not copy — select the URL and copy it manually");
+    }
+  }
+
   if (!settings) {
     return (
       <AppPage backAction={{ content: "Calendar", url: "/dashboard/calendar" }} title="Calendar settings">
@@ -203,6 +263,11 @@ export function CalendarSettingsPage() {
   const recipients = parseEmailList(settings.reminderEmails ?? "");
   const included = DIGEST_OPTIONS.filter((option) => settings[option.key]);
   const on = settings.remindersEnabled;
+  const cronBase = (status?.apiUrl ?? (typeof window !== "undefined" ? window.location.origin : "")).replace(
+    /\/+$/,
+    "",
+  );
+  const cronUrl = status ? `${cronBase}${status.cronPath}?token=YOUR_CRON_SECRET` : "";
 
   return (
     <AppPage
@@ -398,6 +463,156 @@ export function CalendarSettingsPage() {
                     </div>
                     <Text as="p" variant="bodySm" tone="subdued">
                       Your own calendar events are always included.
+                    </Text>
+                  </BlockStack>
+                </>
+              ) : null}
+            </BlockStack>
+          </Card>
+          {/* Reminder delivery: manual run + external cron */}
+          <Card>
+            <BlockStack gap="400">
+              <div className="cset-head">
+                <span className="cset-head__icon">
+                  <Icon source={PlayIcon} />
+                </span>
+                <div>
+                  <Text as="h2" variant="headingMd">
+                    Reminder delivery
+                  </Text>
+                  <Text as="p" tone="subdued" variant="bodySm">
+                    Send due reminders now, or let an external cron job (cron-job.org) trigger them on a
+                    schedule.
+                  </Text>
+                </div>
+                {status ? (
+                  <Badge tone={status.cronConfigured ? "success" : "attention"}>
+                    {status.cronConfigured ? "Cron ready" : "Cron not set up"}
+                  </Badge>
+                ) : null}
+              </div>
+
+              <InlineStack gap="300" blockAlign="center" wrap>
+                <Button
+                  disabled={dirty || !on}
+                  icon={PlayIcon}
+                  loading={runningNow}
+                  variant="primary"
+                  onClick={() => void handleRunNow()}
+                >
+                  Send due reminders now
+                </Button>
+                <Text as="span" variant="bodySm" tone="subdued">
+                  {dirty
+                    ? "Save your changes first."
+                    : !on
+                      ? "Turn on email reminders first."
+                      : "Sends every event reminder and today's digest that is due. Anything already sent is skipped."}
+                </Text>
+              </InlineStack>
+
+              {status ? (
+                <>
+                  <Divider />
+                  <BlockStack gap="200">
+                    <Text as="h3" variant="headingSm">
+                      Upcoming event reminders
+                    </Text>
+                    {status.upcoming.length ? (
+                      <BlockStack gap="100">
+                        {status.upcoming.map((item) => (
+                          <Box
+                            background="bg-surface-secondary"
+                            borderRadius="200"
+                            key={`${item.eventId}-${item.startDate}`}
+                            padding="200"
+                          >
+                            <InlineStack align="space-between" blockAlign="center" gap="200" wrap={false}>
+                              <BlockStack gap="050">
+                                <Text as="span" fontWeight="semibold" variant="bodySm">
+                                  {item.title}
+                                </Text>
+                                <Text as="span" tone="subdued" variant="bodySm">
+                                  {`Event ${shortDay(item.startDate)}${item.startTime ? ` ${item.startTime}` : ""} · reminder ${shortDay(item.sendOn)} · ${
+                                    item.recipients.length ? item.recipients.join(", ") : "no recipients"
+                                  }`}
+                                </Text>
+                              </BlockStack>
+                              <Badge
+                                tone={
+                                  item.sent
+                                    ? "success"
+                                    : !item.recipients.length
+                                      ? "critical"
+                                      : item.due
+                                        ? "warning"
+                                        : "info"
+                                }
+                              >
+                                {item.sent
+                                  ? "Sent"
+                                  : !item.recipients.length
+                                    ? "No recipients"
+                                    : item.due
+                                      ? "Due, not sent"
+                                      : "Scheduled"}
+                              </Badge>
+                            </InlineStack>
+                          </Box>
+                        ))}
+                      </BlockStack>
+                    ) : (
+                      <div className="cset-empty">No events with an email reminder in the next 60 days.</div>
+                    )}
+                  </BlockStack>
+
+                  {status.recent.length ? (
+                    <BlockStack gap="200">
+                      <Text as="h3" variant="headingSm">
+                        Recently sent
+                      </Text>
+                      <BlockStack gap="100">
+                        {status.recent.map((log) => (
+                          <InlineStack align="space-between" gap="200" key={log.id} wrap={false}>
+                            <Text as="span" truncate variant="bodySm">
+                              {log.subject}
+                            </Text>
+                            <Text as="span" tone="subdued" variant="bodySm">
+                              {`${log.recipientEmail} · ${new Date(log.sentAt).toLocaleString()}`}
+                            </Text>
+                          </InlineStack>
+                        ))}
+                      </BlockStack>
+                    </BlockStack>
+                  ) : null}
+
+                  <Divider />
+                  <BlockStack gap="300">
+                    <Text as="h3" variant="headingSm">
+                      Scheduled cron (cron-job.org)
+                    </Text>
+                    <TextField
+                      autoComplete="off"
+                      connectedRight={
+                        <Button icon={ClipboardIcon} onClick={() => void handleCopyCronUrl(cronUrl)}>
+                          Copy
+                        </Button>
+                      }
+                      helpText="Replace YOUR_CRON_SECRET with the CRON_SECRET value set on the API server."
+                      label="Cron URL"
+                      readOnly
+                      value={cronUrl}
+                    />
+                    {status.cronConfigured ? null : (
+                      <Banner tone="warning">
+                        CRON_SECRET is not set on the API yet, so this URL will refuse requests. Add it to
+                        the API environment and redeploy.
+                      </Banner>
+                    )}
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      {`On cron-job.org: create a cron job, paste this URL, run it every 15 minutes (or hourly) and save. Each call sends whatever is due and never sends the same reminder twice. Scheduled sends start at ${
+                        HOUR_OPTIONS[status.digestHour]?.label ?? "—"
+                      } server time (server clock now ${status.serverTime.slice(11, 16)} UTC).`}
                     </Text>
                   </BlockStack>
                 </>

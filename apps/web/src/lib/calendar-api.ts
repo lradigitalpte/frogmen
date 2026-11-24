@@ -95,6 +95,45 @@ export function sendCalendarDigestNow() {
   }>("/api/v1/calendar/reminders/send-digest", { method: "POST" });
 }
 
+export interface CalendarReminderStatus {
+  remindersEnabled: boolean;
+  digestHour: number;
+  serverTime: string;
+  cronConfigured: boolean;
+  apiUrl: string | null;
+  cronPath: string;
+  upcoming: Array<{
+    eventId: string;
+    title: string;
+    startDate: string;
+    startTime: string | null;
+    reminderDaysBefore: number;
+    sendOn: string;
+    recipients: string[];
+    sent: boolean;
+    due: boolean;
+  }>;
+  recent: Array<{
+    id: string;
+    recipientEmail: string;
+    subject: string;
+    sentAt: string;
+  }>;
+}
+
+export function getCalendarReminderStatus() {
+  return apiFetch<CalendarReminderStatus>("/api/v1/calendar/reminders/status");
+}
+
+/** Sends every reminder that's due now (ignores the daily send hour; never re-sends). */
+export function runCalendarRemindersNow() {
+  return apiFetch<{
+    eventRemindersSent: number;
+    digestsSent: number;
+    skipped: string | null;
+  }>("/api/v1/calendar/reminders/run", { method: "POST" });
+}
+
 export function getCalendarEvent(id: string) {
   return apiFetch<CalendarEvent>(`/api/v1/calendar/events/${id}`);
 }

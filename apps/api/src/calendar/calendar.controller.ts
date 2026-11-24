@@ -77,6 +77,16 @@ export class CalendarController {
     return this.calendarService.updateSettings(this.orgId(session), input);
   }
 
+  @Get("reminders/status")
+  async reminderStatus(@Session() session: UserSession) {
+    return this.remindersService.getStatus(this.orgId(session));
+  }
+
+  @Post("reminders/run")
+  async runRemindersNow(@Session() session: UserSession) {
+    return this.remindersService.runForOrganization(this.orgId(session));
+  }
+
   @Post("reminders/send-digest")
   async sendDigestNow(@Session() session: UserSession) {
     return this.remindersService.sendDigestNow(this.orgId(session));

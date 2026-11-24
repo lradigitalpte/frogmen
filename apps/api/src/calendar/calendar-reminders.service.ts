@@ -1,6 +1,16 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  like,
+  lte,
+  sql,
+} from "drizzle-orm";
 import {
   calendarEvents,
   calendarReminderLogs,
@@ -45,6 +55,30 @@ function itemLine(item: CalendarItem) {
   return `• ${item.title}${subtitle}${time}`;
 }
 
+export interface ReminderRunCounts {
+  eventRemindersSent: number;
+  digestsSent: number;
+  /** Why nothing was attempted for the organization, when it was skipped. */
+  skipped: string | null;
+}
+
+export interface ReminderRunResult {
+  ranAt: string;
+  organizations: number;
+  eventRemindersSent: number;
+  digestsSent: number;
+  failures: number;
+  alreadyRunning?: boolean;
+}
+
+function eventReminderKeyPrefix(event: {
+  id: string;
+  startDate: string;
+  reminderDaysBefore: number | null;
+}) {
+  return `event:${event.id}:${event.startDate}:${event.reminderDaysBefore}:`;
+}
+
 @Injectable()
 export class CalendarRemindersService implements OnModuleInit {
   private readonly logger = new Logger(CalendarRemindersService.name);
@@ -77,8 +111,19 @@ export class CalendarRemindersService implements OnModuleInit {
     }, 20_000);
   }
 
-  async runDueReminders() {
-    if (this.running) return;
+  /**
+   * Scheduled run across every organization: called by the in-process timer
+   * and by the external cron endpoint. Respects each organization's send hour.
+   */
+  async runDueReminders(): Promise<ReminderRunResult> {
+    const result: ReminderRunResult = {
+      ranAt: new Date().toISOString(),
+      organizations: 0,
+      eventRemindersSent: 0,
+      digestsSent: 0,
+      failures: 0,
+    };
+    if (this.running) return { ...result, alreadyRunning: true };
     this.running = true;
 
     try {
@@ -86,10 +131,14 @@ export class CalendarRemindersService implements OnModuleInit {
 
       for (const organizationId of organizationIds) {
         try {
-          await this.inOrganizationContext(organizationId, () =>
-            this.processOrganization(organizationId),
+          const counts = await this.inOrganizationContext(organizationId, () =>
+            this.processOrganization(organizationId, { ignoreSendHour: false }),
           );
+          result.organizations += 1;
+          result.eventRemindersSent += counts.eventRemindersSent;
+          result.digestsSent += counts.digestsSent;
         } catch (error) {
+          result.failures += 1;
           this.logger.error(
             `Calendar reminders failed for ${organizationId}: ${
               error instanceof Error ? error.message : String(error)
@@ -100,6 +149,104 @@ export class CalendarRemindersService implements OnModuleInit {
     } finally {
       this.running = false;
     }
+
+    return result;
+  }
+
+  /**
+   * Manual run for one organization from the settings page. Sends everything
+   * that is due right now, ignoring the daily send hour. Reminders already
+   * sent are never sent twice.
+   */
+  runForOrganization(organizationId: string): Promise<ReminderRunCounts> {
+    return this.processOrganization(organizationId, { ignoreSendHour: true });
+  }
+
+  /** Upcoming event reminders and recent deliveries, for the settings page. */
+  async getStatus(organizationId: string) {
+    const settings = await this.calendar.getSettings(organizationId);
+    const today = todayIso();
+
+    const [events, recentLogs, eventLogs] = await Promise.all([
+      this.db
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          startDate: calendarEvents.startDate,
+          startTime: calendarEvents.startTime,
+          reminderDaysBefore: calendarEvents.reminderDaysBefore,
+          reminderEmails: calendarEvents.reminderEmails,
+        })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.organizationId, organizationId),
+            isNull(calendarEvents.deletedAt),
+            isNotNull(calendarEvents.reminderDaysBefore),
+            gte(calendarEvents.startDate, today),
+            lte(calendarEvents.startDate, addDaysIso(today, 60)),
+          ),
+        )
+        .orderBy(calendarEvents.startDate)
+        .limit(50),
+      this.db
+        .select({
+          id: calendarReminderLogs.id,
+          recipientEmail: calendarReminderLogs.recipientEmail,
+          subject: calendarReminderLogs.subject,
+          sentAt: calendarReminderLogs.sentAt,
+        })
+        .from(calendarReminderLogs)
+        .where(eq(calendarReminderLogs.organizationId, organizationId))
+        .orderBy(desc(calendarReminderLogs.sentAt))
+        .limit(10),
+      this.db
+        .select({ reminderKey: calendarReminderLogs.reminderKey })
+        .from(calendarReminderLogs)
+        .where(
+          and(
+            eq(calendarReminderLogs.organizationId, organizationId),
+            like(calendarReminderLogs.reminderKey, "event:%"),
+          ),
+        )
+        .orderBy(desc(calendarReminderLogs.sentAt))
+        .limit(500),
+    ]);
+
+    const sentKeys = eventLogs.map((log) => log.reminderKey);
+
+    return {
+      remindersEnabled: settings.remindersEnabled,
+      digestHour: settings.digestHour,
+      serverTime: new Date().toISOString(),
+      cronConfigured: Boolean(this.config.get<string>("CRON_SECRET")),
+      apiUrl: this.config.get<string>("API_URL") ?? null,
+      cronPath: "/api/v1/public/cron/calendar-reminders",
+      upcoming: events.map((event) => {
+        const sendOn = addDaysIso(
+          event.startDate,
+          -(event.reminderDaysBefore ?? 0),
+        );
+        const prefix = eventReminderKeyPrefix(event);
+        return {
+          eventId: event.id,
+          title: event.title,
+          startDate: event.startDate,
+          startTime: event.startTime,
+          reminderDaysBefore: event.reminderDaysBefore ?? 0,
+          sendOn,
+          recipients: parseEmailList(
+            event.reminderEmails ?? settings.reminderEmails ?? "",
+          ),
+          sent: sentKeys.some((key) => key.startsWith(prefix)),
+          due: sendOn <= today,
+        };
+      }),
+      recent: recentLogs.map((log) => ({
+        ...log,
+        sentAt: log.sentAt.toISOString(),
+      })),
+    };
   }
 
   /** Sends today's digest immediately, ignoring the schedule and dedupe log. */
@@ -155,13 +302,32 @@ export class CalendarRemindersService implements OnModuleInit {
     });
   }
 
-  private async processOrganization(organizationId: string) {
+  private async processOrganization(
+    organizationId: string,
+    options: { ignoreSendHour: boolean },
+  ): Promise<ReminderRunCounts> {
     const settings = await this.calendar.getSettings(organizationId);
-    if (!settings.remindersEnabled) return;
-    if (new Date().getHours() < settings.digestHour) return;
+    if (!settings.remindersEnabled) {
+      return {
+        eventRemindersSent: 0,
+        digestsSent: 0,
+        skipped: "Email reminders are switched off in calendar settings.",
+      };
+    }
+    if (
+      !options.ignoreSendHour &&
+      new Date().getHours() < settings.digestHour
+    ) {
+      return {
+        eventRemindersSent: 0,
+        digestsSent: 0,
+        skipped: "Before the daily send hour.",
+      };
+    }
 
-    await this.processEventReminders(settings);
-    await this.processDailyDigest(settings);
+    const eventRemindersSent = await this.processEventReminders(settings);
+    const digestsSent = await this.processDailyDigest(settings);
+    return { eventRemindersSent, digestsSent, skipped: null };
   }
 
   private async processEventReminders(settings: ResolvedCalendarSettings) {
@@ -179,8 +345,14 @@ export class CalendarRemindersService implements OnModuleInit {
         ),
       );
 
+    let sent = 0;
     for (const event of events) {
-      if (daysBetween(today, event.startDate) !== event.reminderDaysBefore) {
+      // Catch up: a reminder missed on its exact day (server asleep, cron not
+      // run yet) still goes out later, as long as the event hasn't passed.
+      // The dedupe key below keeps it to one send per recipient.
+      if (
+        daysBetween(today, event.startDate) > (event.reminderDaysBefore ?? 0)
+      ) {
         continue;
       }
 
@@ -205,9 +377,9 @@ export class CalendarRemindersService implements OnModuleInit {
       ].join("\n");
 
       for (const to of recipients) {
-        await this.sendOnce(
+        const delivered = await this.sendOnce(
           settings.organizationId,
-          `event:${event.id}:${event.startDate}:${event.reminderDaysBefore}:${to}`,
+          `${eventReminderKeyPrefix(event)}${to}`,
           to,
           subject,
           () =>
@@ -218,27 +390,34 @@ export class CalendarRemindersService implements OnModuleInit {
               bodyText,
             }),
         );
+        if (delivered) sent += 1;
       }
     }
+
+    return sent;
   }
 
   private async processDailyDigest(settings: ResolvedCalendarSettings) {
     const recipients = parseEmailList(settings.reminderEmails ?? "");
-    if (!recipients.length) return;
+    if (!recipients.length) return 0;
 
     const digest = await this.buildDigest(settings);
-    if (digest.itemCount === 0) return;
+    if (digest.itemCount === 0) return 0;
 
     const today = todayIso();
+    let sent = 0;
     for (const to of recipients) {
-      await this.sendOnce(
+      const delivered = await this.sendOnce(
         settings.organizationId,
         `digest:${today}:${to}`,
         to,
         digest.subject,
         () => this.sendDigestEmail(settings, to, digest),
       );
+      if (delivered) sent += 1;
     }
+
+    return sent;
   }
 
   private async buildDigest(settings: ResolvedCalendarSettings) {
