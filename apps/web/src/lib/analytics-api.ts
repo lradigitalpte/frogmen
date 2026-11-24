@@ -118,7 +118,10 @@ export interface AnalyticsData {
 
 // ── API call ──────────────────────────────────────────────────────────────────
 
+export type AnalyticsGroupBy = "day" | "week" | "month";
+
 export interface FetchAnalyticsParams {
+  groupBy: AnalyticsGroupBy;
   current: DateRange;
   compare: DateRange;
 }
@@ -129,6 +132,7 @@ export function fetchAnalytics(params: FetchAnalyticsParams) {
     to: params.current.to,
     compareFrom: params.compare.from,
     compareTo: params.compare.to,
+    groupBy: params.groupBy,
   });
   return apiFetch<AnalyticsData>(`/api/v1/analytics?${qs.toString()}`);
 }
@@ -146,8 +150,55 @@ export function monthLabel(ym: string): string {
   return formatAppDate(`${ym}-01`) || ym;
 }
 
+/** Local calendar date; toISOString() would shift to UTC and can land on the previous day. */
+export function localIso(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function addDays(isoDate: string, days: number) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return localIso(new Date(year, month - 1, day + days));
+}
+
+/** Number of days in the range, counting both ends. */
+export function rangeDays({ from, to }: DateRange) {
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
+}
+
+/** The period of equal length immediately before the range. */
+export function previousRange(range: DateRange): DateRange {
+  return { from: addDays(range.from, -rangeDays(range)), to: addDays(range.from, -1) };
+}
+
+/** Longest range that can be charted day by day. */
+export const MAX_DAILY_DAYS = 92;
+const MAX_RANGE_DAYS = 366 * 10;
+
+/** Reason a custom range can't be used, or null when it's fine. */
+export function rangeError({ from, to }: DateRange): string | null {
+  if (!from || !to) return "Choose both dates";
+  if (from < "2000-01-01") return "Choose a start date from 2000 onwards";
+  if (from > to) return "The start date must be on or before the end date";
+  if (rangeDays({ from, to }) > MAX_RANGE_DAYS) return "Choose a range of 10 years or less";
+  return null;
+}
+
+export type GroupByChoice = "auto" | AnalyticsGroupBy;
+
+export function resolveGroupBy(choice: GroupByChoice, range: DateRange): AnalyticsGroupBy {
+  const days = rangeDays(range);
+  if (choice === "day" && days > MAX_DAILY_DAYS) return "week";
+  if (choice !== "auto") return choice;
+  if (days <= 14) return "day";
+  return days <= 100 ? "week" : "month";
+}
+
+export type PresetId = "week" | "month" | "3_months" | "6_months" | "year";
+
 /** Preset date ranges for the filter bar */
 export interface Preset {
+  id: PresetId;
   label: string;
   current: DateRange;
   compare: DateRange;
@@ -157,46 +208,39 @@ export function getPresets(): Preset[] {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth(); // 0-indexed
-  const today = now.toISOString().slice(0, 10);
-  const pad = (n: number) => String(n).padStart(2, "0");
-
-  const lastMonth = m === 0 ? new Date(y - 1, 11, 1) : new Date(y, m - 1, 1);
-  const lmYear = lastMonth.getFullYear();
-  const lmMonth = lastMonth.getMonth();
-  const lmLast = new Date(lmYear, lmMonth + 1, 0);
+  const today = localIso(now);
+  const monthStart = (offset: number) => localIso(new Date(y, m + offset, 1));
+  const monthEnd = (offset: number) => localIso(new Date(y, m + offset + 1, 0));
+  const monday = addDays(today, -((now.getDay() + 6) % 7));
 
   return [
     {
+      id: "week",
+      label: "This Week",
+      current: { from: monday, to: today },
+      // Same weekdays of last week, so a half-finished week compares fairly.
+      compare: { from: addDays(monday, -7), to: addDays(today, -7) },
+    },
+    {
+      id: "month",
       label: "This Month",
-      current: { from: `${y}-${pad(m + 1)}-01`, to: today },
-      compare: {
-        from: `${lmYear}-${pad(lmMonth + 1)}-01`,
-        to: lmLast.toISOString().slice(0, 10),
-      },
+      current: { from: monthStart(0), to: today },
+      compare: { from: monthStart(-1), to: monthEnd(-1) },
     },
     {
+      id: "3_months",
       label: "Last 3 Months",
-      current: {
-        from: new Date(y, m - 2, 1).toISOString().slice(0, 10),
-        to: today,
-      },
-      compare: {
-        from: new Date(y, m - 5, 1).toISOString().slice(0, 10),
-        to: new Date(y, m - 2, 0).toISOString().slice(0, 10),
-      },
+      current: { from: monthStart(-2), to: today },
+      compare: { from: monthStart(-5), to: monthEnd(-3) },
     },
     {
+      id: "6_months",
       label: "Last 6 Months",
-      current: {
-        from: new Date(y, m - 5, 1).toISOString().slice(0, 10),
-        to: today,
-      },
-      compare: {
-        from: new Date(y, m - 11, 1).toISOString().slice(0, 10),
-        to: new Date(y, m - 5, 0).toISOString().slice(0, 10),
-      },
+      current: { from: monthStart(-5), to: today },
+      compare: { from: monthStart(-11), to: monthEnd(-6) },
     },
     {
+      id: "year",
       label: "This Year",
       current: { from: `${y}-01-01`, to: today },
       compare: { from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },

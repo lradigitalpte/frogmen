@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatAlertMoney } from "@/lib/alerts-api";
-import { pctChange, type AnalyticsSectionData, type PurchasingStats } from "@/lib/analytics-api";
+import { pctChange, type AnalyticsGroupBy, type AnalyticsSectionData, type PurchasingStats } from "@/lib/analytics-api";
 import {
   BreakdownCard,
   ChartCard,
@@ -23,7 +23,7 @@ import {
   MetricGrid,
   RankingTable,
   compactNumber,
-  shortMonth,
+  bucketLabel,
   useChartTheme,
 } from "./analytics-ui";
 
@@ -34,7 +34,13 @@ const RECEIPT_LABELS: Record<string, string> = {
   received: "Fully received",
 };
 
-export function TabPurchasing({ data }: { data: AnalyticsSectionData<PurchasingStats> }) {
+export function TabPurchasing({
+  data,
+  groupBy,
+}: {
+  data: AnalyticsSectionData<PurchasingStats>;
+  groupBy: AnalyticsGroupBy;
+}) {
   const router = useRouter();
   const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
@@ -50,7 +56,7 @@ export function TabPurchasing({ data }: { data: AnalyticsSectionData<PurchasingS
   };
 
   const chartData = cur.byMonth.map((m) => ({
-    name: shortMonth(m.month),
+    name: bucketLabel(m.month),
     Spend: m.spend,
     "Purchase orders": m.count,
   }));
@@ -89,7 +95,7 @@ export function TabPurchasing({ data }: { data: AnalyticsSectionData<PurchasingS
 
       <ChartRow>
         <ChartCard
-          title="Spend by month"
+          title={`Spend by ${groupBy}`}
           description="Purchase order spend, with the number of orders placed"
           legend={[
             { label: "Spend", color: theme.series.info },

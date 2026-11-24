@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, isNull, lte, sql, sum } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, sql, sum, type AnyColumn } from "drizzle-orm";
 import type { Database } from "@frog1/db";
 import {
   salesOrders,
@@ -15,7 +15,10 @@ export interface DateRange {
   to: string;
 }
 
+export type AnalyticsGroupBy = "day" | "week" | "month";
+
 export interface AnalyticsQuery {
+  groupBy: AnalyticsGroupBy;
   current: DateRange;
   compare: DateRange;
   organizationId: string;
@@ -25,18 +28,33 @@ function safeNum(v: string | number | null | undefined): number {
   return Number(v) || 0;
 }
 
-function buildMonthBuckets(from: string, to: string): string[] {
-  const start = new Date(`${from}T00:00:00`);
-  const end = new Date(`${to}T23:59:59`);
-  const buckets: string[] = [];
-  const cur = new Date(start.getFullYear(), start.getMonth(), 1);
-  while (cur <= end) {
-    buckets.push(
-      `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`,
-    );
-    cur.setMonth(cur.getMonth() + 1);
+/** Bucket key for a YYYY-MM-DD date: the day, the week's Monday, or YYYY-MM. */
+function bucketKey(isoDate: string, groupBy: AnalyticsGroupBy): string {
+  if (groupBy === "month") return isoDate.slice(0, 7);
+  if (groupBy === "day") return isoDate.slice(0, 10);
+  const date = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+/** SQL counterpart of bucketKey (Postgres weeks also start on Monday). */
+function bucketSql(column: AnyColumn, groupBy: AnalyticsGroupBy) {
+  if (groupBy === "month") return sql<string>`to_char(${column}, 'YYYY-MM')`;
+  if (groupBy === "day") return sql<string>`to_char(${column}, 'YYYY-MM-DD')`;
+  return sql<string>`to_char(date_trunc('week', ${column}::timestamp), 'YYYY-MM-DD')`;
+}
+
+function buildBuckets({ from, to }: DateRange, groupBy: AnalyticsGroupBy): string[] {
+  const buckets = new Set<string>();
+  const end = new Date(`${to}T00:00:00Z`);
+  for (
+    const cur = new Date(`${from}T00:00:00Z`);
+    cur <= end;
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  ) {
+    buckets.add(bucketKey(cur.toISOString().slice(0, 10), groupBy));
   }
-  return buckets;
+  return [...buckets];
 }
 
 @Injectable()
@@ -44,7 +62,7 @@ export class AnalyticsService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   async getAnalytics(query: AnalyticsQuery) {
-    const { current, compare, organizationId } = query;
+    const { current, compare, organizationId, groupBy } = query;
 
     const [
       quotationsCurrent,
@@ -56,14 +74,14 @@ export class AnalyticsService {
       purchasingCurrent,
       purchasingCompare,
     ] = await Promise.all([
-      this.getQuotationStats(organizationId, current),
-      this.getQuotationStats(organizationId, compare),
-      this.getSalesStats(organizationId, current),
-      this.getSalesStats(organizationId, compare),
-      this.getInvoiceStats(organizationId, current),
-      this.getInvoiceStats(organizationId, compare),
-      this.getPurchasingStats(organizationId, current),
-      this.getPurchasingStats(organizationId, compare),
+      this.getQuotationStats(organizationId, current, groupBy),
+      this.getQuotationStats(organizationId, compare, groupBy),
+      this.getSalesStats(organizationId, current, groupBy),
+      this.getSalesStats(organizationId, compare, groupBy),
+      this.getInvoiceStats(organizationId, current, groupBy),
+      this.getInvoiceStats(organizationId, compare, groupBy),
+      this.getPurchasingStats(organizationId, current, groupBy),
+      this.getPurchasingStats(organizationId, compare, groupBy),
     ]);
 
     return {
@@ -76,7 +94,7 @@ export class AnalyticsService {
 
   // ── Quotations ─────────────────────────────────────────────────────────────
 
-  private async getQuotationStats(orgId: string, range: DateRange) {
+  private async getQuotationStats(orgId: string, range: DateRange, groupBy: AnalyticsGroupBy) {
     // By-state counts + values
     const byStateRows = await this.db
       .select({
@@ -117,11 +135,11 @@ export class AnalyticsService {
     const avgDealSize =
       confirmed > 0 ? (byState["confirmed"]?.valueBase ?? 0) / confirmed : 0;
 
-    // Monthly series
-    const monthBuckets = buildMonthBuckets(range.from, range.to);
+    // Per-bucket series
+    const monthBuckets = buildBuckets(range, groupBy);
     const monthlyRows = await this.db
       .select({
-        month: sql<string>`to_char(${salesOrders.quoteDate}, 'YYYY-MM')`,
+        month: bucketSql(salesOrders.quoteDate, groupBy),
         count: count(),
         valueBase: sum(salesOrders.amountTotalBase),
       })
@@ -134,7 +152,7 @@ export class AnalyticsService {
           isNull(salesOrders.deletedAt),
         ),
       )
-      .groupBy(sql`to_char(${salesOrders.quoteDate}, 'YYYY-MM')`);
+      .groupBy(bucketSql(salesOrders.quoteDate, groupBy));
 
     const monthlyMap = new Map(monthlyRows.map((r) => [r.month, r]));
     const byMonth = monthBuckets.map((m) => ({
@@ -184,7 +202,7 @@ export class AnalyticsService {
 
   // ── Sales ──────────────────────────────────────────────────────────────────
 
-  private async getSalesStats(orgId: string, range: DateRange) {
+  private async getSalesStats(orgId: string, range: DateRange, groupBy: AnalyticsGroupBy) {
     const [totals] = await this.db
       .select({
         orderCount: count(),
@@ -235,11 +253,11 @@ export class AnalyticsService {
       };
     }
 
-    // Monthly revenue
-    const monthBuckets = buildMonthBuckets(range.from, range.to);
+    // Per-bucket revenue
+    const monthBuckets = buildBuckets(range, groupBy);
     const monthlyRows = await this.db
       .select({
-        month: sql<string>`to_char(${salesOrders.quoteDate}, 'YYYY-MM')`,
+        month: bucketSql(salesOrders.quoteDate, groupBy),
         orderCount: count(),
         revenue: sum(salesOrders.amountTotalBase),
       })
@@ -253,7 +271,7 @@ export class AnalyticsService {
           isNull(salesOrders.deletedAt),
         ),
       )
-      .groupBy(sql`to_char(${salesOrders.quoteDate}, 'YYYY-MM')`);
+      .groupBy(bucketSql(salesOrders.quoteDate, groupBy));
 
     const monthlyMap = new Map(monthlyRows.map((r) => [r.month, r]));
     const byMonth = monthBuckets.map((m) => ({
@@ -302,7 +320,7 @@ export class AnalyticsService {
 
   // ── Invoices ───────────────────────────────────────────────────────────────
 
-  private async getInvoiceStats(orgId: string, range: DateRange) {
+  private async getInvoiceStats(orgId: string, range: DateRange, groupBy: AnalyticsGroupBy) {
     const today = new Date().toISOString().slice(0, 10);
 
     const allRows = await this.db
@@ -329,7 +347,7 @@ export class AnalyticsService {
     let overdueCount = 0;
     let overdueAmount = 0;
 
-    const monthBuckets = buildMonthBuckets(range.from, range.to);
+    const monthBuckets = buildBuckets(range, groupBy);
     const monthlyBilled: Record<string, number> = {};
     const monthlyPaidMap: Record<string, number> = {};
     for (const b of monthBuckets) {
@@ -344,7 +362,7 @@ export class AnalyticsService {
       totalInvoiced += amt;
       totalPaid += paid;
 
-      const month = row.invoiceDate?.toString().slice(0, 7) ?? "";
+      const month = row.invoiceDate ? bucketKey(row.invoiceDate, groupBy) : "";
       if (month in monthlyBilled) {
         monthlyBilled[month] += amt;
         if (row.paymentState === "paid") monthlyPaidMap[month] += paid;
@@ -382,7 +400,7 @@ export class AnalyticsService {
 
   // ── Purchasing ─────────────────────────────────────────────────────────────
 
-  private async getPurchasingStats(orgId: string, range: DateRange) {
+  private async getPurchasingStats(orgId: string, range: DateRange, groupBy: AnalyticsGroupBy) {
     const [totals] = await this.db
       .select({
         poCount: count(),
@@ -429,11 +447,11 @@ export class AnalyticsService {
       (receiptBreakdown["to_receive"] ?? 0) +
       (receiptBreakdown["partial"] ?? 0);
 
-    // Monthly spend
-    const monthBuckets = buildMonthBuckets(range.from, range.to);
+    // Per-bucket spend
+    const monthBuckets = buildBuckets(range, groupBy);
     const monthlyRows = await this.db
       .select({
-        month: sql<string>`to_char(${purchaseOrders.orderDate}, 'YYYY-MM')`,
+        month: bucketSql(purchaseOrders.orderDate, groupBy),
         poCount: count(),
         spend: sum(purchaseOrders.amountTotalBase),
       })
@@ -447,7 +465,7 @@ export class AnalyticsService {
           isNull(purchaseOrders.deletedAt),
         ),
       )
-      .groupBy(sql`to_char(${purchaseOrders.orderDate}, 'YYYY-MM')`);
+      .groupBy(bucketSql(purchaseOrders.orderDate, groupBy));
 
     const monthlyMap = new Map(monthlyRows.map((r) => [r.month, r]));
     const byMonth = monthBuckets.map((m) => ({

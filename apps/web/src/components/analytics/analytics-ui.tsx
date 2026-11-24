@@ -62,10 +62,14 @@ export function useChartTheme(): ChartTheme {
   return theme === "dark" ? DARK : LIGHT;
 }
 
-/** "2026-03" → "Mar 26" */
-export function shortMonth(ym: string) {
-  const [year, month] = ym.split("-").map(Number);
-  if (!year || !month) return ym;
+/** "2026-03" → "Mar 26"; a day or week start "2026-03-09" → "9 Mar" */
+export function bucketLabel(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  if (!year || !month) return key;
+  if (day) {
+    const date = new Date(year, month - 1, day);
+    return `${day} ${date.toLocaleString("en", { month: "short" })}`;
+  }
   const date = new Date(year, month - 1, 1);
   return `${date.toLocaleString("en", { month: "short" })} ${String(year).slice(2)}`;
 }

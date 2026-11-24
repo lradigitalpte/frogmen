@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatAlertMoney } from "@/lib/alerts-api";
-import { pctChange, type AnalyticsSectionData, type InvoiceStats } from "@/lib/analytics-api";
+import { pctChange, type AnalyticsGroupBy, type AnalyticsSectionData, type InvoiceStats } from "@/lib/analytics-api";
 import {
   ChartCard,
   ChartRow,
@@ -20,11 +20,17 @@ import {
   MetricCard,
   MetricGrid,
   compactNumber,
-  shortMonth,
+  bucketLabel,
   useChartTheme,
 } from "./analytics-ui";
 
-export function TabInvoices({ data }: { data: AnalyticsSectionData<InvoiceStats> }) {
+export function TabInvoices({
+  data,
+  groupBy,
+}: {
+  data: AnalyticsSectionData<InvoiceStats>;
+  groupBy: AnalyticsGroupBy;
+}) {
   const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
   const money = (amount: number) => formatAlertMoney(amount, baseCurrencyCode);
@@ -33,11 +39,11 @@ export function TabInvoices({ data }: { data: AnalyticsSectionData<InvoiceStats>
 
   const outstanding = Math.max(0, cur.totalInvoiced - cur.totalPaid);
   const chartData = cur.byMonth.map((m) => ({
-    name: shortMonth(m.month),
+    name: bucketLabel(m.month),
     Billed: m.billed,
     Collected: m.paid,
   }));
-  const bestMonth = [...cur.byMonth].sort((a, b) => b.paid - a.paid)[0];
+  const bestBucket = [...cur.byMonth].sort((a, b) => b.paid - a.paid)[0];
 
   return (
     <div className="an-stack">
@@ -73,7 +79,7 @@ export function TabInvoices({ data }: { data: AnalyticsSectionData<InvoiceStats>
       <ChartRow>
         <ChartCard
           title="Billed vs collected"
-          description="Invoiced amounts against cash collected each month"
+          description={`Invoiced amounts against cash collected each ${groupBy}`}
           legend={[
             { label: "Billed", color: theme.series.info },
             { label: "Collected", color: theme.series.primary },
@@ -139,8 +145,8 @@ export function TabInvoices({ data }: { data: AnalyticsSectionData<InvoiceStats>
                 </strong>
               </div>
               <div>
-                <span>Best collection month</span>
-                <strong>{bestMonth && bestMonth.paid > 0 ? shortMonth(bestMonth.month) : "—"}</strong>
+                <span>Best collection {groupBy}</span>
+                <strong>{bestBucket && bestBucket.paid > 0 ? bucketLabel(bestBucket.month) : "—"}</strong>
               </div>
             </div>
           </BlockStack>

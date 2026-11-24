@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatAlertMoney } from "@/lib/alerts-api";
-import { pctChange, type AnalyticsSectionData, type QuotationStats } from "@/lib/analytics-api";
+import { pctChange, type AnalyticsGroupBy, type AnalyticsSectionData, type QuotationStats } from "@/lib/analytics-api";
 import {
   BreakdownCard,
   ChartCard,
@@ -23,13 +23,19 @@ import {
   MetricGrid,
   RankingTable,
   compactNumber,
-  shortMonth,
+  bucketLabel,
   useChartTheme,
 } from "./analytics-ui";
 
 const STATE_ORDER = ["draft", "sent", "signed", "confirmed", "cancelled"] as const;
 
-export function TabQuotations({ data }: { data: AnalyticsSectionData<QuotationStats> }) {
+export function TabQuotations({
+  data,
+  groupBy,
+}: {
+  data: AnalyticsSectionData<QuotationStats>;
+  groupBy: AnalyticsGroupBy;
+}) {
   const router = useRouter();
   const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
@@ -46,7 +52,7 @@ export function TabQuotations({ data }: { data: AnalyticsSectionData<QuotationSt
   };
 
   const chartData = cur.byMonth.map((m) => ({
-    name: shortMonth(m.month),
+    name: bucketLabel(m.month),
     "Quoted value": m.valueBase,
     Quotations: m.count,
   }));
@@ -88,8 +94,8 @@ export function TabQuotations({ data }: { data: AnalyticsSectionData<QuotationSt
 
       <ChartRow>
         <ChartCard
-          title="Quoted value by month"
-          description="Total value quoted each month, with the number of quotations"
+          title={`Quoted value by ${groupBy}`}
+          description={`Total value quoted each ${groupBy}, with the number of quotations`}
           legend={[
             { label: "Quoted value", color: theme.series.primary },
             { label: "Quotations", color: theme.series.secondary },

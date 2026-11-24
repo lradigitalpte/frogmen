@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { formatAlertMoney } from "@/lib/alerts-api";
-import { pctChange, type AnalyticsSectionData, type SalesStats } from "@/lib/analytics-api";
+import { pctChange, type AnalyticsGroupBy, type AnalyticsSectionData, type SalesStats } from "@/lib/analytics-api";
 import {
   BreakdownCard,
   ChartCard,
@@ -23,7 +23,7 @@ import {
   MetricGrid,
   RankingTable,
   compactNumber,
-  shortMonth,
+  bucketLabel,
   useChartTheme,
 } from "./analytics-ui";
 
@@ -34,7 +34,13 @@ const STATUS_LABELS: Record<string, string> = {
   invoiced: "Fully invoiced",
 };
 
-export function TabSales({ data }: { data: AnalyticsSectionData<SalesStats> }) {
+export function TabSales({
+  data,
+  groupBy,
+}: {
+  data: AnalyticsSectionData<SalesStats>;
+  groupBy: AnalyticsGroupBy;
+}) {
   const router = useRouter();
   const theme = useChartTheme();
   const { baseCurrencyCode } = useOrgCurrency();
@@ -50,7 +56,7 @@ export function TabSales({ data }: { data: AnalyticsSectionData<SalesStats> }) {
   };
 
   const chartData = cur.byMonth.map((m, index) => ({
-    name: shortMonth(m.month),
+    name: bucketLabel(m.month),
     "This period": m.revenue,
     "Previous period": prev.byMonth[index]?.revenue ?? 0,
   }));
@@ -87,8 +93,8 @@ export function TabSales({ data }: { data: AnalyticsSectionData<SalesStats> }) {
 
       <ChartRow>
         <ChartCard
-          title="Revenue by month"
-          description="This period compared with the same months of the previous period"
+          title={`Revenue by ${groupBy}`}
+          description={`This period compared with the matching ${groupBy}s of the previous period`}
           legend={[
             { label: "This period", color: theme.series.primary },
             { label: "Previous period", color: theme.series.previous, dashed: true },
