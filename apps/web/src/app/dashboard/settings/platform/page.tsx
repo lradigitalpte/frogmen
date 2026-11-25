@@ -13,6 +13,7 @@ import {
 } from "@shopify/polaris";
 import { useCallback, useEffect, useState } from "react";
 import { AppPage, IndexSurface } from "@/components/layout/page";
+import { PlatformBackups } from "@/components/settings/platform-backups";
 import { ApiError } from "@/lib/api";
 import {
   deletePlatformOrganization,
@@ -32,6 +33,7 @@ export default function PlatformAdminSettingsPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [backupRequest, setBackupRequest] = useState<PlatformOrganization | null>(null);
   const [pendingDelete, setPendingDelete] =
     useState<PlatformOrganization | null>(null);
   const [confirmSlug, setConfirmSlug] = useState("");
@@ -159,7 +161,7 @@ export default function PlatformAdminSettingsPage() {
   return (
     <AppPage
       title="Platform admin"
-      subtitle="List organizations, reset member passwords, and permanently delete tenants. Backup export comes later."
+      subtitle="List organizations, reset member passwords, and back up or permanently delete tenants."
       primaryAction={{
         content: "Refresh",
         onAction: () => void load(),
@@ -229,6 +231,9 @@ export default function PlatformAdminSettingsPage() {
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     <InlineStack gap="200" wrap={false}>
+                      <Button variant="plain" onClick={() => setBackupRequest({ ...row })}>
+                        Back up
+                      </Button>
                       <Button
                         variant="plain"
                         onClick={() => {
@@ -259,6 +264,8 @@ export default function PlatformAdminSettingsPage() {
             </IndexTable>
           </IndexSurface>
         )}
+
+        {authorized ? <PlatformBackups organizations={rows} request={backupRequest} /> : null}
       </BlockStack>
 
       <Modal
@@ -288,7 +295,8 @@ export default function PlatformAdminSettingsPage() {
                 {pendingDelete?.name}
               </Text>{" "}
               and all of its tenant data. Users with no other organization
-              memberships will also be deleted.
+              memberships will also be deleted. Back it up first if you may
+              need the data; backups are kept after deletion.
             </Text>
             <TextField
               autoComplete="off"

@@ -22,6 +22,7 @@ export * from "./leads";
 export * from "./email-marketing";
 export * from "./company-vault";
 export * from "./calendar";
+export * from "./platform-backups";
 
 import * as auth from "./auth";
 import * as security from "./security";
@@ -47,6 +48,7 @@ import * as leads from "./leads";
 import * as emailMarketing from "./email-marketing";
 import * as companyVault from "./company-vault";
 import * as calendar from "./calendar";
+import * as platformBackups from "./platform-backups";
 
 export const schema = {
   ...auth,
@@ -73,4 +75,5 @@ export const schema = {
   ...emailMarketing,
   ...companyVault,
   ...calendar,
+  ...platformBackups,
 };

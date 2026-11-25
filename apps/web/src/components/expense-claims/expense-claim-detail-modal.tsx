@@ -1,19 +1,20 @@
 "use client";
 
+import { Banner, Button, Icon, Modal, type IconSource } from "@shopify/polaris";
 import {
-  Banner,
-  BlockStack,
-  Box,
-  Button,
-  Divider,
-  InlineStack,
-  Modal,
-  Text,
-} from "@shopify/polaris";
-import { useEffect, useState } from "react";
+  BankIcon,
+  CalendarIcon,
+  CategoriesIcon,
+  HashtagIcon,
+  NoteIcon,
+  PersonIcon,
+  ReceiptIcon,
+} from "@shopify/polaris-icons";
+import { useEffect, useState, type ReactNode } from "react";
+import { useSession } from "@/lib/auth-client";
+import { cn } from "@/lib/utils";
 import {
   ExpenseClaimStatusBadge,
-  formatExpenseClaimActor,
   formatExpenseClaimDate,
   formatExpenseClaimDateTime,
   formatExpenseClaimPaymentMethod,
@@ -44,19 +45,45 @@ interface ExpenseClaimDetailModalProps {
   onRequestEdit?: (claim: ExpenseClaim) => void;
 }
 
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Fact({ icon, label, children }: { icon: IconSource; label: string; children: ReactNode }) {
   return (
-    <InlineStack align="space-between" blockAlign="start" gap="400">
-      <Text as="span" tone="subdued">{label}</Text>
-      <div className="expense-claim-detail__value">{value}</div>
-    </InlineStack>
+    <div className="xd-fact">
+      <span className="xd-fact__icon">
+        <Icon source={icon} />
+      </span>
+      <div>
+        <small>{label}</small>
+        <strong>{children}</strong>
+      </div>
+    </div>
   );
+}
+
+function Step({ title, at, done }: { title: string; at: string; done?: boolean }) {
+  return (
+    <li>
+      <span className={cn("xd-timeline__dot", done && "is-done")} />
+      <div>
+        <strong>{title}</strong>
+        <small>{at}</small>
+      </div>
+    </li>
+  );
+}
+
+function statusHint(claim: ExpenseClaim) {
+  switch (claim.status) {
+    case "draft":
+      return "Not submitted yet";
+    case "submitted":
+      return "Waiting for finance";
+    case "approved":
+      return "Waiting to be paid";
+    case "rejected":
+      return "Needs changes";
+    default:
+      return "Paid and posted";
+  }
 }
 
 export function ExpenseClaimDetailModal({
@@ -78,6 +105,7 @@ export function ExpenseClaimDetailModal({
   onRequestEdit,
 }: ExpenseClaimDetailModalProps) {
   const { formatBaseMoney } = useOrgCurrency();
+  const { data: session } = useSession();
   const [receiptPreviewFailed, setReceiptPreviewFailed] = useState(false);
 
   useEffect(() => {
@@ -119,7 +147,7 @@ export function ExpenseClaimDetailModal({
 
   const secondaryActions = [
     { content: "Close", onAction: onClose },
-    ...(mode === "mine" && claim.status === "draft" && onEdit
+    ...(mode === "mine" && (claim.status === "draft" || claim.status === "submitted") && onEdit
       ? [{ content: "Edit", disabled: actionLoading, onAction: () => onEdit(claim) }]
       : []),
     ...(mode === "mine" && claim.status === "approved" && onRequestEdit
@@ -147,6 +175,11 @@ export function ExpenseClaimDetailModal({
             onAction: () => onDelete(claim),
           },
         ]
+      : []),
+    ...(mode === "review" &&
+    claim.submittedByUserId === session?.user.id &&
+    claim.status !== "reimbursed"
+      ? [{ content: "Edit in My claims", url: "/dashboard/profile/expense-claims" }]
       : []),
     ...(mode === "review" && claim.status === "approved" && onSendBack
       ? [{ content: "Send back to draft", disabled: actionLoading, onAction: () => onSendBack(claim) }]
@@ -176,14 +209,7 @@ export function ExpenseClaimDetailModal({
       size="large"
     >
       <Modal.Section>
-        <BlockStack gap="500">
-          <InlineStack gap="200" blockAlign="center">
-            <ExpenseClaimStatusBadge status={claim.status} />
-            <Text as="span" tone="subdued">
-              Submitted by {claim.submitterName}
-            </Text>
-          </InlineStack>
-
+        <div className="xd">
           {claim.rejectionReason && (claim.status === "rejected" || claim.status === "draft") ? (
             <Banner
               tone={claim.status === "rejected" ? "critical" : "warning"}
@@ -192,205 +218,119 @@ export function ExpenseClaimDetailModal({
               {claim.rejectionReason}
             </Banner>
           ) : null}
-          {claim.status === "approved" ? (
-            <Banner tone="warning">
-              Approved — awaiting reimbursement. Not on Profit &amp; Loss until
-              payment is recorded.
-            </Banner>
-          ) : null}
-          {claim.status === "reimbursed" ? (
-            <Banner tone="success">
-              Posted to Operating Expenses. Visible on Profit &amp; Loss.
-            </Banner>
-          ) : null}
 
-          <BlockStack gap="300">
-            <DetailRow
-              label="Employee"
-              value={
-                <BlockStack gap="050">
-                  <span>{claim.submitterName}</span>
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    {claim.submitterEmail}
-                  </Text>
-                </BlockStack>
-              }
-            />
-            <DetailRow
-              label="Expense date"
-              value={formatExpenseClaimDate(claim.expenseDate)}
-            />
-            <DetailRow label="Category" value={claim.categoryName ?? "—"} />
-            <DetailRow label="Description" value={<Text as="span" fontWeight="semibold">{claim.description}</Text>} />
-            <DetailRow label="Reference" value={claim.reference ?? "—"} />
-            <DetailRow label="Amount" value={<Text as="span" fontWeight="semibold">{formatBaseMoney(claim.amount)}</Text>} />
-          </BlockStack>
+          <div className="xd-hero">
+            <div className="xd-hero__main">
+              <span className="xd-hero__label">Expense claim</span>
+              <strong>{formatBaseMoney(claim.amount)}</strong>
+              <p>{claim.description}</p>
+            </div>
+            <div className="xd-hero__badges">
+              <ExpenseClaimStatusBadge status={claim.status} />
+              <span className="xd-hero__date">{statusHint(claim)}</span>
+            </div>
+          </div>
 
-          <Divider />
-
-          <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">Audit trail</Text>
-            <DetailRow
-              label="Claim created"
-              value={
-                <BlockStack gap="050">
-                  <span>{formatExpenseClaimDateTime(claim.createdAt)}</span>
-                  <Text as="span" tone="subdued" variant="bodySm">
-                    By {formatExpenseClaimActor(claim.submitterName, claim.submitterEmail)}
-                  </Text>
-                </BlockStack>
-              }
-            />
-            {claim.submittedAt ? (
-              <DetailRow
-                label="Submitted for approval"
-                value={
-                  <BlockStack gap="050">
-                    <span>{formatExpenseClaimDateTime(claim.submittedAt)}</span>
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      By {formatExpenseClaimActor(claim.submitterName, claim.submitterEmail)}
-                    </Text>
-                  </BlockStack>
-                }
-              />
-            ) : null}
-            {claim.status === "rejected" && claim.reviewedAt ? (
-              <DetailRow
-                label="Rejected by"
-                value={
-                  <BlockStack gap="050">
-                    <span>
-                      {formatExpenseClaimActor(
-                        claim.reviewedByName,
-                        claim.reviewedByEmail,
-                      )}
-                    </span>
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      {formatExpenseClaimDateTime(claim.reviewedAt)}
-                    </Text>
-                  </BlockStack>
-                }
-              />
-            ) : null}
-            {(claim.status === "approved" || claim.status === "reimbursed") &&
-            claim.reviewedAt ? (
-              <DetailRow
-                label="Approved by"
-                value={
-                  <BlockStack gap="050">
-                    <span>
-                      {formatExpenseClaimActor(
-                        claim.reviewedByName,
-                        claim.reviewedByEmail,
-                      )}
-                    </span>
-                    <Text as="span" tone="subdued" variant="bodySm">
-                      {formatExpenseClaimDateTime(claim.reviewedAt)}
-                    </Text>
-                  </BlockStack>
-                }
-              />
-            ) : null}
-            {claim.editReason ? (
-              <DetailRow label="Edited after approval" value={claim.editReason} />
-            ) : null}
-            {claim.rejectionReason ? (
-              <DetailRow label={claim.status === "rejected" ? "Rejection reason" : "Finance's note"} value={claim.rejectionReason} />
-            ) : null}
-            {claim.status === "reimbursed" && claim.reimbursedAt ? (
+          <div className="xd-facts">
+            <Fact icon={PersonIcon} label="Employee">
+              {claim.submitterName || claim.submitterEmail}
+              {claim.submitterName ? <small>{claim.submitterEmail}</small> : null}
+            </Fact>
+            <Fact icon={CalendarIcon} label="Expense date">
+              {formatExpenseClaimDate(claim.expenseDate)}
+            </Fact>
+            <Fact icon={CategoriesIcon} label="Category">
+              {claim.categoryName ?? <span className="xd-muted">Not categorised</span>}
+            </Fact>
+            <Fact icon={HashtagIcon} label="Reference">
+              {claim.reference ?? <span className="xd-muted">None</span>}
+            </Fact>
+            {claim.status === "reimbursed" && claim.paymentMethod ? (
               <>
-                <DetailRow
-                  label="Reimbursed by"
-                  value={
-                    <BlockStack gap="050">
-                      <span>
-                        {formatExpenseClaimActor(
-                          claim.reimbursedByName,
-                          claim.reimbursedByEmail,
-                        )}
-                      </span>
-                      <Text as="span" tone="subdued" variant="bodySm">
-                        {formatExpenseClaimDateTime(claim.reimbursedAt)}
-                      </Text>
-                    </BlockStack>
-                  }
-                />
-                {claim.paymentMethod ? (
-                  <DetailRow
-                    label="Payment"
-                    value={
-                      claim.bankAccountName
-                        ? `${formatExpenseClaimPaymentMethod(claim.paymentMethod)} · ${claim.bankAccountName}`
-                        : formatExpenseClaimPaymentMethod(claim.paymentMethod)
-                    }
-                  />
-                ) : null}
-                {claim.paymentDate ? (
-                  <DetailRow label="Payment date" value={formatExpenseClaimDate(claim.paymentDate)} />
-                ) : null}
-                {claim.accountMoveId ? (
-                  <DetailRow
-                    label="Books reference"
-                    value={`Journal posted · ref ${claim.number}`}
-                  />
-                ) : null}
+                <Fact icon={BankIcon} label="Paid with">
+                  {formatExpenseClaimPaymentMethod(claim.paymentMethod)}
+                  {claim.bankAccountName ? <small>{claim.bankAccountName}</small> : null}
+                </Fact>
+                <Fact icon={CalendarIcon} label="Payment date">
+                  {claim.paymentDate
+                    ? formatExpenseClaimDate(claim.paymentDate)
+                    : formatExpenseClaimDateTime(claim.reimbursedAt)}
+                </Fact>
               </>
             ) : null}
-            {claim.status === "approved" ? (
-              <DetailRow label="Reimbursed by" value="Not yet paid" />
+          </div>
+
+          <section className="xd-block">
+            <h3>Receipt</h3>
+            <div className={cn("xd-receipt", !claim.hasReceipt && "is-missing")}>
+              <span className="xd-fact__icon">
+                <Icon source={claim.hasReceipt ? ReceiptIcon : NoteIcon} />
+              </span>
+              <div>
+                <strong>{claim.hasReceipt ? "Receipt attached" : "No receipt"}</strong>
+                <small>
+                  {claim.hasReceipt
+                    ? receiptPreviewFailed
+                      ? "No preview available. Open the file to view it."
+                      : "Opens in a new tab."
+                    : claim.noReceiptReason
+                      ? `Reason: ${claim.noReceiptReason}`
+                      : "No reason was given."}
+                </small>
+              </div>
+              {claim.hasReceipt ? (
+                <Button external size="slim" url={receiptUrl}>
+                  View receipt
+                </Button>
+              ) : null}
+            </div>
+            {claim.hasReceipt && !receiptPreviewFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="xd-preview"
+                src={receiptUrl}
+                alt={`Receipt for ${claim.number}`}
+                onError={() => setReceiptPreviewFailed(true)}
+              />
             ) : null}
-          </BlockStack>
+          </section>
 
-          <Divider />
-
-          <BlockStack gap="300">
-            <Text as="h3" variant="headingSm">Receipt</Text>
-            {claim.hasReceipt ? (
-              <BlockStack gap="300">
-                <InlineStack gap="200">
-                  <Button url={receiptUrl} external>
-                    Open receipt in new tab
-                  </Button>
-                </InlineStack>
-                {!receiptPreviewFailed ? (
-                  <Box
-                    background="bg-surface-secondary"
-                    padding="400"
-                    borderRadius="200"
-                  >
-                    {/* Inline preview for images; PDFs fall back to link only */}
-                    <img
-                      src={receiptUrl}
-                      alt={`Receipt for ${claim.number}`}
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "420px",
-                        objectFit: "contain",
-                        display: "block",
-                        margin: "0 auto",
-                      }}
-                      onError={() => setReceiptPreviewFailed(true)}
-                    />
-                  </Box>
-                ) : (
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    Preview not available (likely a PDF). Use the button above to
-                    open the file.
-                  </Text>
-                )}
-              </BlockStack>
-            ) : (
-              <BlockStack gap="300">
-                <Text as="p" tone="subdued">
-                  No receipt attached to this claim.
-                </Text>
-                {claim.noReceiptReason ? (
-                  <DetailRow label="Reason for no receipt" value={claim.noReceiptReason} />
-                ) : null}
-              </BlockStack>
-            )}
-          </BlockStack>
-        </BlockStack>
+          <section className="xd-block">
+            <h3>History</h3>
+            <ol className="xd-timeline">
+              <Step
+                title={`Created by ${claim.submitterName || claim.submitterEmail}`}
+                at={formatExpenseClaimDateTime(claim.createdAt)}
+              />
+              {claim.editReason ? (
+                <Step title="Reopened for editing after approval" at={`Reason: ${claim.editReason}`} />
+              ) : null}
+              {claim.submittedAt ? (
+                <Step title="Submitted for approval" at={formatExpenseClaimDateTime(claim.submittedAt)} />
+              ) : null}
+              {claim.reviewedAt && claim.status !== "submitted" ? (
+                <Step
+                  done={claim.status === "approved" || claim.status === "reimbursed"}
+                  title={`${
+                    claim.status === "approved" || claim.status === "reimbursed"
+                      ? "Approved"
+                      : claim.status === "rejected"
+                        ? "Rejected"
+                        : "Sent back"
+                  } by ${claim.reviewedByName ?? claim.reviewedByEmail ?? "finance"}`}
+                  at={formatExpenseClaimDateTime(claim.reviewedAt)}
+                />
+              ) : null}
+              {claim.status === "reimbursed" ? (
+                <Step
+                  done
+                  title={`Reimbursed by ${claim.reimbursedByName ?? claim.reimbursedByEmail ?? "finance"}`}
+                  at={`${formatExpenseClaimDateTime(claim.reimbursedAt)} · posted to Operating Expenses`}
+                />
+              ) : null}
+            </ol>
+          </section>
+        </div>
       </Modal.Section>
     </Modal>
   );

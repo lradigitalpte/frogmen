@@ -22,6 +22,7 @@ import {
   submitExpenseClaim,
   updateExpenseClaim,
   uploadExpenseClaimReceipt,
+  withdrawExpenseClaim,
   type ExpenseClaim,
 } from "@/lib/expense-claims-api";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,8 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState<ExpenseClaimSaveResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A submitted claim is only pulled back when the edit is saved, so cancelling changes nothing.
+  const [pulledBack, setPulledBack] = useState(false);
   // Set once the draft exists, so a failed receipt upload retries without a duplicate claim.
   const [createdId, setCreatedId] = useState<string | null>(null);
 
@@ -114,6 +117,7 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
     setReceiptFile(null);
     setNoReceiptReason(claim?.noReceiptReason ?? "");
     setCreatedId(null);
+    setPulledBack(false);
     setCurrentReceiptBroken(false);
     setErrors({});
     setError(null);
@@ -176,6 +180,10 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
       };
 
       let claimId = claim?.id ?? createdId ?? undefined;
+      if (claim?.status === "submitted" && !pulledBack) {
+        await withdrawExpenseClaim(claim.id);
+        setPulledBack(true);
+      }
       if (claimId) {
         await updateExpenseClaim(claimId, {
           ...payload,
@@ -250,6 +258,14 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
       <Modal.Section>
         <Form onSubmit={() => void save("draft")} implicitSubmit={false}>
           <div className="ecf">
+            {claim?.status === "submitted" ? (
+              <div className="ecf__error">
+                <Banner tone="info">
+                  This claim is with finance. Submit sends them your changes; Save as draft takes it back until you submit
+                  again.
+                </Banner>
+              </div>
+            ) : null}
             {error ? (
               <div className="ecf__error">
                 <Banner tone="critical" onDismiss={() => setError(null)}>

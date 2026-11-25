@@ -19376,6 +19376,15 @@ button.ecl-card:focus-visible {
   font-size: 0.74rem;
 }
 
+.xd-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 26rem;
+  margin: 0 auto;
+  border-radius: 0.85rem;
+  object-fit: contain;
+}
+
 .xd-receipt.is-missing {
   border-style: dashed;
 }

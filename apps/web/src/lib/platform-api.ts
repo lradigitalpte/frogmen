@@ -53,3 +53,34 @@ export const resetPlatformOrganizationUserPassword = (
     `/api/v1/platform/organizations/${organizationId}/members/${userId}/reset-password`,
     { method: "POST" },
   );
+
+export interface PlatformBackup {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+  status: "running" | "ready" | "failed";
+  sizeBytes: number | null;
+  tableCount: number | null;
+  rowCount: number | null;
+  error: string | null;
+  createdByEmail: string | null;
+  createdAt: string;
+  lastDownloadedAt: string | null;
+  lastDownloadedByEmail: string | null;
+}
+
+export const listPlatformBackups = () =>
+  apiFetch<PlatformBackup[]>("/api/v1/platform/backups");
+
+export const startPlatformBackup = (organizationId: string) =>
+  apiFetch<PlatformBackup>(
+    `/api/v1/platform/organizations/${organizationId}/backups`,
+    { method: "POST" },
+  );
+
+export const deletePlatformBackup = (id: string) =>
+  apiFetch(`/api/v1/platform/backups/${id}`, { method: "DELETE" });
+
+export const platformBackupDownloadUrl = (id: string) =>
+  `/api/v1/platform/backups/${id}/download`;

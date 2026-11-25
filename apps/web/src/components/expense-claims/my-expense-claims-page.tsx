@@ -434,7 +434,7 @@ export function MyExpenseClaimsPage() {
                 const busy = busyId === claim.id;
                 const menuItems = [
                   { content: "View details", icon: ViewIcon, onAction: () => setDetailClaim(claim) },
-                  ...(claim.status === "draft"
+                  ...(claim.status === "draft" || claim.status === "submitted"
                     ? [{ content: "Edit", icon: EditIcon, onAction: () => openEdit(claim) }]
                     : []),
                   ...(claim.status === "approved"
@@ -527,6 +527,14 @@ export function MyExpenseClaimsPage() {
                         <Button size="slim" loading={busy} onClick={() => handleRevise(claim)}>
                           Revise
                         </Button>
+                      ) : claim.status === "submitted" ? (
+                        <Button size="slim" disabled={busy} onClick={() => openEdit(claim)}>
+                          Edit
+                        </Button>
+                      ) : claim.status === "approved" ? (
+                        <Button size="slim" disabled={busy} onClick={() => promptRequestEdit(claim)}>
+                          Edit
+                        </Button>
                       ) : null}
                       <Popover
                         active={menuFor === claim.id}
@@ -560,7 +568,7 @@ export function MyExpenseClaimsPage() {
         {visible.length ? (
           <p className="pl-foot">
             Showing {visible.length} of {claims.length} claim{claims.length === 1 ? "" : "s"} · {formatBaseMoney(visibleTotal)}.
-            Drafts can be edited or deleted; submitted claims can be pulled back until finance approves them. Approved claims can be
+            Drafts and submitted claims can be edited until finance approves them. Approved claims can be
             reopened with a reason until they&apos;re paid.
           </p>
         ) : null}
@@ -572,11 +580,14 @@ export function MyExpenseClaimsPage() {
         onClose={() => {
           setFormOpen(false);
           setEditingClaim(null);
+          void load();
         }}
         onSaved={async (result) => {
           showSuccess(
             result === "submitted"
               ? "Claim sent to finance for approval"
+              : editingClaim?.status === "submitted"
+                ? "Saved as a draft — submit it again when you're ready"
               : editingClaim
                 ? "Draft updated"
                 : "Draft saved — submit it when you're ready",
