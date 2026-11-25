@@ -94,6 +94,7 @@ const pageIcons: Record<string, PolarisIconSource> = {
   "/dashboard/inventory": InventoryIcon,
   "/dashboard/inventory/update-stock": InventoryUpdatedIcon,
   "/dashboard/inventory/products": ProductIcon,
+  "/dashboard/inventory/operations": PackageIcon,
   "/dashboard/inventory/warehouses": StoreIcon,
   "/dashboard/warranty": ShieldCheckMarkIcon,
   "/dashboard/warranty/policies": FileIcon,

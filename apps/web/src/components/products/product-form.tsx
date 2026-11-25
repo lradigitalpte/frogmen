@@ -441,14 +441,6 @@ export function ProductForm({
     onChange({ ...values, [key]: value });
   }
 
-  function setUsageType(usageType: ProductUsageType) {
-    onChange({
-      ...values,
-      usageType,
-      sellingPrice: usageType === "operations" ? "0" : values.sellingPrice,
-    });
-  }
-
   function setEquipmentRole(role: ProductEquipmentRole) {
     const rovRole = role === "main_equipment" || role === "component";
     onChange({
@@ -478,7 +470,7 @@ export function ProductForm({
             <TextField
               autoComplete="off"
               disabled={disabled}
-              helpText="Shown on quotations and invoices. Put each detail on its own line."
+              helpText={`${forSale ? "Shown on quotations and invoices. " : ""}Put each detail on its own line.`}
               label="Description"
               multiline={4}
               value={values.description}
@@ -488,23 +480,6 @@ export function ProductForm({
         </FormSection>
 
         <FormSection
-          aside={
-            <div className="app-segmented-toggle">
-              <ButtonGroup variant="segmented">
-                <Button disabled={disabled} pressed={forSale} size="slim" onClick={() => setUsageType("for_sale")}>
-                  For sale
-                </Button>
-                <Button
-                  disabled={disabled}
-                  pressed={!forSale}
-                  size="slim"
-                  onClick={() => setUsageType("operations")}
-                >
-                  Operations
-                </Button>
-              </ButtonGroup>
-            </div>
-          }
           description={
             forSale
               ? "Shown on quotations and invoices."

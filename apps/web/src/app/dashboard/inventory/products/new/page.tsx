@@ -6,7 +6,7 @@ import { CreateProductPage } from "@/components/products/create-product-page";
 export default function NewProductPage() {
   return (
     <Suspense>
-      <CreateProductPage />
+      <CreateProductPage usageType="for_sale" />
     </Suspense>
   );
 }

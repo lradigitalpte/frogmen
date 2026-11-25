@@ -5,6 +5,7 @@ import { ArrowDownIcon, CheckIcon, SearchIcon } from "@shopify/polaris-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { productUnitStatusLabel } from "@/components/ui/status-badge";
 import { linkProductUnit, listLinkableUnits } from "@/lib/products-api";
+import { productArea } from "@/lib/product-areas";
 import { cn } from "@/lib/utils";
 import type { LinkableProductUnit, ProductDetail, ProductUnit } from "@/types/product";
 
@@ -294,7 +295,7 @@ export function LinkComponentModal({ open, product, parentUnits, onClose, onLink
                   <div className="lc-empty">
                     <strong>{debouncedPartSearch ? `No unattached parts match "${debouncedPartSearch}"` : "No unattached part serials"}</strong>
                     <p>Create the part first, then add its serial.</p>
-                    <Button size="slim" url={`/dashboard/inventory/products/new?parentId=${product.id}`}>
+                    <Button size="slim" url={`${productArea(product.usageType).url}/new?parentId=${product.id}`}>
                       Create a part for {product.name}
                     </Button>
                   </div>

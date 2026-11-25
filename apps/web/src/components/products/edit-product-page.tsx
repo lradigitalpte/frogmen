@@ -10,6 +10,7 @@ import {
   productToFormValues,
   type ProductFormValues,
 } from "@/components/products/product-form";
+import { productUrl } from "@/lib/product-areas";
 import { getProduct, getProductStock, listProductUnits, listProducts, updateProduct } from "@/lib/products-api";
 
 interface EditProductPageProps {
@@ -27,11 +28,9 @@ export function EditProductPage({ productId }: EditProductPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirmOperations, setConfirmOperations] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [originalUsageType, setOriginalUsageType] = useState<"for_sale" | "operations">("for_sale");
 
-  const productUrl = `/dashboard/inventory/products/${productId}`;
+  const backUrl = productUrl({ id: productId, usageType: values?.usageType });
 
   useEffect(() => {
     Promise.all([getProduct(productId), listProducts({ type: "goods", rootOnly: true, perPage: 100 })])
@@ -40,11 +39,14 @@ export function EditProductPage({ productId }: EditProductPageProps) {
         setValues(formValues);
         setInitialValues(formValues);
         setProductName(product.name);
-        setOriginalUsageType(product.usageType ?? "for_sale");
         setImages(product.images ?? []);
         setParentOptions(
           parents.data
-            .filter((item) => item.id !== productId)
+            // Parents come from the same area, plus whichever one is already linked.
+            .filter(
+              (item) =>
+                item.id !== productId && (item.usageType === product.usageType || item.id === product.parentId),
+            )
             .map((item) => ({
               label: item.name,
               value: item.id,
@@ -114,27 +116,17 @@ export function EditProductPage({ productId }: EditProductPageProps) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    if (
-      originalUsageType === "for_sale" &&
-      values.usageType === "operations" &&
-      initialValues?.sellingPrice &&
-      Number(initialValues.sellingPrice) !== 0
-    ) {
-      setConfirmOperations(true);
-      return;
-    }
     void save();
   }
 
   async function save() {
     if (!values) return;
-    setConfirmOperations(false);
     setSaving(true);
     setError(null);
     try {
       await updateProduct(productId, formValuesToInput(values));
       setInitialValues(values);
-      router.push(productUrl);
+      router.push(backUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update product");
       setSaving(false);
@@ -146,7 +138,7 @@ export function EditProductPage({ productId }: EditProductPageProps) {
       setConfirmLeave(true);
       return;
     }
-    router.push(productUrl);
+    router.push(backUrl);
   }
 
   return (
@@ -198,23 +190,8 @@ export function EditProductPage({ productId }: EditProductPageProps) {
       </div>
 
       <Modal
-        open={confirmOperations}
-        primaryAction={{ content: "Switch to Operations", destructive: true, onAction: () => void save() }}
-        secondaryActions={[{ content: "Keep it for sale", onAction: () => setConfirmOperations(false) }]}
-        title="Stop selling this product?"
-        onClose={() => setConfirmOperations(false)}
-      >
-        <Modal.Section>
-          <Text as="p">
-            Operations products are for internal use. The selling price will be removed and it won&apos;t appear on new
-            quotations or invoices. Existing documents aren&apos;t changed.
-          </Text>
-        </Modal.Section>
-      </Modal>
-
-      <Modal
         open={confirmLeave}
-        primaryAction={{ content: "Discard changes", destructive: true, onAction: () => router.push(productUrl) }}
+        primaryAction={{ content: "Discard changes", destructive: true, onAction: () => router.push(backUrl) }}
         secondaryActions={[{ content: "Keep editing", onAction: () => setConfirmLeave(false) }]}
         title="Discard unsaved changes?"
         onClose={() => setConfirmLeave(false)}

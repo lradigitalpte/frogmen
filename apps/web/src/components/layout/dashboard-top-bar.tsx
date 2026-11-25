@@ -9,6 +9,7 @@ import { getOverdueAlertCount } from "@/lib/alerts-api";
 import { useTheme } from "@/components/providers/theme-provider";
 import { getMe, selectBranch, type SecurityContext } from "@/lib/security-api";
 import { listCustomers } from "@/lib/customers-api";
+import { productUrl } from "@/lib/product-areas";
 import { listProducts } from "@/lib/products-api";
 import { listInvoices } from "@/lib/invoices-api";
 import { listQuotations } from "@/lib/quotations-api";
@@ -93,7 +94,7 @@ export function DashboardTopBar({
             type: "Product" as const,
             title: item.name,
             detail: item.sku || item.barcode || "Inventory product",
-            href: `/dashboard/inventory/products/${item.id}`,
+            href: productUrl(item),
           })));
         }
         if (invoices.status === "fulfilled") {

@@ -46,6 +46,10 @@ export class StockService {
       bulkFilters.push(eq(stockLevels.warehouseId, query.warehouseId));
     }
 
+    if (query.usageType) {
+      bulkFilters.push(eq(products.usageType, query.usageType));
+    }
+
     if (query.search?.trim()) {
       const term = `%${query.search.trim()}%`;
       bulkFilters.push(
@@ -95,6 +99,10 @@ export class StockService {
 
     if (query.warehouseId) {
       serializedFilters.push(eq(productUnits.warehouseId, query.warehouseId));
+    }
+
+    if (query.usageType) {
+      serializedFilters.push(eq(products.usageType, query.usageType));
     }
 
     if (query.search?.trim()) {
@@ -158,6 +166,10 @@ export class StockService {
 
     if (query.warehouseId) {
       assignedFilters.push(eq(productUnits.warehouseId, query.warehouseId));
+    }
+
+    if (query.usageType) {
+      assignedFilters.push(eq(products.usageType, query.usageType));
     }
 
     if (query.search?.trim()) {

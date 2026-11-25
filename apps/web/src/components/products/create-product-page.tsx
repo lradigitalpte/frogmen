@@ -16,15 +16,18 @@ import {
   listProducts,
   uploadProductImage,
 } from "@/lib/products-api";
+import { productArea, productUrl } from "@/lib/product-areas";
+import type { ProductUsageType } from "@/types/product";
 import { getCompanySettings } from "@/lib/settings-api";
 import { listWarehouses } from "@/lib/warehouses-api";
 
-export function CreateProductPage() {
+export function CreateProductPage({ usageType }: { usageType: ProductUsageType }) {
+  const area = productArea(usageType);
   const router = useRouter();
   const searchParams = useSearchParams();
   const parentId = searchParams.get("parentId") ?? "";
   const { defaultPricingCurrencyId } = useOrgCurrency();
-  const [values, setValues] = useState(emptyProductForm("goods", parentId));
+  const [values, setValues] = useState({ ...emptyProductForm("goods", parentId), usageType });
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [parentOptions, setParentOptions] = useState<
     Array<{ label: string; value: string; description?: string }>
@@ -49,7 +52,7 @@ export function CreateProductPage() {
 
   useEffect(() => {
     void Promise.all([
-      listProducts({ type: "goods", rootOnly: true, perPage: 100 }),
+      listProducts({ type: "goods", usageType, rootOnly: true, perPage: 100 }),
       listWarehouses({ perPage: 100 }),
       getCompanySettings().catch(() => null),
     ])
@@ -94,7 +97,7 @@ export function CreateProductPage() {
         setParentOptions([]);
         setWarehouseOptions([]);
       });
-  }, [parentId]);
+  }, [parentId, usageType]);
 
   async function handleSave() {
     if (!values.name.trim()) {
@@ -123,7 +126,7 @@ export function CreateProductPage() {
         await uploadProductImage(product.id, file);
       }
 
-      router.push(`/dashboard/inventory/products/${product.id}`);
+      router.push(productUrl(product));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create product");
       setSaving(false);
@@ -133,10 +136,10 @@ export function CreateProductPage() {
   return (
     <AppPage
       backAction={{
-        content: "Products",
+        content: area.label,
         url: parentId
-          ? `/dashboard/inventory/products/${parentId}`
-          : "/dashboard/inventory/products",
+          ? `${area.url}/${parentId}`
+          : area.url,
       }}
       primaryAction={{
         content: "Save",
@@ -149,17 +152,19 @@ export function CreateProductPage() {
           onAction: () =>
             router.push(
               parentId
-                ? `/dashboard/inventory/products/${parentId}`
-                : "/dashboard/inventory/products",
+                ? `${area.url}/${parentId}`
+                : area.url,
             ),
         },
       ]}
       subtitle={
         parentId
           ? "Add a sub-product linked to the parent."
-          : "Add a goods or service product."
+          : usageType === "operations"
+            ? "For internal use. It won't appear on quotations or invoices."
+            : "Something you sell. It will appear on quotations and invoices."
       }
-      title="Create product"
+      title={area.addLabel}
     >
       <BlockStack gap="400">
         {error ? (

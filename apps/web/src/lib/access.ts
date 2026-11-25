@@ -34,6 +34,7 @@ const ROUTE_ACCESS: Array<[string, AccessRule]> = [
   ["/dashboard/inventory", "inventory.read"],
   ["/dashboard/inventory/update-stock", "inventory.adjust"],
   ["/dashboard/inventory/products", "products.read"],
+  ["/dashboard/inventory/operations", "products.read"],
   ["/dashboard/inventory/product-categories", "products.read"],
   ["/dashboard/inventory/product-tags", "products.read"],
   ["/dashboard/warranty", "warranty.read"],

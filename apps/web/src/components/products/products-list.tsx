@@ -35,7 +35,10 @@ import {
   type ProductTransferField,
   type ProductTransferPreview,
 } from "@/lib/products-api";
-import type { ListProductsParams, Product, ProductTab } from "@/types/product";
+import type { ListProductsParams, Product, ProductTab, ProductUsageType } from "@/types/product";
+import { useAccess } from "@/components/providers/access-provider";
+import { MoveProductModal, otherUsageType } from "@/components/products/move-product-modal";
+import { productArea, productUrl } from "@/lib/product-areas";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
 import { AppPage } from "@/components/layout/page";
@@ -48,8 +51,6 @@ import { cn } from "@/lib/utils";
 
 const TABS: Array<{ id: ProductTab; label: string }> = [
   { id: "all", label: "All" },
-  { id: "for_sale", label: "For sale" },
-  { id: "operations", label: "Operations" },
   { id: "rov", label: "ROV equipment" },
   { id: "goods", label: "Goods" },
   { id: "service", label: "Services" },
@@ -65,14 +66,13 @@ const SORT_OPTIONS: Array<{ label: string; value: SortMode }> = [
 ];
 
 const PAGE_SIZES = [16, 25, 50, 100];
-const REDUNDANT_TAGS = new Set(["goods", "for sale"]);
+const REDUNDANT_TAGS = new Set(["goods", "for sale", "operations"]);
 const LOW_STOCK_MAX = 2;
 
 function tabParams(tab: ProductTab): ListProductsParams {
   return {
     archived: tab === "archived",
     type: tab === "goods" || tab === "service" ? tab : undefined,
-    usageType: tab === "for_sale" || tab === "operations" ? tab : undefined,
     isRovEquipment: tab === "rov" ? true : undefined,
   };
 }
@@ -89,7 +89,11 @@ interface StockInfo {
   serials: string[];
 }
 
-export function ProductsListPage() {
+export function ProductsListPage({ usageType }: { usageType: ProductUsageType }) {
+  const area = productArea(usageType);
+  const operational = usageType === "operations";
+  const { can } = useAccess();
+  const showCost = operational && can("cost.read");
   const { showSuccess } = useToast();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
 
@@ -128,6 +132,7 @@ export function ProductsListPage() {
     "description", "barcode", "sellingPrice", "category", "tags", "dimensions", "images",
   ]);
   const [pendingDelete, setPendingDelete] = useState<Product | null>(null);
+  const [pendingMove, setPendingMove] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -142,17 +147,17 @@ export function ProductsListPage() {
   const loadCounts = useCallback(async () => {
     const results = await Promise.all(
       TABS.map((t) =>
-        listProducts({ perPage: 1, ...tabParams(t.id) })
+        listProducts({ perPage: 1, usageType, ...tabParams(t.id) })
           .then((r) => [t.id, r.meta.total] as const)
           .catch(() => [t.id, undefined] as const),
       ),
     );
     setTabCounts(Object.fromEntries(results.filter(([, n]) => n !== undefined)));
-  }, []);
+  }, [usageType]);
 
   const loadStock = useCallback(async () => {
     try {
-      const result = await listStock({ perPage: 1000 });
+      const result = await listStock({ perPage: 1000, usageType });
       const map = new Map<string, StockInfo>();
       for (const row of result.data) {
         const entry = map.get(row.productId) ?? { qty: 0, assigned: 0, serials: [] };
@@ -172,7 +177,7 @@ export function ProductsListPage() {
     } catch {
       // Stock badges are a nice-to-have; the list still works without them.
     }
-  }, []);
+  }, [usageType]);
 
   const loadProducts = useCallback(async () => {
     const request = ++requestRef.current;
@@ -184,6 +189,7 @@ export function ProductsListPage() {
         perPage,
         search: debouncedQuery || undefined,
         hasSalesHistory: salesHistoryOnly || undefined,
+        usageType,
         ...tabParams(tab),
         ...sortParams(sort),
       });
@@ -199,7 +205,7 @@ export function ProductsListPage() {
         setLoaded(true);
       }
     }
-  }, [debouncedQuery, page, perPage, salesHistoryOnly, sort, tab]);
+  }, [debouncedQuery, page, perPage, salesHistoryOnly, sort, tab, usageType]);
 
   useEffect(() => {
     void loadProducts();
@@ -221,10 +227,10 @@ export function ProductsListPage() {
   }
 
   function formatPrice(product: Product) {
-    if (product.usageType === "operations") return null;
-    if (!product.sellingPrice || Number(product.sellingPrice) === 0) return null;
+    const amount = operational ? (showCost ? product.costPrice : null) : product.sellingPrice;
+    if (!amount || Number(amount) === 0) return null;
     const currency = currencyById(currencies, product.priceCurrencyId ?? catalogCurrencyId);
-    return formatCurrencyAmount(product.sellingPrice, currency);
+    return formatCurrencyAmount(amount, currency);
   }
 
   async function handleArchiveConfirm() {
@@ -351,7 +357,7 @@ export function ProductsListPage() {
     const serialPreview =
       product.trackSerial && info.serials.length ? formatSerialSummaryPreview([...new Set(info.serials)].join(", "), 2) : null;
     const price = formatPrice(product);
-    const url = `/dashboard/inventory/products/${product.id}`;
+    const url = productUrl(product);
     const isOpen = expanded[product.id] ?? false;
     const archived = archivedView || Boolean(product.deletedAt);
 
@@ -412,7 +418,7 @@ export function ProductsListPage() {
           )}
         </span>
         <span className="st-price">
-          {price ?? <span className="st-muted">{product.usageType === "operations" ? "Internal" : "No price"}</span>}
+          {price ?? <span className="st-muted">{operational ? (showCost ? "No cost" : "Internal") : "No price"}</span>}
         </span>
         <span className="pr-row__actions">
           {archived ? (
@@ -446,7 +452,18 @@ export function ProductsListPage() {
                   ? [{ content: product.trackSerial ? "Manage serials" : "Update stock", url: `/dashboard/inventory/update-stock?productId=${product.id}` }]
                   : []),
                 ...(!product.parentId && !archived
-                  ? [{ content: "Add sub-product", url: `/dashboard/inventory/products/new?parentId=${product.id}` }]
+                  ? [{ content: "Add sub-product", url: `${area.url}/new?parentId=${product.id}` }]
+                  : []),
+                ...(!archived && can("products.write")
+                  ? [
+                      {
+                        content: `Move to ${productArea(otherUsageType(product)).label}`,
+                        onAction: () => {
+                          setMenuFor(null);
+                          setPendingMove(product);
+                        },
+                      },
+                    ]
                   : []),
                 archived
                   ? {
@@ -478,13 +495,17 @@ export function ProductsListPage() {
     <AppPage
       backAction={{ content: "Inventory", url: "/dashboard/inventory" }}
       fullWidth
-      primaryAction={{ content: "Add product", url: "/dashboard/inventory/products/new" }}
+      primaryAction={{ content: area.addLabel, url: `${area.url}/new` }}
       secondaryActions={[
         { content: "Export catalog", onAction: () => setExportOpen(true) },
         { content: "Import catalog", onAction: () => setImportOpen(true) },
       ]}
-      subtitle="Everything you sell or use — goods, services and the parts that go with them."
-      title="Products"
+      subtitle={
+        operational
+          ? "Equipment, parts and consumables you use internally. These are never sold."
+          : "Goods, services and parts you sell. These appear on quotations and invoices."
+      }
+      title={area.label}
     >
       <div className="pl pr">
         {error ? (
@@ -499,9 +520,9 @@ export function ProductsListPage() {
             <small>Active products</small>
             <strong>{tabCounts.all ?? "…"}</strong>
           </button>
-          <button className="pc-stat pr-stat" type="button" onClick={() => chooseTab("for_sale")}>
-            <small>For sale</small>
-            <strong>{tabCounts.for_sale ?? "…"}</strong>
+          <button className="pc-stat pr-stat" type="button" onClick={() => chooseTab("rov")}>
+            <small>ROV equipment</small>
+            <strong>{tabCounts.rov ?? "…"}</strong>
           </button>
           <NextLink className="pc-stat pr-stat" href="/dashboard/inventory">
             <small>Units in stock</small>
@@ -541,14 +562,16 @@ export function ProductsListPage() {
                   onClearButtonClick={() => setQuery("")}
                 />
               </div>
-              <Checkbox
-                checked={salesHistoryOnly}
-                label="Sold before"
-                onChange={(checked) => {
-                  setSalesHistoryOnly(checked);
-                  setPage(1);
-                }}
-              />
+              {operational ? null : (
+                <Checkbox
+                  checked={salesHistoryOnly}
+                  label="Sold before"
+                  onChange={(checked) => {
+                    setSalesHistoryOnly(checked);
+                    setPage(1);
+                  }}
+                />
+              )}
               <Select
                 label="Sort"
                 labelInline
@@ -572,12 +595,14 @@ export function ProductsListPage() {
                 <Package aria-hidden size={20} />
               </span>
               <strong>
-                {filtersActive ? "No products match" : "Add your first product"}
+                {filtersActive ? "No products match" : operational ? "Add your first operational product" : "Add your first product for sale"}
               </strong>
               <p>
                 {filtersActive
                   ? "Try another search or tab."
-                  : "Products are what you sell, rent or use — ROVs, parts, consumables and services."}
+                  : operational
+                    ? "Items your team uses on jobs — equipment, tools, spares and consumables."
+                    : "What you sell to customers — ROVs, parts, consumables and services."}
               </p>
               {filtersActive ? (
                 <Button
@@ -590,8 +615,8 @@ export function ProductsListPage() {
                   Clear filters
                 </Button>
               ) : (
-                <Button url="/dashboard/inventory/products/new" variant="primary">
-                  Add product
+                <Button url={`${area.url}/new`} variant="primary">
+                  {area.addLabel}
                 </Button>
               )}
             </div>
@@ -602,7 +627,7 @@ export function ProductsListPage() {
                 <span />
                 <span>Product</span>
                 <span>Stock</span>
-                <span>Selling price</span>
+                <span>{operational ? (showCost ? "Cost" : "Use") : "Selling price"}</span>
                 <span />
               </li>
               {roots.map((root) => {
@@ -687,7 +712,7 @@ export function ProductsListPage() {
           <BlockStack gap="300">
             {transferError ? <Banner tone="critical">{transferError}</Banner> : null}
             <Text as="p">
-              Exports every product in this organisation. IDs, live stock, warehouses, assigned units and serial numbers are
+              Exports every product in this organisation, both for sale and operational. IDs, live stock, warehouses, assigned units and serial numbers are
               never copied.
             </Text>
             {([
@@ -720,6 +745,9 @@ export function ProductsListPage() {
             <DropZone accept=".zip,application/zip" allowMultiple={false} onDrop={(_files, accepted) => void handleTransferFile(accepted[0])}>
               <DropZone.FileUpload actionTitle={transferFile ? "Choose another transfer package" : "Choose transfer ZIP"} />
             </DropZone>
+            <Text as="p" tone="subdued">
+              Each product goes to For sale or Operational as set in the file, whichever page you import from.
+            </Text>
             {transferPreview ? (
               <>
                 <InlineStack gap="300">
@@ -754,6 +782,16 @@ export function ProductsListPage() {
           </BlockStack>
         </Modal.Section>
       </Modal>
+
+      <MoveProductModal
+        product={pendingMove}
+        onClose={() => setPendingMove(null)}
+        onMoved={(product) => {
+          setPendingMove(null);
+          showSuccess(`${product.name} moved to ${productArea(otherUsageType(product)).label}`);
+          void refreshAll();
+        }}
+      />
 
       <DeleteProductModal
         error={deleteError}

@@ -3,5 +3,5 @@
 import { ProductsListPage } from "@/components/products/products-list";
 
 export default function ProductsPage() {
-  return <ProductsListPage />;
+  return <ProductsListPage usageType="for_sale" />;
 }

@@ -114,8 +114,6 @@ export type ProductTab =
   | "all"
   | "goods"
   | "service"
-  | "for_sale"
-  | "operations"
   | "rov"
   | "archived";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Icon, Pagination, Select, SkeletonBodyText, TextField } from "@shopify/polaris";
+import { Badge, Button, Icon, InlineStack, Pagination, Select, SkeletonBodyText, TextField } from "@shopify/polaris";
 import { AlertTriangleIcon, InventoryIcon, SearchIcon } from "@shopify/polaris-icons";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,7 +13,8 @@ import { formatSerialSummaryPreview, isSerialSummaryTruncated } from "@/lib/form
 import { listStock } from "@/lib/products-api";
 import { cn } from "@/lib/utils";
 import { listWarehouses } from "@/lib/warehouses-api";
-import type { StockOverviewRow, StockSort, StockStatusFilter, StockSummary } from "@/types/product";
+import { productArea } from "@/lib/product-areas";
+import type { ProductUsageType, StockOverviewRow, StockSort, StockStatusFilter, StockSummary } from "@/types/product";
 import type { Warehouse } from "@/types/warehouse";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -57,6 +58,7 @@ export function StockOverviewPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
+  const [usageType, setUsageType] = useState<ProductUsageType | "">("");
   const [status, setStatus] = useState<StockStatusFilter>("all");
   const [sort, setSort] = useState<StockSort>("recent");
   const [page, setPage] = useState(1);
@@ -94,6 +96,7 @@ export function StockOverviewPage() {
         perPage,
         search: debouncedQuery || undefined,
         warehouseId: warehouseFilter || undefined,
+        usageType: usageType || undefined,
         status: status === "all" ? undefined : status,
         sort,
       });
@@ -114,7 +117,7 @@ export function StockOverviewPage() {
         setLoaded(true);
       }
     }
-  }, [debouncedQuery, page, perPage, sort, status, warehouseFilter]);
+  }, [debouncedQuery, page, perPage, sort, status, usageType, warehouseFilter]);
 
   useEffect(() => {
     void loadStock();
@@ -129,6 +132,7 @@ export function StockOverviewPage() {
     setQuery("");
     setDebouncedQuery("");
     setWarehouseFilter("");
+    setUsageType("");
     setStatus("all");
     setPage(1);
   }
@@ -143,7 +147,7 @@ export function StockOverviewPage() {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const safePage = Math.min(page, totalPages);
   const first = loading && !loaded;
-  const filtersActive = Boolean(debouncedQuery || warehouseFilter || status !== "all");
+  const filtersActive = Boolean(debouncedQuery || warehouseFilter || usageType || status !== "all");
   const warehouseName = warehouses.find((w) => w.id === warehouseFilter)?.name;
   const attention = summary.lowStock + summary.outOfStock;
 
@@ -152,8 +156,8 @@ export function StockOverviewPage() {
       fullWidth
       primaryAction={{ content: "Update stock", url: "/dashboard/inventory/update-stock" }}
       secondaryActions={[
-        { content: "Add product", url: "/dashboard/inventory/products/new" },
-        { content: "Products", url: "/dashboard/inventory/products" },
+        { content: "Products for sale", url: "/dashboard/inventory/products" },
+        { content: "Operational products", url: "/dashboard/inventory/operations" },
         { content: "Warehouses", url: "/dashboard/inventory/warehouses" },
         { content: "Categories", url: "/dashboard/inventory/product-categories" },
         { content: "Tags", url: "/dashboard/inventory/product-tags" },
@@ -167,7 +171,7 @@ export function StockOverviewPage() {
         {/* Hero */}
         <section className={cn("pl-hero", loading && loaded && "is-loading")}>
           <div className="pl-hero__main">
-            <span className="pl-hero__label">Units on hand{warehouseName ? ` · ${warehouseName}` : ""}</span>
+            <span className="pl-hero__label">Units on hand{usageType ? ` · ${productArea(usageType).label}` : ""}{warehouseName ? ` · ${warehouseName}` : ""}</span>
             <strong className="pl-hero__value">{first ? "…" : formatQuantity(String(summary.units))}</strong>
             <span className="pl-hero__period">
               {first
@@ -270,6 +274,20 @@ export function StockOverviewPage() {
                 />
               </div>
               <Select
+                label="Product type"
+                labelHidden
+                options={[
+                  { label: "All products", value: "" },
+                  { label: "For sale", value: "for_sale" },
+                  { label: "Operational", value: "operations" },
+                ]}
+                value={usageType}
+                onChange={(value) => {
+                  setUsageType(value as ProductUsageType | "");
+                  setPage(1);
+                }}
+              />
+              <Select
                 label="Warehouse"
                 labelHidden
                 options={[
@@ -307,15 +325,16 @@ export function StockOverviewPage() {
               <strong>{filtersActive ? "No stock matches these filters" : "No stock yet"}</strong>
               <p>
                 {filtersActive
-                  ? "Try another search, warehouse or status."
+                  ? "Try another search, type, warehouse or status."
                   : "Add a product and a warehouse, then receive stock to see it here."}
               </p>
               {filtersActive ? (
                 <Button onClick={clearFilters}>Clear filters</Button>
               ) : (
-                <Button url="/dashboard/inventory/products/new" variant="primary">
-                  Add product
-                </Button>
+                <InlineStack align="center" gap="200">
+                  <Button url="/dashboard/inventory/products/new">Add product for sale</Button>
+                  <Button url="/dashboard/inventory/operations/new">Add operational product</Button>
+                </InlineStack>
               )}
             </div>
           ) : (

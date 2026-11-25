@@ -266,6 +266,7 @@ export function listStock(
   params: {
     productId?: string;
     warehouseId?: string;
+    usageType?: "for_sale" | "operations";
     search?: string;
     status?: string;
     sort?: string;

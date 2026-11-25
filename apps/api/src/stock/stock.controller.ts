@@ -27,6 +27,7 @@ export class StockController {
     return this.stockService.list(this.orgId(session), {
       productId: query.productId,
       warehouseId: query.warehouseId,
+      usageType: query.usageType,
       search: query.search,
       status: query.status,
       sort: query.sort,

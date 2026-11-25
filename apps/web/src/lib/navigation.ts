@@ -154,8 +154,12 @@ export const mainNavItems: NavItem[] = [
         url: "/dashboard/inventory/update-stock",
       },
       {
-        label: "Products",
+        label: "Products for sale",
         url: "/dashboard/inventory/products",
+      },
+      {
+        label: "Operational products",
+        url: "/dashboard/inventory/operations",
       },
       {
         label: "Warehouses",

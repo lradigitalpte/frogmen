@@ -181,7 +181,8 @@ export function ProductTagsPage() {
     <AppPage
       backAction={{ content: "Inventory", url: "/dashboard/inventory" }}
       secondaryActions={[
-        { content: "Products", url: "/dashboard/inventory/products" },
+        { content: "Products for sale", url: "/dashboard/inventory/products" },
+        { content: "Operational products", url: "/dashboard/inventory/operations" },
         { content: "Categories", url: "/dashboard/inventory/product-tags" },
       ]}
       subtitle="Labels you can put on products — a product can have as many tags as you like."

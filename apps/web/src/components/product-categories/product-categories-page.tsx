@@ -172,7 +172,8 @@ export function ProductCategoriesPage() {
     <AppPage
       backAction={{ content: "Inventory", url: "/dashboard/inventory" }}
       secondaryActions={[
-        { content: "Products", url: "/dashboard/inventory/products" },
+        { content: "Products for sale", url: "/dashboard/inventory/products" },
+        { content: "Operational products", url: "/dashboard/inventory/operations" },
         { content: "Tags", url: "/dashboard/inventory/product-tags" },
       ]}
       subtitle="Group products so they're easier to find, filter and report on. Each product can have one category."

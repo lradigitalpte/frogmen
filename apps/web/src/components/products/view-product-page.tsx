@@ -19,7 +19,7 @@ import {
 import { ChevronRightIcon, SearchIcon } from "@shopify/polaris-icons";
 import { Boxes, Package, ScanBarcode, ShieldCheck } from "lucide-react";
 import NextLink from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/components/layout/page";
 import { LinkComponentModal, type LinkableUnitOption } from "@/components/products/link-component-modal";
@@ -30,6 +30,8 @@ import { useOrgCurrency } from "@/hooks/use-org-currency";
 import { currencyById, formatCurrencyAmount } from "@/lib/currency-utils";
 import { formatAppDate } from "@/lib/format-date";
 import { formatQuantity } from "@/lib/format-quantity";
+import { MoveProductModal, otherUsageType } from "@/components/products/move-product-modal";
+import { productArea, productUrl } from "@/lib/product-areas";
 import { getProductDisplayTags } from "@/lib/product-tags";
 import { getProductBadgeTone } from "@/lib/product-badges";
 import { useToast } from "@/components/providers/toast-provider";
@@ -97,6 +99,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
   const [stockLevels, setStockLevels] = useState<Array<{ warehouseId: string; warehouseName: string; quantity: string }>>([]);
   const [units, setUnits] = useState<ProductUnit[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [moveOpen, setMoveOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -245,6 +248,16 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
 
   const activeWarranties = productWarranties.filter((w) => w.status === "active" && w.daysLeft >= 0);
 
+  const pathname = usePathname();
+  const area = productArea(
+    product?.usageType ?? (pathname.startsWith("/dashboard/inventory/operations") ? "operations" : "for_sale"),
+  );
+
+  // Links elsewhere in the app don't know which area a product is in, so settle on the right page here.
+  useEffect(() => {
+    if (product && !pathname.startsWith(`${area.url}/`)) router.replace(`${area.url}/${product.id}`);
+  }, [area.url, pathname, product, router]);
+
   function formatProductMoney(amount: string | null | undefined) {
     const currency = currencyById(currencies, product?.priceCurrencyId ?? catalogCurrencyId);
     return formatCurrencyAmount(amount ?? 0, currency);
@@ -256,7 +269,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
     try {
       await archiveProduct(productId);
       showSuccess("Product archived");
-      router.push("/dashboard/inventory/products");
+      router.push(area.url);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Couldn't archive the product");
       setArchiving(false);
@@ -281,7 +294,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
     try {
       await permanentlyDeleteProduct(productId);
       showSuccess("Product deleted");
-      router.push("/dashboard/inventory/products");
+      router.push(area.url);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Could not delete product");
     } finally {
@@ -363,13 +376,13 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
 
   if (!product || error) {
     return (
-      <AppPage backAction={{ content: "Products", url: "/dashboard/inventory/products" }} title="Product not found">
+      <AppPage backAction={{ content: area.label, url: area.url }} title="Product not found">
         <div className="ac-error">{error ?? "Product not found"}</div>
       </AppPage>
     );
   }
 
-  const editUrl = `/dashboard/inventory/products/${product.id}/edit`;
+  const editUrl = `${productUrl(product)}/edit`;
   const updateStockUrl = `/dashboard/inventory/update-stock?productId=${product.id}`;
   const stocked = product.type === "goods" && product.isStorable;
   const serialized = stocked && product.trackSerial;
@@ -393,10 +406,13 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
 
   return (
     <AppPage
-      backAction={{ content: "Products", url: "/dashboard/inventory/products" }}
+      backAction={{ content: area.label, url: area.url }}
       primaryAction={{ content: "Edit product", url: editUrl }}
       secondaryActions={[
         ...(stocked ? [{ content: serialized ? "Manage serials" : "Update stock", url: updateStockUrl }] : []),
+        ...(!product.deletedAt && can("products.write")
+          ? [{ content: `Move to ${productArea(otherUsageType(product)).label}`, onAction: () => setMoveOpen(true) }]
+          : []),
         product.deletedAt
           ? { content: "Restore", onAction: () => void handleRestore() }
           : { content: "Archive", onAction: () => setArchiveOpen(true) },
@@ -441,7 +457,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
         {/* Hero */}
         <section className="pl-hero">
           <div className="pl-hero__main">
-            <span className="pl-hero__label">{stocked ? "Available to sell" : "Product"}</span>
+            <span className="pl-hero__label">{stocked ? (forSale ? "Available to sell" : "Available to use") : "Product"}</span>
             <strong className="pl-hero__value">
               {stocked ? formatQuantity(String(available)) : forSale ? formatProductMoney(product.sellingPrice) : "—"}
             </strong>
@@ -711,7 +727,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                     </p>
                   </div>
                   <div className="pd-head__actions">
-                    <Button url={`/dashboard/inventory/products/new?parentId=${product.id}`}>Add sub-product</Button>
+                    <Button url={`${area.url}/new?parentId=${product.id}`}>Add sub-product</Button>
                   </div>
                 </header>
                 {product.subProducts.length === 0 ? (
@@ -722,7 +738,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                       const serials = subProductUnits.get(sub.id) ?? [];
                       return (
                         <li className="pd-sub" key={sub.id}>
-                          <NextLink className="pd-unit__main" href={`/dashboard/inventory/products/${sub.id}`}>
+                          <NextLink className="pd-unit__main" href={productUrl(sub)}>
                             <strong>{sub.name}</strong>
                             <small>{sub.sku || "No SKU"}</small>
                           </NextLink>
@@ -747,7 +763,7 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                           <span className="pd-unit__status">
                             <Badge tone={sub.trackSerial ? "info" : undefined}>{sub.trackSerial ? "Serialized" : "Bulk"}</Badge>
                           </span>
-                          <NextLink aria-label={`Open ${sub.name}`} className="pd-chev" href={`/dashboard/inventory/products/${sub.id}`}>
+                          <NextLink aria-label={`Open ${sub.name}`} className="pd-chev" href={productUrl(sub)}>
                             <Icon source={ChevronRightIcon} />
                           </NextLink>
                         </li>
@@ -960,6 +976,16 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
         product={product}
         onClose={() => setLinkModalOpen(false)}
         onLinked={loadData}
+      />
+
+      <MoveProductModal
+        product={moveOpen ? product : null}
+        onClose={() => setMoveOpen(false)}
+        onMoved={(moved) => {
+          setMoveOpen(false);
+          showSuccess(`${moved.name} moved to ${productArea(otherUsageType(moved)).label}`);
+          void loadData();
+        }}
       />
 
       <DeleteProductModal
