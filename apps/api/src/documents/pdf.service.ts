@@ -60,6 +60,14 @@ export class PdfService {
 
       try {
         const page = await browser.newPage();
+        // Documents are self-contained. Some of their content comes from customers
+        // (e.g. signatures), so never let it run scripts or make the server fetch a URL.
+        await page.setJavaScriptEnabled(false);
+        await page.setRequestInterception(true);
+        page.on("request", (request) => {
+          const allowed = /^(data:|about:blank$)/i.test(request.url());
+          void (allowed ? request.continue() : request.abort()).catch(() => undefined);
+        });
         await page.setContent(html, { waitUntil: "load" });
         const pdf = await page.pdf({
           format: "A4",

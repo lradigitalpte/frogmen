@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { todayIsoDate } from "@/components/sales/format-money";
 import { listBankAccounts, type BankAccount } from "@/lib/bank-accounts-api";
-import { reimburseExpenseClaim, type ExpenseClaim } from "@/lib/expense-claims-api";
+import { correctExpenseClaimReimbursement, reimburseExpenseClaim, type ExpenseClaim } from "@/lib/expense-claims-api";
 
 const paymentMethods = [
   { label: "Cash", value: "cash" },
@@ -40,6 +40,7 @@ export function ReimburseClaimModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const correcting = claim?.status === "reimbursed";
   const requiresBankAccount =
     paymentMethod !== "cash";
 
@@ -54,21 +55,24 @@ export function ReimburseClaimModal({
 
   useEffect(() => {
     if (!open) return;
-    setReimbursedDate(todayIsoDate());
-    setPaymentMethod("bank_transfer");
+    setReimbursedDate(
+      (correcting && (claim?.paymentDate ?? claim?.reimbursedAt?.slice(0, 10))) || todayIsoDate(),
+    );
+    setPaymentMethod((correcting && claim?.paymentMethod) || "bank_transfer");
     setError(null);
-    listBankAccounts({ activeOnly: true })
+    // A correction may need to show an account that has since been deactivated.
+    listBankAccounts({ activeOnly: !correcting })
       .then((accounts) => {
         setBankAccounts(accounts);
         const defaultBank =
           accounts.find((bank) => bank.isDefault) ?? accounts[0];
-        setBankAccountId(defaultBank?.id ?? "");
+        setBankAccountId((correcting && claim?.bankAccountId) || defaultBank?.id || "");
       })
       .catch(() => {
         setBankAccounts([]);
         setBankAccountId("");
       });
-  }, [open]);
+  }, [open, claim, correcting]);
 
   useEffect(() => {
     if (!requiresBankAccount || bankAccounts.length === 0) {
@@ -92,7 +96,8 @@ export function ReimburseClaimModal({
     setSaving(true);
     setError(null);
     try {
-      await reimburseExpenseClaim(claim.id, {
+      const save = correcting ? correctExpenseClaimReimbursement : reimburseExpenseClaim;
+      await save(claim.id, {
         paymentMethod,
         bankAccountId:
           requiresBankAccount && bankAccountId ? bankAccountId : undefined,
@@ -111,9 +116,9 @@ export function ReimburseClaimModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Reimburse ${claim?.number ?? "claim"}`}
+      title={`${correcting ? "Correct payment for" : "Reimburse"} ${claim?.number ?? "claim"}`}
       primaryAction={{
-        content: "Record reimbursement",
+        content: correcting ? "Save correction" : "Record reimbursement",
         loading: saving,
         onAction: () => void handleReimburse(),
       }}
@@ -123,8 +128,9 @@ export function ReimburseClaimModal({
         <BlockStack gap="400">
           {error ? <Banner tone="critical">{error}</Banner> : null}
           <Banner tone="info">
-            Recording reimbursement posts the company expense to your books (Dr
-            Operating Expenses, Cr bank/cash).
+            {correcting
+              ? "The original journal entry is reversed and a corrected one is posted. The amount doesn't change."
+              : "Recording reimbursement posts the company expense to your books (Dr Operating Expenses, Cr bank/cash)."}
           </Banner>
           <FormLayout>
             <Select

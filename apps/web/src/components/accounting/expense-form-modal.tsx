@@ -65,6 +65,7 @@ export function ExpenseFormModal({
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [noReceiptReason, setNoReceiptReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +143,7 @@ export function ExpenseFormModal({
       setBankAccountId("");
     }
     setReceiptFile(null);
+    setNoReceiptReason(expense?.noReceiptReason ?? "");
     setError(null);
   }, [open, expense]);
 
@@ -196,6 +198,7 @@ export function ExpenseFormModal({
         bankAccountId:
           requiresBankAccount && bankAccountId ? bankAccountId : undefined,
         categoryId: categoryId || undefined,
+        noReceiptReason: noReceiptReason.trim() || undefined,
       };
 
       let expenseId = expense?.id;
@@ -207,6 +210,7 @@ export function ExpenseFormModal({
             requiresBankAccount && bankAccountId ? bankAccountId : null,
           categoryId: categoryId || null,
           paymentSourceId: paymentSourceId || null,
+          noReceiptReason: noReceiptReason.trim() || null,
         });
       } else {
         const created = await createExpense(payload);
@@ -352,7 +356,17 @@ export function ExpenseFormModal({
               <Text as="p" tone="subdued" variant="bodySm">
                 Current receipt on file. Upload a new file to replace it.
               </Text>
-            ) : null}
+            ) : receiptFile ? null : (
+              <TextField
+                autoComplete="off"
+                label="No receipt? State the reason (optional)"
+                value={noReceiptReason}
+                onChange={setNoReceiptReason}
+                placeholder="e.g. Receipt lost, vendor doesn't issue receipts"
+                maxLength={500}
+                multiline={2}
+              />
+            )}
           </BlockStack>
         </BlockStack>
       </Modal.Section>

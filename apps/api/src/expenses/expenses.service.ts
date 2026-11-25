@@ -25,6 +25,7 @@ import { DATABASE } from "../database/database.constants";
 import { UploadsService } from "../uploads/uploads.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import { ExpenseCategoriesService } from "./expense-categories.service";
+import { parseNoReceiptReason } from "./no-receipt-reason";
 
 @Injectable()
 export class ExpensesService {
@@ -109,6 +110,7 @@ export class ExpensesService {
         categoryName: row.categoryName,
         receiptPath: row.expense.receiptPath,
         hasReceipt: Boolean(row.expense.receiptPath),
+        noReceiptReason: row.expense.noReceiptReason,
         expenseClaimId: row.expenseClaimId,
         source: row.expenseClaimId ? ("reimbursement" as const) : ("manual" as const),
       };
@@ -254,6 +256,7 @@ export class ExpensesService {
       categoryName: row.categoryName,
       receiptPath: row.expense.receiptPath,
       hasReceipt: Boolean(row.expense.receiptPath),
+      noReceiptReason: row.expense.noReceiptReason,
       accountMoveId: row.expense.accountMoveId,
       source,
       expenseClaimId: row.expenseClaimId,
@@ -315,6 +318,7 @@ export class ExpensesService {
       paymentMethod: string;
       bankAccountId: string | null;
       receiptPath: string | null;
+      noReceiptReason: string | null;
     },
   ) {
     const [existing] = await this.db
@@ -351,6 +355,7 @@ export class ExpensesService {
         paymentMethod: claim.paymentMethod,
         bankAccountId: claim.bankAccountId,
         receiptPath: claim.receiptPath,
+        noReceiptReason: claim.noReceiptReason,
         createdBy: userId ?? null,
       })
       .returning();
@@ -425,6 +430,7 @@ export class ExpensesService {
         paymentMethod: claim.paymentMethod,
         bankAccountId: claim.bankAccountId,
         receiptPath: claim.receiptPath,
+        noReceiptReason: claim.noReceiptReason,
       });
     }
   }
@@ -441,8 +447,10 @@ export class ExpensesService {
       bankAccountId?: string;
       paymentSourceId?: string;
       categoryId?: string;
+      noReceiptReason?: string;
     },
   ) {
+    const noReceiptReason = parseNoReceiptReason(input.noReceiptReason);
     const description = input.description.trim();
     if (!description) {
       throw new BadRequestException("Description is required");
@@ -498,6 +506,7 @@ export class ExpensesService {
         categoryId: input.categoryId ?? null,
         description,
         reference: input.reference?.trim() || null,
+        noReceiptReason,
         amount: String(amount),
         expenseDate: input.expenseDate,
         paymentMethod: input.paymentMethod,
@@ -547,6 +556,7 @@ export class ExpensesService {
       bankAccountId?: string | null;
       paymentSourceId?: string | null;
       categoryId?: string | null;
+      noReceiptReason?: string | null;
     },
   ) {
     const existing = await this.getById(organizationId, id);
@@ -568,6 +578,13 @@ export class ExpensesService {
       input.categoryId !== undefined ? input.categoryId : existing.categoryId;
     const reference =
       input.reference !== undefined ? input.reference : existing.reference;
+
+    // Validated before any journal is touched; a receipt on file needs no reason.
+    const noReceiptReason = existing.receiptPath
+      ? null
+      : input.noReceiptReason !== undefined
+        ? parseNoReceiptReason(input.noReceiptReason)
+        : existing.noReceiptReason;
 
     if (!description) {
       throw new BadRequestException("Description is required");
@@ -617,6 +634,7 @@ export class ExpensesService {
         categoryId: categoryId ?? null,
         description,
         reference: reference?.trim() || null,
+        noReceiptReason,
         amount: String(amount),
         expenseDate,
         paymentMethod,
@@ -684,7 +702,7 @@ export class ExpensesService {
 
     await this.db
       .update(expenses)
-      .set({ receiptPath, updatedAt: new Date() })
+      .set({ receiptPath, noReceiptReason: null, updatedAt: new Date() })
       .where(eq(expenses.id, id));
 
     return { receiptPath };

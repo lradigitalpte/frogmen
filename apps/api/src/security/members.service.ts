@@ -1,3 +1,4 @@
+import { isReservedPlatformAdminEmail } from "../platform/platform-admin";
 import {
   BadRequestException,
   ConflictException,
@@ -360,6 +361,9 @@ export class MembersService {
     }
     if (!email || !email.includes("@")) {
       throw new BadRequestException("A valid email is required");
+    }
+    if (isReservedPlatformAdminEmail(email)) {
+      throw new BadRequestException("This email address can't be used to create an account");
     }
     if (!input.role || !ROLES.includes(input.role as AppRole) || role === "owner") {
       throw new BadRequestException("A valid non-owner role is required");

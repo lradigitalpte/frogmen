@@ -112,6 +112,7 @@ export class ExpenseClaimsController {
       description: string;
       reference?: string;
       categoryId?: string;
+      noReceiptReason?: string;
     },
   ) {
     return this.expenseClaimsService.create(
@@ -133,6 +134,7 @@ export class ExpenseClaimsController {
       description?: string;
       reference?: string | null;
       categoryId?: string | null;
+      noReceiptReason?: string | null;
     },
   ) {
     return this.expenseClaimsService.update(
@@ -215,6 +217,55 @@ export class ExpenseClaimsController {
       session.user.id,
       id,
       body,
+    );
+  }
+
+  @Patch(":id/reimbursement")
+  @RequirePermission("expense_claims.reimburse")
+  correctReimbursement(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body()
+    body: {
+      paymentMethod: string;
+      bankAccountId?: string;
+      reimbursedDate: string;
+    },
+  ) {
+    return this.expenseClaimsService.correctReimbursement(
+      this.orgId(session),
+      id,
+      body,
+    );
+  }
+
+  @Post(":id/send-back")
+  @RequirePermission("expense_claims.review")
+  sendBack(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.expenseClaimsService.sendBack(
+      this.orgId(session),
+      session.user.id,
+      id,
+      body.reason,
+    );
+  }
+
+  @Post(":id/request-edit")
+  @RequirePermission("expense_claims.submit")
+  requestEdit(
+    @Session() session: UserSession,
+    @Param("id") id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.expenseClaimsService.requestEdit(
+      this.orgId(session),
+      session.user.id,
+      id,
+      body.reason,
     );
   }
 

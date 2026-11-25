@@ -146,7 +146,8 @@ export function AddPurchaseOrderLineModal({
     void convertProductForDocument(product)
       .then((converted) => {
         if (!cancelled) {
-          setUnitPrice(String(converted.unitCost));
+          // No visible cost price: leave it for the buyer to enter rather than defaulting to 0.
+          setUnitPrice(product.costPrice == null ? "" : String(converted.unitCost));
         }
       })
       .catch((err) => {
@@ -181,7 +182,7 @@ export function AddPurchaseOrderLineModal({
   function handleAdd() {
     if (!product || !warehouse) return;
     const qty = Number(quantity);
-    const price = Number(unitPrice);
+    const price = unitPrice.trim() === "" ? NaN : Number(unitPrice);
     if (!qty || qty <= 0 || Number.isNaN(price)) return;
 
     onAdd({

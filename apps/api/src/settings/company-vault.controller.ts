@@ -25,10 +25,13 @@ import {
   type UpdateVaultFolderInput,
 } from "@frog1/shared";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
+import { RequirePermission } from "../security/require-permission.decorator";
 import { CompanyVaultService } from "./company-vault.service";
 
+// Confidential company files: owners and admins only, for reading as well.
 @Controller("v1/settings/vault")
 @RequireActiveOrg()
+@RequirePermission("settings.manage")
 export class CompanyVaultController {
   constructor(private readonly vaultService: CompanyVaultService) {}
 

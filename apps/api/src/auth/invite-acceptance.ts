@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import {
   branchMembers,
   invitations,
@@ -8,22 +8,29 @@ import {
   type Database,
 } from "@frog1/db";
 
-export async function findPendingInvitationsForEmail(
+/**
+ * The pending invitation a new account may join. Emails are not verified at
+ * sign-up, so a matching address alone proves nothing: the caller must also
+ * hold the unguessable invitation id that was emailed to the invited person.
+ */
+export async function findPendingInvitation(
   db: Database,
+  invitationId: string,
   email: string,
 ) {
-  const normalizedEmail = email.trim().toLowerCase();
-  return db
+  const [invitation] = await db
     .select()
     .from(invitations)
     .where(
       and(
-        sql`lower(${invitations.email}) = ${normalizedEmail}`,
+        eq(invitations.id, invitationId),
+        sql`lower(${invitations.email}) = ${email.trim().toLowerCase()}`,
         eq(invitations.status, "pending"),
         gt(invitations.expiresAt, new Date()),
       ),
     )
-    .orderBy(asc(invitations.createdAt));
+    .limit(1);
+  return invitation ?? null;
 }
 
 export async function assignInvitationBranches(
@@ -135,24 +142,4 @@ export async function acceptInvitationForUser(
   });
 
   return { memberId, organizationId: invitation.organizationId };
-}
-
-export async function acceptPendingInvitationsForUser(
-  db: Database,
-  userId: string,
-  email: string,
-): Promise<string | null> {
-  const pending = await findPendingInvitationsForEmail(db, email);
-  if (pending.length === 0) {
-    return null;
-  }
-
-  let primaryOrganizationId: string | null = null;
-
-  for (const invitation of pending) {
-    const result = await acceptInvitationForUser(db, invitation, userId);
-    primaryOrganizationId ??= result.organizationId;
-  }
-
-  return primaryOrganizationId;
 }

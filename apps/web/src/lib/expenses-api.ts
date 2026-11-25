@@ -21,6 +21,7 @@ export interface ExpenseRecord {
   categoryName?: string | null;
   receiptPath?: string | null;
   hasReceipt?: boolean;
+  noReceiptReason?: string | null;
   source?: "manual" | "reimbursement";
   expenseClaimId?: string | null;
   paymentSourceLabel?: string | null;
@@ -90,6 +91,7 @@ export function createExpense(input: {
     bankAccountId?: string;
     paymentSourceId?: string;
   categoryId?: string;
+  noReceiptReason?: string;
 }) {
   return apiFetch<{ id: string; number: string; reference: string | null }>(
     "/api/v1/expenses",
@@ -111,6 +113,7 @@ export function updateExpense(
     bankAccountId?: string | null;
     paymentSourceId?: string | null;
     categoryId?: string | null;
+    noReceiptReason?: string | null;
   },
 ) {
   return apiFetch<ExpenseRecord>(`/api/v1/expenses/${id}`, {

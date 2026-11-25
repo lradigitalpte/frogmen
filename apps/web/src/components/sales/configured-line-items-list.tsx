@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccess } from "@/components/providers/access-provider";
 import { useState } from "react";
 import {
   DndContext,
@@ -160,6 +161,8 @@ function SortableLineCard({
   } = useSortable({ id: line.id });
 
   const lineTotal = computeLineTotal(line);
+  const { can } = useAccess();
+  const canViewCost = can("cost.read");
   const lineProfit = computeLineProfit(line);
   const lineMargin = computeLineMarginPercent(line);
 
@@ -297,29 +300,31 @@ function SortableLineCard({
                   {formatAmount(lineTotal)}
                 </Text>
               </div>
-              <div className="frogmen-line-card__metric">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  Profit
-                </Text>
-                <InlineStack gap="150" blockAlign="center" wrap={false}>
-                  <Text
-                    as="span"
-                    fontWeight="semibold"
-                    tone={lineProfit >= 0 ? "success" : "critical"}
-                  >
-                    {formatAmount(lineProfit)}
-                  </Text>
-                  <span
-                    className={
-                      lineProfit >= 0
-                        ? "frogmen-margin-badge"
-                        : "frogmen-margin-badge frogmen-margin-badge--loss"
-                    }
-                  >
-                    {formatMarginPercent(lineMargin)}
-                  </span>
-                </InlineStack>
-              </div>
+              {canViewCost ? (
+                  <div className="frogmen-line-card__metric">
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Profit
+                    </Text>
+                    <InlineStack gap="150" blockAlign="center" wrap={false}>
+                      <Text
+                        as="span"
+                        fontWeight="semibold"
+                        tone={lineProfit >= 0 ? "success" : "critical"}
+                      >
+                        {formatAmount(lineProfit)}
+                      </Text>
+                      <span
+                        className={
+                          lineProfit >= 0
+                            ? "frogmen-margin-badge"
+                            : "frogmen-margin-badge frogmen-margin-badge--loss"
+                        }
+                      >
+                        {formatMarginPercent(lineMargin)}
+                      </span>
+                    </InlineStack>
+                  </div>
+              ) : null}
             </div>
           </div>
 

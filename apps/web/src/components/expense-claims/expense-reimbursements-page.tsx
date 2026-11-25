@@ -11,12 +11,14 @@ import {
 } from "@/components/expense-claims/expense-claim-utils";
 import { ReimburseClaimModal } from "@/components/expense-claims/reimburse-claim-modal";
 import { AppPage } from "@/components/layout/page";
+import { useAccess } from "@/components/providers/access-provider";
 import { cn } from "@/lib/utils";
 import { useOrgCurrency } from "@/hooks/use-org-currency";
 import {
   approveExpenseClaim,
   listExpenseClaims,
   rejectExpenseClaim,
+  sendBackExpenseClaim,
   type ExpenseClaim,
   type ExpenseClaimStatus,
 } from "@/lib/expense-claims-api";
@@ -65,6 +67,7 @@ const PAGE_SIZES = [10, 25, 50];
 
 export function ExpenseReimbursementsPage() {
   const { formatBaseMoney } = useOrgCurrency();
+  const { can } = useAccess();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -179,20 +182,28 @@ export function ExpenseReimbursementsPage() {
     setReimburseOpen(true);
   }
 
+  // Approved claims go back to draft; submitted ones are rejected.
+  const sendingBack = rejectingClaim?.status === "approved";
+
   async function handleReject() {
     if (!rejectingClaim) return;
     setActionId(rejectingClaim.id);
     setError(null);
     try {
-      await rejectExpenseClaim(rejectingClaim.id, rejectReason);
-      setSuccess(`Claim ${rejectingClaim.number} rejected. The record stays under Rejected for audit.`);
+      if (sendingBack) {
+        await sendBackExpenseClaim(rejectingClaim.id, rejectReason);
+        setSuccess(`Claim ${rejectingClaim.number} sent back to ${rejectingClaim.submitterName || "the employee"} as a draft.`);
+      } else {
+        await rejectExpenseClaim(rejectingClaim.id, rejectReason);
+        setSuccess(`Claim ${rejectingClaim.number} rejected. The record stays under Rejected for audit.`);
+      }
       setRejectOpen(false);
       setRejectingClaim(null);
       setRejectReason("");
-      setSelectedTab(3);
+      setSelectedTab(sendingBack ? 4 : 3);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reject claim");
+      setError(err instanceof Error ? err.message : sendingBack ? "Failed to send the claim back" : "Failed to reject claim");
     } finally {
       setActionId(null);
     }
@@ -351,7 +362,16 @@ export function ExpenseReimbursementsPage() {
                         {claim.categoryName && claim.categoryName !== claim.description ? (
                           <span className="ex-cat">{claim.categoryName}</span>
                         ) : null}
-                        {claim.hasReceipt ? <span>Receipt attached</span> : <span className="er-warn">No receipt</span>}
+                        {claim.editReason ? (
+                          <span className="er-warn" title={claim.editReason}>
+                            Edited after approval
+                          </span>
+                        ) : null}
+                        {claim.hasReceipt ? <span>Receipt attached</span> : (
+                          <span className="er-warn" title={claim.noReceiptReason ?? undefined}>
+                            {claim.noReceiptReason ? "No receipt · reason given" : "No receipt"}
+                          </span>
+                        )}
                       </small>
                     </button>
                     <span className="er-status">
@@ -437,6 +457,8 @@ export function ExpenseReimbursementsPage() {
         onApprove={promptApprove}
         onReject={handleRejectFromDetail}
         onReimburse={handleReimburseFromDetail}
+        onSendBack={handleRejectFromDetail}
+        onCorrect={can("expense_claims.reimburse") ? handleReimburseFromDetail : undefined}
       />
 
       <Modal
@@ -480,10 +502,10 @@ export function ExpenseReimbursementsPage() {
       <Modal
         open={rejectOpen}
         onClose={() => setRejectOpen(false)}
-        title={`Reject ${rejectingClaim?.number ?? "claim"}`}
+        title={`${sendingBack ? "Send back" : "Reject"} ${rejectingClaim?.number ?? "claim"}`}
         primaryAction={{
-          content: "Reject claim",
-          destructive: true,
+          content: sendingBack ? "Send back to draft" : "Reject claim",
+          destructive: !sendingBack,
           loading: Boolean(actionId),
           disabled: !rejectReason.trim(),
           onAction: () => void handleReject(),
@@ -495,7 +517,7 @@ export function ExpenseReimbursementsPage() {
         <Modal.Section>
           <TextField
             autoComplete="off"
-            label="Rejection reason"
+            label={sendingBack ? "What needs to change?" : "Rejection reason"}
             multiline={3}
             value={rejectReason}
             onChange={setRejectReason}
@@ -515,7 +537,9 @@ export function ExpenseReimbursementsPage() {
           const amount = reimbursingClaim?.amount ?? 0;
           setSelectedTab(REIMBURSED_TAB);
           setSuccess(
-            `${number} reimbursed (${formatBaseMoney(amount)}). Posted to Operating Expenses — see Expenses & Petty Cash and Profit & Loss.`,
+            reimbursingClaim?.status === "reimbursed"
+              ? `${number} payment corrected. The old journal entry was reversed and a new one posted.`
+              : `${number} reimbursed (${formatBaseMoney(amount)}). Posted to Operating Expenses — see Expenses & Petty Cash and Profit & Loss.`,
           );
           await load();
         }}

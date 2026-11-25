@@ -6,6 +6,7 @@ import { AuditInterceptor } from "./audit.interceptor";
 import { AuditService } from "./audit.service";
 import { BranchesController } from "./branches.controller";
 import { BranchesService } from "./branches.service";
+import { CostVisibilityInterceptor } from "./cost-visibility.interceptor";
 import { MembersController } from "./members.controller";
 import { MembersService } from "./members.service";
 import { PermissionGuard } from "./permission.guard";
@@ -23,6 +24,7 @@ import { SecurityContextService } from "./security-context.service";
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: RlsContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: CostVisibilityInterceptor },
   ],
   exports: [SecurityContextService],
 })

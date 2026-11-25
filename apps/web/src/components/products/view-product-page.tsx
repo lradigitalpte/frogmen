@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccess } from "@/components/providers/access-provider";
 import {
   Badge,
   Banner,
@@ -90,6 +91,8 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
   const router = useRouter();
   const { showSuccess } = useToast();
   const { currencies, catalogCurrencyId } = useOrgCurrency();
+  const { can } = useAccess();
+  const canViewCost = can("cost.read");
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [stockLevels, setStockLevels] = useState<Array<{ warehouseId: string; warehouseName: string; quantity: string }>>([]);
   const [units, setUnits] = useState<ProductUnit[]>([]);
@@ -474,11 +477,15 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                 <small>Used in operations</small>
               </div>
             )}
-            <div className="ac-tile">
-              <span>Cost price</span>
-              <strong>{formatProductMoney(product.costPrice)}</strong>
-              <small>{margin === null ? "Per unit" : `${formatProductMoney(String(price - cost))} profit / unit`}</small>
-            </div>
+            {canViewCost ? (
+              <>
+                <div className="ac-tile">
+                  <span>Cost price</span>
+                  <strong>{formatProductMoney(product.costPrice)}</strong>
+                  <small>{margin === null ? "Per unit" : `${formatProductMoney(String(price - cost))} profit / unit`}</small>
+                </div>
+              </>
+            ) : null}
             <div className="ac-tile">
               <span>Warranties</span>
               <strong>{activeWarranties.length}</strong>
@@ -777,10 +784,14 @@ export function ViewProductPage({ productId }: ViewProductPageProps) {
                   <dt>Reference</dt>
                   <dd>{product.sku || "—"}</dd>
                 </div>
-                <div>
-                  <dt>Cost price</dt>
-                  <dd>{formatProductMoney(product.costPrice)}</dd>
-                </div>
+                {canViewCost ? (
+                  <>
+                    <div>
+                      <dt>Cost price</dt>
+                      <dd>{formatProductMoney(product.costPrice)}</dd>
+                    </div>
+                  </>
+                ) : null}
                 {forSale ? (
                   <div>
                     <dt>Selling price</dt>

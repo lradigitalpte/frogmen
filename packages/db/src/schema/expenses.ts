@@ -82,6 +82,7 @@ export const expenses = pgTable(
     description: varchar("description", { length: 500 }).notNull(),
     reference: varchar("reference", { length: 255 }),
     receiptPath: varchar("receipt_path", { length: 500 }),
+    noReceiptReason: varchar("no_receipt_reason", { length: 500 }),
     amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
     expenseDate: date("expense_date").notNull(),
     paymentMethod: varchar("payment_method", { length: 40 }).notNull(),

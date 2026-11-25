@@ -218,7 +218,7 @@ function LedgerEntryCard({
                                 : "—"}
                             </td>
                             <td className="py-2 text-right">
-                              {formatBaseMoney(Number(line.costAmount))}
+                              {line.costAmount == null ? "—" : formatBaseMoney(Number(line.costAmount))}
                             </td>
                           </tr>
                         ))}

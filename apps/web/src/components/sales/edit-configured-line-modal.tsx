@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccess } from "@/components/providers/access-provider";
 import { useEffect, useMemo, useState } from "react";
 import {
   BlockStack,
@@ -63,6 +64,8 @@ export function EditConfiguredLineModal({
     null,
   );
 
+  const { can } = useAccess();
+  const canViewCost = can("cost.read");
   const [draft, setDraft] = useState<ConfiguredLineItem | null>(line);
   const [discountMode, setDiscountMode] = useState<DiscountMode>("percent");
   const [discountValue, setDiscountValue] = useState("0");
@@ -286,16 +289,20 @@ export function EditConfiguredLineModal({
               value={String(draft.unitPrice)}
               onChange={(value) => updateField("unitPrice", Number(value) || 0)}
             />
-            <TextField
-              autoComplete="off"
-              disabled
-              helpText="Converted from the saved product cost."
-              label="Converted product cost"
-              prefix={pricePrefix}
-              type="number"
-              value={String(draft.unitCost)}
-              onChange={() => undefined}
-            />
+            {canViewCost ? (
+              <>
+                <TextField
+                  autoComplete="off"
+                  disabled
+                  helpText="Converted from the saved product cost."
+                  label="Converted product cost"
+                  prefix={pricePrefix}
+                  type="number"
+                  value={String(draft.unitCost)}
+                  onChange={() => undefined}
+                />
+              </>
+            ) : null}
             <InlineGrid columns={2} gap="400">
               <Select
                 label="Discount type"
@@ -381,40 +388,44 @@ export function EditConfiguredLineModal({
                   {fmt(lineTotal)}
                 </Text>
               </BlockStack>
-              <BlockStack gap="100">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  Product cost
-                </Text>
-                <Text as="p" variant="headingMd">
-                  {fmt(draft.unitCost * draft.quantity)}
-                </Text>
-              </BlockStack>
-              <BlockStack gap="100">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  Gross profit before VAT
-                </Text>
-                <Text
-                  as="p"
-                  tone={lineProfit >= 0 ? "success" : "critical"}
-                  variant="headingMd"
-                >
-                  {fmt(lineProfit)}
-                </Text>
-              </BlockStack>
-              <BlockStack gap="100">
-                <Text as="span" tone="subdued" variant="bodySm">
-                  Margin
-                </Text>
-                <span
-                  className={
-                    lineProfit >= 0
-                      ? "frogmen-margin-badge"
-                      : "frogmen-margin-badge frogmen-margin-badge--loss"
-                  }
-                >
-                  {formatMarginPercent(lineMargin)}
-                </span>
-              </BlockStack>
+              {canViewCost ? (
+                <>
+                  <BlockStack gap="100">
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Product cost
+                    </Text>
+                    <Text as="p" variant="headingMd">
+                      {fmt(draft.unitCost * draft.quantity)}
+                    </Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Gross profit before VAT
+                    </Text>
+                    <Text
+                      as="p"
+                      tone={lineProfit >= 0 ? "success" : "critical"}
+                      variant="headingMd"
+                    >
+                      {fmt(lineProfit)}
+                    </Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" tone="subdued" variant="bodySm">
+                      Margin
+                    </Text>
+                    <span
+                      className={
+                        lineProfit >= 0
+                          ? "frogmen-margin-badge"
+                          : "frogmen-margin-badge frogmen-margin-badge--loss"
+                      }
+                    >
+                      {formatMarginPercent(lineMargin)}
+                    </span>
+                  </BlockStack>
+                </>
+              ) : null}
             </InlineGrid>
           </div>
         </BlockStack>

@@ -124,7 +124,8 @@ export function PurchaseOrderCatalogSection({
     void convertProductForDocument(selectedProduct)
       .then((converted) => {
         if (!cancelled) {
-          setUnitPrice(String(converted.unitCost));
+          // No visible cost price: leave it for the buyer to enter rather than defaulting to 0.
+          setUnitPrice(selectedProduct.costPrice == null ? "" : String(converted.unitCost));
         }
       })
       .catch((err) => {
@@ -157,7 +158,7 @@ export function PurchaseOrderCatalogSection({
   function handleAddLine() {
     if (!selectedProduct || !warehouse) return;
     const qty = Number(quantity);
-    const price = Number(unitPrice);
+    const price = unitPrice.trim() === "" ? NaN : Number(unitPrice);
     if (!qty || qty <= 0 || Number.isNaN(price)) return;
 
     onAdd({

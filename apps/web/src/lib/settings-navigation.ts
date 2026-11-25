@@ -69,6 +69,7 @@ export const settingsNavGroups: SettingsNavGroup[] = [
       {
         label: "Company File Vault",
         href: "/dashboard/settings/vault",
+        permission: "settings.manage",
         description: "Store agreements, inspection videos, and media files",
       },
     ],

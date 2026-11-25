@@ -513,6 +513,10 @@ export function ExpensesPage() {
                         <Button external icon={NoteIcon} size="slim" url={getExpenseReceiptUrl(expense.id)} variant="tertiary">
                           Receipt
                         </Button>
+                      ) : expense.noReceiptReason ? (
+                        <span className="ex-noreceipt" title={expense.noReceiptReason}>
+                          No receipt · reason given
+                        </span>
                       ) : claim ? null : (
                         <span className="ex-noreceipt">No receipt</span>
                       )}

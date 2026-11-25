@@ -33,12 +33,15 @@ interface ExpenseClaimDetailModalProps {
   onApprove?: (claim: ExpenseClaim) => void;
   onReject?: (claim: ExpenseClaim) => void;
   onReimburse?: (claim: ExpenseClaim) => void;
+  onCorrect?: (claim: ExpenseClaim) => void;
+  onSendBack?: (claim: ExpenseClaim) => void;
   onWithdraw?: (claim: ExpenseClaim) => void;
   onDelete?: (claim: ExpenseClaim) => void;
   /** Employee actions (mode "mine"). */
   onEdit?: (claim: ExpenseClaim) => void;
   onSubmit?: (claim: ExpenseClaim) => void;
   onRevise?: (claim: ExpenseClaim) => void;
+  onRequestEdit?: (claim: ExpenseClaim) => void;
 }
 
 function DetailRow({
@@ -65,11 +68,14 @@ export function ExpenseClaimDetailModal({
   onApprove,
   onReject,
   onReimburse,
+  onCorrect,
+  onSendBack,
   onWithdraw,
   onDelete,
   onEdit,
   onSubmit,
   onRevise,
+  onRequestEdit,
 }: ExpenseClaimDetailModalProps) {
   const { formatBaseMoney } = useOrgCurrency();
   const [receiptPreviewFailed, setReceiptPreviewFailed] = useState(false);
@@ -116,6 +122,9 @@ export function ExpenseClaimDetailModal({
     ...(mode === "mine" && claim.status === "draft" && onEdit
       ? [{ content: "Edit", disabled: actionLoading, onAction: () => onEdit(claim) }]
       : []),
+    ...(mode === "mine" && claim.status === "approved" && onRequestEdit
+      ? [{ content: "Request edit", disabled: actionLoading, onAction: () => onRequestEdit(claim) }]
+      : []),
     ...(mode === "mine" && claim.status === "submitted" && onWithdraw
       ? [
           {
@@ -138,6 +147,12 @@ export function ExpenseClaimDetailModal({
             onAction: () => onDelete(claim),
           },
         ]
+      : []),
+    ...(mode === "review" && claim.status === "approved" && onSendBack
+      ? [{ content: "Send back to draft", disabled: actionLoading, onAction: () => onSendBack(claim) }]
+      : []),
+    ...(mode === "review" && claim.status === "reimbursed" && onCorrect
+      ? [{ content: "Correct payment", disabled: actionLoading, onAction: () => onCorrect(claim) }]
       : []),
     ...(mode === "review" && claim.status === "submitted" && onReject
       ? [
@@ -172,7 +187,7 @@ export function ExpenseClaimDetailModal({
           {claim.rejectionReason && (claim.status === "rejected" || claim.status === "draft") ? (
             <Banner
               tone={claim.status === "rejected" ? "critical" : "warning"}
-              title={claim.status === "rejected" ? "Rejected by finance" : "Previously rejected"}
+              title={claim.status === "rejected" ? "Rejected by finance" : "Sent back by finance"}
             >
               {claim.rejectionReason}
             </Banner>
@@ -276,8 +291,11 @@ export function ExpenseClaimDetailModal({
                 }
               />
             ) : null}
+            {claim.editReason ? (
+              <DetailRow label="Edited after approval" value={claim.editReason} />
+            ) : null}
             {claim.rejectionReason ? (
-              <DetailRow label="Rejection reason" value={claim.rejectionReason} />
+              <DetailRow label={claim.status === "rejected" ? "Rejection reason" : "Finance's note"} value={claim.rejectionReason} />
             ) : null}
             {claim.status === "reimbursed" && claim.reimbursedAt ? (
               <>
@@ -306,6 +324,9 @@ export function ExpenseClaimDetailModal({
                         : formatExpenseClaimPaymentMethod(claim.paymentMethod)
                     }
                   />
+                ) : null}
+                {claim.paymentDate ? (
+                  <DetailRow label="Payment date" value={formatExpenseClaimDate(claim.paymentDate)} />
                 ) : null}
                 {claim.accountMoveId ? (
                   <DetailRow
@@ -359,9 +380,14 @@ export function ExpenseClaimDetailModal({
                 )}
               </BlockStack>
             ) : (
-              <Text as="p" tone="subdued">
-                No receipt attached to this claim.
-              </Text>
+              <BlockStack gap="300">
+                <Text as="p" tone="subdued">
+                  No receipt attached to this claim.
+                </Text>
+                {claim.noReceiptReason ? (
+                  <DetailRow label="Reason for no receipt" value={claim.noReceiptReason} />
+                ) : null}
+              </BlockStack>
             )}
           </BlockStack>
         </BlockStack>

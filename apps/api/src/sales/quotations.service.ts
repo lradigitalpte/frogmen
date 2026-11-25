@@ -1,3 +1,4 @@
+import { isSignatureImage } from "./signature-image";
 import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
@@ -2055,12 +2056,20 @@ export class QuotationsService {
       throw new BadRequestException("This quotation cannot be signed");
     }
 
-    if (!input.signatureImage?.trim()) {
+    if (typeof input.signedBy !== "string" || !input.signedBy.trim()) {
+      throw new BadRequestException("Signer name is required");
+    }
+
+    if (typeof input.signatureImage !== "string" || !input.signatureImage.trim()) {
       throw new BadRequestException("Signature is required");
     }
 
     if (input.signatureImage.length > 2_800_000) {
       throw new BadRequestException("Signature image is too large");
+    }
+
+    if (!isSignatureImage(input.signatureImage)) {
+      throw new BadRequestException("Signature must be a PNG, JPEG, WebP or GIF image");
     }
 
     const signer = input.signedBy.trim();

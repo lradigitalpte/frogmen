@@ -271,9 +271,11 @@ export function ExpenseDetailModal({ expenseId, onClose, onEdit }: ExpenseDetail
                 <small>
                   {detail.hasReceipt
                     ? "Opens in a new tab."
-                    : claim
-                      ? "Check the staff claim for the original receipt."
-                      : "Edit the expense to upload one — useful for VAT and audits."}
+                    : detail.noReceiptReason
+                      ? `Reason: ${detail.noReceiptReason}`
+                      : claim
+                        ? "Check the staff claim for the original receipt."
+                        : "Edit the expense to upload one — useful for VAT and audits."}
                 </small>
               </div>
               {detail.hasReceipt ? (

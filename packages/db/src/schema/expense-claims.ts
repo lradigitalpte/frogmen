@@ -36,6 +36,7 @@ export const expenseClaims = pgTable(
     description: varchar("description", { length: 500 }).notNull(),
     reference: varchar("reference", { length: 255 }),
     receiptPath: varchar("receipt_path", { length: 500 }),
+    noReceiptReason: varchar("no_receipt_reason", { length: 500 }),
     amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
     expenseDate: date("expense_date").notNull(),
     status: varchar("status", { length: 32 }).notNull().default("draft"),
@@ -45,6 +46,7 @@ export const expenseClaims = pgTable(
       onDelete: "set null",
     }),
     rejectionReason: text("rejection_reason"),
+    editReason: varchar("edit_reason", { length: 500 }),
     reimbursedAt: timestamp("reimbursed_at", { withTimezone: true }),
     reimbursedByUserId: text("reimbursed_by_user_id").references(
       () => users.id,

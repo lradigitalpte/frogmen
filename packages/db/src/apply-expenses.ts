@@ -115,6 +115,14 @@ export async function applyExpensesIfNeeded(connectionString: string) {
         AND NOT EXISTS (
           SELECT 1 FROM expenses e WHERE e.account_move_id = am.id
         )
+        -- An edited expense leaves its original entry behind, cancelled by a reversal.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM account_moves rev
+          WHERE rev.organization_id = am.organization_id
+            AND rev.state = 'posted'
+            AND rev.reference = 'Reversal ' || COALESCE(am.reference, am.name)
+        )
       ON CONFLICT ("organization_id", "number") WHERE "deleted_at" IS NULL DO NOTHING
     `;
   } finally {

@@ -309,6 +309,20 @@
       "when": 1788869400000,
       "tag": "0042_invoice_line_serial_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788869500000,
+      "tag": "0043_no_receipt_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788869600000,
+      "tag": "0044_expense_claim_edit_reason",
+      "breakpoints": true
     }
   ]
 }

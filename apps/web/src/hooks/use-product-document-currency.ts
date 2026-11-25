@@ -146,6 +146,7 @@ export function useProductDocumentCurrency(
 
   const formatProductCatalogCost = useCallback(
     (product: Product) => {
+      if (product.costPrice == null) return "—";
       const nativeAmount = parseSellingPrice(product.costPrice);
       const productCurrencyId = resolveProductCurrencyId(
         product,

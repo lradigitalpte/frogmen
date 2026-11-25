@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccess } from "@/components/providers/access-provider";
 import { AppPage } from "@/components/layout/page";
 import { useToast } from "@/components/providers/toast-provider";
 import { listBankAccounts, type BankAccount } from "@/lib/bank-accounts-api";
@@ -85,6 +86,9 @@ export default function DocumentTemplatesSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { ready, can } = useAccess();
+  const canUseVault = ready && can("settings.manage");
+  const visibleTabs = canUseVault ? tabs : tabs.filter((tab) => tab.id !== "vault");
   const [selectedTab, setSelectedTab] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [companyName, setCompanyName] = useState("");
@@ -224,7 +228,7 @@ export default function DocumentTemplatesSettingsPage() {
         </InlineGrid>
 
         <Card>
-          <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab}>
+          <Tabs tabs={visibleTabs} selected={selectedTab} onSelect={setSelectedTab}>
             <div className="document-settings-tab">
               {selectedTab === 0 ? (
                 <BlockStack gap="400">
@@ -234,7 +238,8 @@ export default function DocumentTemplatesSettingsPage() {
                       Titles and display controls used by generated documents.
                     </Text>
                   </BlockStack>
-                  <Banner tone="info">
+                  {canUseVault ? (
+<Banner tone="info">
                     <InlineStack align="space-between" blockAlign="center">
                       <p>
                         📁 Store company contracts, ROV inspection videos, and media files in your S3 cloud bucket.
@@ -244,6 +249,7 @@ export default function DocumentTemplatesSettingsPage() {
                       </Link>
                     </InlineStack>
                   </Banner>
+) : null}
                   <BlockStack gap="300">
                     <InlineStack align="space-between" blockAlign="center">
                       <div>
@@ -426,7 +432,7 @@ export default function DocumentTemplatesSettingsPage() {
                 </BlockStack>
               ) : null}
 
-              {selectedTab === 4 ? <CompanyFileVault /> : null}
+              {selectedTab === 4 && canUseVault ? <CompanyFileVault /> : null}
             </div>
           </Tabs>
         </Card>

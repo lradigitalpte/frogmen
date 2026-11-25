@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccess } from "@/components/providers/access-provider";
 import {
   Badge,
   Banner,
@@ -134,6 +135,8 @@ function Section({
 }
 
 export function CreateQuotationPage() {
+  const { can } = useAccess();
+  const canViewCost = can("cost.read");
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const { settings: salesPricing } = useSalesPricing();
@@ -1078,7 +1081,7 @@ export function CreateQuotationPage() {
                 </div>
               </dl>
 
-              {hasLines ? (
+              {hasLines && canViewCost ? (
                 <div className={cn("cq-profit", grossProfit < 0 && "is-loss")}>
                   <div>
                     <span>

@@ -19,6 +19,7 @@ export interface ExpenseClaim {
   categoryName?: string | null;
   receiptPath?: string | null;
   hasReceipt?: boolean;
+  noReceiptReason?: string | null;
   submittedByUserId: string;
   submitterName: string;
   submitterEmail: string;
@@ -29,6 +30,7 @@ export interface ExpenseClaim {
   reviewedByName?: string | null;
   reviewedByEmail?: string | null;
   rejectionReason?: string | null;
+  editReason?: string | null;
   reimbursedAt?: string | null;
   reimbursedByUserId?: string | null;
   reimbursedByName?: string | null;
@@ -37,6 +39,7 @@ export interface ExpenseClaim {
   bankAccountId?: string | null;
   bankAccountName?: string | null;
   accountMoveId?: string | null;
+  paymentDate?: string | null;
 }
 
 export interface MyExpenseClaimsResponse {
@@ -89,6 +92,7 @@ export function createExpenseClaim(input: {
   description: string;
   reference?: string;
   categoryId?: string;
+  noReceiptReason?: string;
 }) {
   return apiFetch<ExpenseClaim>("/api/v1/expense-claims", {
     method: "POST",
@@ -104,6 +108,7 @@ export function updateExpenseClaim(
     description?: string;
     reference?: string | null;
     categoryId?: string | null;
+    noReceiptReason?: string | null;
   },
 ) {
   return apiFetch<ExpenseClaim>(`/api/v1/expense-claims/${id}`, {
@@ -152,6 +157,34 @@ export function reimburseExpenseClaim(
   return apiFetch<ExpenseClaim>(`/api/v1/expense-claims/${id}/reimburse`, {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function correctExpenseClaimReimbursement(
+  id: string,
+  input: {
+    paymentMethod: string;
+    bankAccountId?: string;
+    reimbursedDate: string;
+  },
+) {
+  return apiFetch<ExpenseClaim>(`/api/v1/expense-claims/${id}/reimbursement`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function requestExpenseClaimEdit(id: string, reason: string) {
+  return apiFetch<ExpenseClaim>(`/api/v1/expense-claims/${id}/request-edit`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function sendBackExpenseClaim(id: string, reason: string) {
+  return apiFetch<ExpenseClaim>(`/api/v1/expense-claims/${id}/send-back`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }
 

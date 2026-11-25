@@ -38,7 +38,14 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
     setError(null);
     setUserAlreadyExists(false);
 
-    const result = await signUp.email({ email: email.trim(), password, name: name.trim() });
+    // Holding the emailed invitation link is what lets the new account join the organization.
+    const invitationId = invited ? decodeURIComponent(redirectTo.slice("/invite/".length).split(/[?#/]/)[0] ?? "") : "";
+    const result = await signUp.email({
+      email: email.trim(),
+      password,
+      name: name.trim(),
+      ...(invitationId ? { fetchOptions: { headers: { "x-invitation-id": invitationId } } } : {}),
+    });
     if (result.error) {
       setLoading(false);
       const msg = result.error.message ?? "";
@@ -74,7 +81,7 @@ export function SignUpForm({ defaultEmail = "", redirectTo = "/dashboard" }: { d
             <Text as="p" tone="subdued">{invited ? "Confirm your identity and choose a secure password." : "Start your secure organization workspace."}</Text>
           </div>
         </div>
-        {invited ? <Banner tone="info">Your invitation will be applied automatically after you log in or sign up.</Banner> : null}
+        {invited ? <Banner tone="info">Your invitation will be applied when you sign up or sign in from this page.</Banner> : null}
         {userAlreadyExists ? (
           <Banner
             tone="warning"

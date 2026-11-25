@@ -4,20 +4,26 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAccessControl, organization } from "better-auth/plugins";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { eq, asc } from "drizzle-orm";
-import { createDb, currencies, members, schema, sessions, users } from "@frog1/db";
+import { createDb, currencies, members, schema, sessions } from "@frog1/db";
 import { sendPasswordResetEmail } from "./auth-email";
 import {
-  acceptPendingInvitationsForUser,
+  acceptInvitationForUser,
   assignInvitationBranches,
-  findPendingInvitationsForEmail,
+  findPendingInvitation,
 } from "./invite-acceptance";
 import { provisionOrgInventory } from "../inventory/org-inventory-seed";
+import { isReservedPlatformAdminEmail } from "../platform/platform-admin";
 
 const organizationAccess = createAccessControl(defaultStatements);
 const ownerRole = organizationAccess.newRole(defaultStatements);
+// Members and invitations are managed through /v1/members, which applies our own
+// rules (e.g. only the owner can remove an admin). Better Auth's endpoints would bypass them.
 const adminRole = organizationAccess.newRole({
-  ...defaultStatements,
   organization: ["update"],
+  member: [],
+  invitation: [],
+  team: [],
+  ac: ["read"],
 });
 const managedMemberRole = organizationAccess.newRole({
   organization: [],
@@ -77,6 +83,8 @@ export function createAuth(databaseUrl: string) {
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
+      // Otherwise whoever held the account before the reset stays signed in.
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         await sendPasswordResetEmail({
           to: user.email,
@@ -126,20 +134,24 @@ export function createAuth(databaseUrl: string) {
                 message: "A valid email is required.",
               });
             }
+            if (isReservedPlatformAdminEmail(email)) {
+              throw new APIError("FORBIDDEN", {
+                message: "This email address can't be used to create an account.",
+              });
+            }
           },
-          after: async (user) => {
-            if (user.email) {
-              const invitedOrganizationId =
-                await acceptPendingInvitationsForUser(
-                  db,
-                  user.id,
-                  user.email,
-                );
-              if (invitedOrganizationId) {
-                await db
-                  .update(sessions)
-                  .set({ activeOrganizationId: invitedOrganizationId })
-                  .where(eq(sessions.userId, user.id));
+          after: async (user, context) => {
+            // Sent by the sign-up form when it was opened from an invitation link.
+            const invitationId = context?.headers?.get("x-invitation-id");
+            if (invitationId && user.email) {
+              const invitation = await findPendingInvitation(
+                db,
+                invitationId,
+                user.email,
+              );
+              if (invitation) {
+                // The session created next picks this membership up as its active organization.
+                await acceptInvitationForUser(db, invitation, user.id);
                 return;
               }
             }
@@ -177,28 +189,6 @@ export function createAuth(databaseUrl: string) {
       session: {
         create: {
           after: async (session) => {
-            // Find user email and auto-accept any pending invitations for this user
-            const [u] = await db
-              .select({ email: users.email })
-              .from(users)
-              .where(eq(users.id, session.userId))
-              .limit(1);
-
-            if (u?.email) {
-              const invitedOrgId = await acceptPendingInvitationsForUser(
-                db,
-                session.userId,
-                u.email,
-              );
-              if (invitedOrgId && !session.activeOrganizationId) {
-                await db
-                  .update(sessions)
-                  .set({ activeOrganizationId: invitedOrgId })
-                  .where(eq(sessions.id, session.id));
-                return;
-              }
-            }
-
             if (session.activeOrganizationId) {
               return;
             }

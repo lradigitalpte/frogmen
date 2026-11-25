@@ -135,6 +135,7 @@ export class ExpensesController {
       bankAccountId?: string;
       paymentSourceId?: string;
       categoryId?: string;
+      noReceiptReason?: string;
     },
   ) {
     return this.expensesService.create(
@@ -158,6 +159,7 @@ export class ExpensesController {
       bankAccountId?: string | null;
       paymentSourceId?: string | null;
       categoryId?: string | null;
+      noReceiptReason?: string | null;
     },
   ) {
     return this.expensesService.update(this.orgId(session), id, body);

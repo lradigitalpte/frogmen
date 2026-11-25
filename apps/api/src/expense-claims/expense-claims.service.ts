@@ -11,6 +11,7 @@ import {
   bankAccounts,
   expenseCategories,
   expenseClaims,
+  expenses,
   users,
   type Database,
 } from "@frog1/db";
@@ -21,6 +22,7 @@ import { UploadsService } from "../uploads/uploads.service";
 import { nextDocumentNumber } from "../sales/document-sequences";
 import { ExpenseCategoriesService } from "../expenses/expense-categories.service";
 import { ExpensesService } from "../expenses/expenses.service";
+import { parseNoReceiptReason } from "../expenses/no-receipt-reason";
 
 export type ExpenseClaimStatus =
   | "draft"
@@ -36,6 +38,8 @@ const VALID_STATUSES: ExpenseClaimStatus[] = [
   "rejected",
   "reimbursed",
 ];
+
+const PAYMENT_METHODS = ["cash", "bank_transfer", "wire_transfer", "cheque"];
 
 const reviewerUser = alias(users, "expense_claim_reviewer");
 
@@ -168,8 +172,10 @@ export class ExpenseClaimsService {
       description: string;
       reference?: string;
       categoryId?: string;
+      noReceiptReason?: string;
     },
   ) {
+    const noReceiptReason = parseNoReceiptReason(input.noReceiptReason);
     const description = (input.description ?? "").trim();
     const expenseDate = assertIsoDate(input.expenseDate);
     if (!description) {
@@ -199,6 +205,7 @@ export class ExpenseClaimsService {
         categoryId: input.categoryId ?? null,
         description,
         reference: input.reference?.trim() || null,
+        noReceiptReason,
         amount: String(amount),
         expenseDate,
         status: "draft",
@@ -218,6 +225,7 @@ export class ExpenseClaimsService {
       description?: string;
       reference?: string | null;
       categoryId?: string | null;
+      noReceiptReason?: string | null;
     },
   ) {
     const existing = await this.getClaimRow(organizationId, id);
@@ -262,6 +270,11 @@ export class ExpenseClaimsService {
           input.categoryId !== undefined
             ? input.categoryId || null
             : existing.categoryId,
+        noReceiptReason: existing.receiptPath
+          ? null
+          : input.noReceiptReason !== undefined
+            ? parseNoReceiptReason(input.noReceiptReason)
+            : existing.noReceiptReason,
         updatedAt: new Date(),
       })
       .where(eq(expenseClaims.id, id));
@@ -413,7 +426,7 @@ export class ExpenseClaimsService {
       reimbursedDate?: string;
     },
   ) {
-    const existing = await this.getClaimRow(organizationId, id);
+    const existing = await this.getClaimRow(organizationId, id, true);
 
     if (existing.status !== "approved") {
       throw new BadRequestException("Only approved claims can be reimbursed");
@@ -473,8 +486,166 @@ export class ExpenseClaimsService {
         paymentMethod,
         bankAccountId: input.bankAccountId ?? null,
         receiptPath: existing.receiptPath,
+        noReceiptReason: existing.noReceiptReason,
       },
     );
+
+    return this.getById(organizationId, id);
+  }
+
+  /** Fix how a paid claim was paid: reverses the journal entry and posts a corrected one. */
+  async correctReimbursement(
+    organizationId: string,
+    id: string,
+    input: {
+      paymentMethod: string;
+      bankAccountId?: string;
+      reimbursedDate: string;
+    },
+  ) {
+    const existing = await this.getClaimRow(organizationId, id, true);
+
+    if (existing.status !== "reimbursed" || !existing.accountMoveId) {
+      throw new BadRequestException("Only reimbursed claims can be corrected");
+    }
+    if (!PAYMENT_METHODS.includes(input.paymentMethod)) {
+      throw new BadRequestException("Choose a valid payment method");
+    }
+    const { paymentMethod } = input;
+    const bankAccountId =
+      paymentMethod === "cash" ? null : input.bankAccountId || null;
+    if (paymentMethod !== "cash" && !bankAccountId) {
+      throw new BadRequestException("Bank account is required for this payment method");
+    }
+    const reimbursedDate = assertIsoDate(input.reimbursedDate, "Payment date");
+
+    const [ledgerEntry] = await this.db
+      .select({ id: expenses.id, expenseDate: expenses.expenseDate })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.organizationId, organizationId),
+          eq(expenses.accountMoveId, existing.accountMoveId),
+          isNull(expenses.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!ledgerEntry) {
+      throw new BadRequestException(
+        "This claim has no entry in Expenses yet. Open Expenses & petty cash once, then try again.",
+      );
+    }
+
+    if (
+      paymentMethod === existing.paymentMethod &&
+      bankAccountId === existing.bankAccountId &&
+      reimbursedDate === ledgerEntry.expenseDate
+    ) {
+      throw new BadRequestException("Nothing has changed");
+    }
+
+    await this.accountingService.reverseJournalMove(
+      organizationId,
+      existing.accountMoveId,
+      `Reversal ${existing.number}`,
+    );
+    const moveId = await this.accountingService.postExpenseJournal(
+      organizationId,
+      {
+        amount: roundMoney(Number(existing.amount)),
+        expenseDate: reimbursedDate,
+        description: `Reimbursement: ${existing.description}`,
+        paymentMethod,
+        reference: existing.number,
+        bankAccountId: bankAccountId ?? undefined,
+      },
+    );
+
+    const updatedAt = new Date();
+    await this.db
+      .update(expenses)
+      .set({
+        accountMoveId: moveId,
+        paymentMethod,
+        bankAccountId,
+        expenseDate: reimbursedDate,
+        updatedAt,
+      })
+      .where(eq(expenses.id, ledgerEntry.id));
+    await this.db
+      .update(expenseClaims)
+      .set({ accountMoveId: moveId, paymentMethod, bankAccountId, updatedAt })
+      .where(eq(expenseClaims.id, id));
+
+    return this.getById(organizationId, id);
+  }
+
+  /** Undo an approval that hasn't been paid, so the employee can edit and resubmit. */
+  async sendBack(
+    organizationId: string,
+    reviewerUserId: string,
+    id: string,
+    reason: unknown,
+  ) {
+    const existing = await this.getClaimRow(organizationId, id, true);
+
+    if (existing.status !== "approved") {
+      throw new BadRequestException("Only approved, unpaid claims can be sent back to draft");
+    }
+    if (typeof reason !== "string" || !reason.trim()) {
+      throw new BadRequestException("Say what needs to change");
+    }
+
+    await this.db
+      .update(expenseClaims)
+      .set({
+        status: "draft",
+        submittedAt: null,
+        reviewedAt: new Date(),
+        reviewedByUserId: reviewerUserId,
+        rejectionReason: reason.trim(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, "approved")));
+
+    return this.getById(organizationId, id);
+  }
+
+  /** The employee reopens their own approved, unpaid claim; it needs approval again. */
+  async requestEdit(
+    organizationId: string,
+    userId: string,
+    id: string,
+    reason: unknown,
+  ) {
+    const existing = await this.getClaimRow(organizationId, id, true);
+
+    if (existing.submittedByUserId !== userId) {
+      throw new ForbiddenException("You can only edit your own claims");
+    }
+    if (existing.status !== "approved") {
+      throw new BadRequestException("Only approved, unpaid claims can be reopened for editing");
+    }
+    const editReason = typeof reason === "string" ? reason.trim() : "";
+    if (!editReason) {
+      throw new BadRequestException("Say why the claim needs editing");
+    }
+    if (editReason.length > 500) {
+      throw new BadRequestException("The reason can be up to 500 characters");
+    }
+
+    await this.db
+      .update(expenseClaims)
+      .set({
+        status: "draft",
+        submittedAt: null,
+        reviewedAt: null,
+        reviewedByUserId: null,
+        rejectionReason: null,
+        editReason,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(expenseClaims.id, id), eq(expenseClaims.status, "approved")));
 
     return this.getById(organizationId, id);
   }
@@ -506,7 +677,7 @@ export class ExpenseClaimsService {
 
     await this.db
       .update(expenseClaims)
-      .set({ receiptPath, updatedAt: new Date() })
+      .set({ receiptPath, noReceiptReason: null, updatedAt: new Date() })
       .where(eq(expenseClaims.id, id));
 
     return { receiptPath };
@@ -521,11 +692,11 @@ export class ExpenseClaimsService {
     });
   }
 
-  private async getClaimRow(organizationId: string, id: string) {
+  private async getClaimRow(organizationId: string, id: string, lock = false) {
     if (!UUID_RE.test(id)) {
       throw new NotFoundException("Expense claim not found");
     }
-    const [row] = await this.db
+    const query = this.db
       .select()
       .from(expenseClaims)
       .where(
@@ -536,6 +707,8 @@ export class ExpenseClaimsService {
         ),
       )
       .limit(1);
+    // Locked while money is posted, so two people can't pay or correct a claim at once.
+    const [row] = lock ? await query.for("update") : await query;
 
     if (!row) {
       throw new NotFoundException("Expense claim not found");
@@ -614,6 +787,7 @@ export class ExpenseClaimsService {
         reviewerEmail: reviewerUser.email,
         reimburserName: reimburserUser.name,
         reimburserEmail: reimburserUser.email,
+        paymentDate: expenses.expenseDate,
       })
       .from(expenseClaims)
       .leftJoin(
@@ -629,6 +803,13 @@ export class ExpenseClaimsService {
       .leftJoin(
         reimburserUser,
         eq(reimburserUser.id, expenseClaims.reimbursedByUserId),
+      )
+      .leftJoin(
+        expenses,
+        and(
+          eq(expenses.accountMoveId, expenseClaims.accountMoveId),
+          isNull(expenses.deletedAt),
+        ),
       )
       .where(and(...conditions))
       .orderBy(desc(expenseClaims.expenseDate), desc(expenseClaims.createdAt))
@@ -647,6 +828,7 @@ export class ExpenseClaimsService {
     reviewerEmail: string | null;
     reimburserName: string | null;
     reimburserEmail: string | null;
+    paymentDate: string | null;
   }) {
     return {
       id: row.claim.id,
@@ -660,6 +842,7 @@ export class ExpenseClaimsService {
       categoryName: row.categoryName,
       receiptPath: row.claim.receiptPath,
       hasReceipt: Boolean(row.claim.receiptPath),
+      noReceiptReason: row.claim.noReceiptReason,
       submittedByUserId: row.claim.submittedByUserId,
       submitterName: row.submitterName ?? "",
       submitterEmail: row.submitterEmail ?? "",
@@ -670,6 +853,7 @@ export class ExpenseClaimsService {
       reviewedByName: row.reviewerName ?? null,
       reviewedByEmail: row.reviewerEmail ?? null,
       rejectionReason: row.claim.rejectionReason,
+      editReason: row.claim.editReason,
       reimbursedAt: row.claim.reimbursedAt?.toISOString() ?? null,
       reimbursedByUserId: row.claim.reimbursedByUserId,
       reimbursedByName: row.reimburserName ?? null,
@@ -678,6 +862,7 @@ export class ExpenseClaimsService {
       bankAccountId: row.claim.bankAccountId,
       bankAccountName: row.bankAccountName,
       accountMoveId: row.claim.accountMoveId,
+      paymentDate: row.paymentDate,
     };
   }
 }

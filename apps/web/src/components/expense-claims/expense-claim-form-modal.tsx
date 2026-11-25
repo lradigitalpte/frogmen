@@ -65,6 +65,7 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
   const [reference, setReference] = useState("");
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [noReceiptReason, setNoReceiptReason] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [currentReceiptBroken, setCurrentReceiptBroken] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -111,6 +112,7 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
       setReference("");
     }
     setReceiptFile(null);
+    setNoReceiptReason(claim?.noReceiptReason ?? "");
     setCreatedId(null);
     setCurrentReceiptBroken(false);
     setErrors({});
@@ -179,12 +181,14 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
           ...payload,
           reference: reference.trim() || null,
           categoryId: categoryId || null,
+          noReceiptReason: noReceiptReason.trim() || null,
         });
       } else {
         const created = await createExpenseClaim({
           ...payload,
           reference: reference.trim() || undefined,
           categoryId: categoryId || undefined,
+          noReceiptReason: noReceiptReason.trim() || undefined,
         });
         claimId = created.id;
         setCreatedId(created.id);
@@ -452,7 +456,20 @@ export function ExpenseClaimFormModal({ open, onClose, claim, onSaved }: Expense
                   </Button>
                 </div>
               ) : (
-                <p className="ecf__hint">Claims with a clear receipt are approved faster.</p>
+                <>
+                  <p className="ecf__hint">Claims with a clear receipt are approved faster.</p>
+                  <TextField
+                    autoComplete="off"
+                    label="No receipt? State the reason"
+                    value={noReceiptReason}
+                    onChange={setNoReceiptReason}
+                    placeholder="e.g. Receipt lost, taxi gave none"
+                    helpText="Optional · finance sees this when reviewing"
+                    maxLength={500}
+                    multiline={2}
+                    disabled={Boolean(saving)}
+                  />
+                </>
               )}
 
               <ol className="ecf__steps" aria-label="What happens next">

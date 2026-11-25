@@ -37,6 +37,7 @@ import {
   deleteExpenseClaim,
   getExpenseClaimReceiptUrl,
   listMyExpenseClaims,
+  requestExpenseClaimEdit,
   submitExpenseClaim,
   withdrawExpenseClaim,
   type ExpenseClaim,
@@ -87,7 +88,7 @@ function shortDate(value?: string | null) {
 function statusNote(claim: ExpenseClaim) {
   switch (claim.status) {
     case "draft":
-      return claim.rejectionReason ? "Being revised — submit again when ready" : "Not submitted yet";
+      return claim.rejectionReason || claim.editReason ? "Being revised — submit again when ready" : "Not submitted yet";
     case "submitted":
       return `Sent ${shortDate(claim.submittedAt) ?? ""}`.trim();
     case "approved":
@@ -119,6 +120,8 @@ export function MyExpenseClaimsPage() {
   const [detailClaim, setDetailClaim] = useState<ExpenseClaim | null>(null);
   const [deletingClaim, setDeletingClaim] = useState<ExpenseClaim | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [reopeningClaim, setReopeningClaim] = useState<ExpenseClaim | null>(null);
+  const [editReason, setEditReason] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
@@ -181,6 +184,23 @@ export function MyExpenseClaimsPage() {
     setEditingClaim(claim);
     setFormOpen(true);
   };
+
+  const promptRequestEdit = (claim: ExpenseClaim) => {
+    setDetailClaim(null);
+    setEditReason("");
+    setReopeningClaim(claim);
+  };
+
+  const handleRequestEdit = (claim: ExpenseClaim) =>
+    void runAction(
+      claim,
+      async () => {
+        const reopened = await requestExpenseClaimEdit(claim.id, editReason.trim());
+        setReopeningClaim(null);
+        openEdit(reopened);
+      },
+      `${claim.number} reopened — update it and submit again`,
+    );
 
   async function handleDeleteConfirmed() {
     if (!deletingClaim) return;
@@ -417,6 +437,9 @@ export function MyExpenseClaimsPage() {
                   ...(claim.status === "draft"
                     ? [{ content: "Edit", icon: EditIcon, onAction: () => openEdit(claim) }]
                     : []),
+                  ...(claim.status === "approved"
+                    ? [{ content: "Request edit", icon: EditIcon, onAction: () => promptRequestEdit(claim) }]
+                    : []),
                   ...(claim.status === "submitted"
                     ? [{ content: "Cancel submission", icon: UndoIcon, onAction: () => handleWithdraw(claim) }]
                     : []),
@@ -480,6 +503,10 @@ export function MyExpenseClaimsPage() {
                         >
                           Receipt
                         </Button>
+                      ) : claim.noReceiptReason ? (
+                        <span className="ex-noreceipt" title={claim.noReceiptReason}>
+                          No receipt · reason given
+                        </span>
                       ) : claim.status === "draft" ? (
                         <Badge tone="attention" size="small">
                           No receipt
@@ -533,7 +560,8 @@ export function MyExpenseClaimsPage() {
         {visible.length ? (
           <p className="pl-foot">
             Showing {visible.length} of {claims.length} claim{claims.length === 1 ? "" : "s"} · {formatBaseMoney(visibleTotal)}.
-            Drafts can be edited or deleted; submitted claims can be pulled back until finance approves them.
+            Drafts can be edited or deleted; submitted claims can be pulled back until finance approves them. Approved claims can be
+            reopened with a reason until they&apos;re paid.
           </p>
         ) : null}
       </div>
@@ -566,9 +594,37 @@ export function MyExpenseClaimsPage() {
         onSubmit={handleSubmit}
         onEdit={openEdit}
         onRevise={handleRevise}
+        onRequestEdit={promptRequestEdit}
         onWithdraw={handleWithdraw}
         onDelete={setDeletingClaim}
       />
+
+      <Modal
+        open={Boolean(reopeningClaim)}
+        onClose={() => setReopeningClaim(null)}
+        title={`Edit approved claim ${reopeningClaim?.number ?? ""}`}
+        primaryAction={{
+          content: "Reopen and edit",
+          loading: Boolean(busyId),
+          disabled: !editReason.trim(),
+          onAction: () => {
+            if (reopeningClaim) handleRequestEdit(reopeningClaim);
+          },
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setReopeningClaim(null) }]}
+      >
+        <Modal.Section>
+          <TextField
+            autoComplete="off"
+            label="Why does it need editing?"
+            helpText="The approval is cancelled and the claim goes back to draft. Finance sees this reason and must approve it again before you're paid."
+            maxLength={500}
+            multiline={3}
+            value={editReason}
+            onChange={setEditReason}
+          />
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={Boolean(deletingClaim)}

@@ -187,7 +187,7 @@ export interface JournalMoveDetail {
     productName: string;
     quantity: string;
     unitCost: string | null;
-    costAmount: string;
+    costAmount: string | null;
     serialNumber: string | null;
     productUnitId: string | null;
   }>;

@@ -47,6 +47,7 @@ const ROUTE_ACCESS: Array<[string, AccessRule]> = [
   ["/dashboard/settings/users", "members.manage"],
   ["/dashboard/settings/bank-accounts", "accounting.manage"],
   ["/dashboard/settings/audit-log", "audit.read"],
+  ["/dashboard/settings/vault", "settings.manage"],
 ].sort((a, b) => (b[0] as string).length - (a[0] as string).length) as Array<[string, AccessRule]>;
 
 export function routeRule(pathname: string): AccessRule {
